@@ -68,6 +68,17 @@ var (
 	cachedWiFi *sysinfo.WiFiInfo
 )
 
+// ドラッグ開始時の状態（物理ピクセル）。
+// ドラッグ中の差分計算をすべてサーバー側で行い、
+// ブラウザの論理ピクセルと Win32 の物理ピクセルの不一致を回避する。
+var (
+	dragMu        sync.Mutex
+	dragStartCurX int32
+	dragStartCurY int32
+	dragStartWinX int32
+	dragStartWinY int32
+)
+
 func getSystemData() SystemData {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
@@ -233,23 +244,24 @@ func startServer(port int) {
 	})
 
 	// ドラッグ開始時に現在のカーソル位置とウィンドウ位置を返す
+	// ドラッグ開始 — カーソルとウィンドウの位置を物理ピクセルで保存
 	mux.HandleFunc("/api/dragstart", func(w http.ResponseWriter, r *http.Request) {
-		cx, cy := getCursorPos()
-		wx, wy := getWindowPos()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int32{
-			"cursorX": cx, "cursorY": cy,
-			"windowX": wx, "windowY": wy,
-		})
+		dragMu.Lock()
+		dragStartCurX, dragStartCurY = getCursorPos()
+		dragStartWinX, dragStartWinY = getWindowPos()
+		dragMu.Unlock()
+		w.WriteHeader(http.StatusOK)
 	})
 
-	// ドラッグ中にウィンドウを移動
+	// ドラッグ中 — 現在のカーソル位置を Win32 API で取得し、
+	// 開始時との差分でウィンドウを移動（すべて物理ピクセル）
 	mux.HandleFunc("/api/dragmove", func(w http.ResponseWriter, r *http.Request) {
-		xStr := r.URL.Query().Get("x")
-		yStr := r.URL.Query().Get("y")
-		x, _ := strconv.Atoi(xStr)
-		y, _ := strconv.Atoi(yStr)
-		moveWindow(int32(x), int32(y))
+		cx, cy := getCursorPos()
+		dragMu.Lock()
+		newX := dragStartWinX + (cx - dragStartCurX)
+		newY := dragStartWinY + (cy - dragStartCurY)
+		dragMu.Unlock()
+		moveWindow(newX, newY)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -415,7 +427,7 @@ func getHTML() string {
         let isDragging = false;
         let isResizing = false;
         let resizeDir = '';
-        let startCursorX, startCursorY, startWindowX, startWindowY;
+        let startCursorX, startCursorY;
         let startWinW = 0, startWinH = 0;
         const dragArea = document.getElementById('dragArea');
         const resizeMargin = 6;
@@ -467,17 +479,7 @@ func getHTML() string {
             }
             isDragging = true;
             dragArea.classList.add('dragging');
-            try {
-                const res = await fetch('/api/dragstart');
-                const data = await res.json();
-                startCursorX = data.cursorX;
-                startCursorY = data.cursorY;
-                startWindowX = data.windowX;
-                startWindowY = data.windowY;
-            } catch(err) {
-                isDragging = false;
-                dragArea.classList.remove('dragging');
-            }
+            fetch('/api/dragstart').catch(()=>{ isDragging = false; dragArea.classList.remove('dragging'); });
         });
 
         document.addEventListener('mousemove', function(e) {
@@ -496,11 +498,7 @@ func getHTML() string {
                 return;
             }
             if (!isDragging) return;
-            const dx = e.screenX - startCursorX;
-            const dy = e.screenY - startCursorY;
-            const newX = startWindowX + dx;
-            const newY = startWindowY + dy;
-            fetch('/api/dragmove?x=' + newX + '&y=' + newY).catch(()=>{});
+            fetch('/api/dragmove').catch(()=>{});
         });
 
         document.addEventListener('mouseup', function() {
@@ -513,7 +511,14 @@ func getHTML() string {
         });
 
         function adjustWindowHeight() {
-            const h = document.documentElement.scrollHeight;
+            // height:100% / overflow:hidden の影響を避けるため
+            // 一時的に auto にしてコンテンツの自然な高さを測定する
+            const el = document.documentElement;
+            const bd = document.body;
+            const ct = document.getElementById('dragArea');
+            el.style.height = 'auto'; bd.style.height = 'auto'; ct.style.height = 'auto';
+            const h = ct.scrollHeight;
+            el.style.height = '100%'; bd.style.height = '100%'; ct.style.height = '100%';
             fetch('/api/resize?h=' + h).catch(()=>{});
         }
 
@@ -525,10 +530,11 @@ func getHTML() string {
                 const ssid=document.getElementById('wifi-ssid'); if(data.WiFi && data.WiFi.SSID){ ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected'; let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; } document.getElementById('wifi-band').textContent=band; document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type; document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%'; } else { ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected'; document.getElementById('wifi-band').textContent='---'; document.getElementById('wifi-type').textContent='---'; document.getElementById('wifi-signal').textContent='---'; }
             }catch(e){ console.error('Update error:',e); }
         }
-        updateData(); setInterval(updateData,2000);
+        let heightAdjusted = false;
+        updateData().then(()=>{ adjustWindowHeight(); setTimeout(adjustWindowHeight, 300); heightAdjusted = true; });
+        setInterval(updateData,2000);
         window.addEventListener('load', function() {
-            setTimeout(adjustWindowHeight, 350);
-            setTimeout(adjustWindowHeight, 1000);
+            if(!heightAdjusted){ setTimeout(adjustWindowHeight, 350); setTimeout(adjustWindowHeight, 1000); }
         });
     </script>
 </body>
