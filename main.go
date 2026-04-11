@@ -441,13 +441,29 @@ func enterTray() {
 		cpuPercent = int(math.Round(cachedCPU.Overall))
 	}
 	cacheMu.RUnlock()
-	trayIcon = createCPUIcon(cpuPercent)
+	icon := createCPUIcon(cpuPercent)
+	trayMu.Lock()
+	trayIcon = icon
+	trayMu.Unlock()
 
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 
 		hwnd := initTrayWindow()
+		if hwnd == 0 {
+			// ウィンドウ作成失敗時はトレイモードを解除して復帰
+			trayMu.Lock()
+			trayActive = false
+			trayMu.Unlock()
+			viewModeMu.Lock()
+			viewMode = 0
+			viewModeMu.Unlock()
+			if windowHandle != 0 {
+				procShowWindow.Call(windowHandle, SW_SHOW)
+			}
+			return
+		}
 		trayMu.Lock()
 		trayHwnd = hwnd
 		trayMu.Unlock()
@@ -465,6 +481,8 @@ func enterTray() {
 		// ツールチップ定期更新
 		stopCh := trayStop
 		go func() {
+			runtime.LockOSThread()
+			defer runtime.UnlockOSThread()
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
 			for {
@@ -499,10 +517,12 @@ func enterTray() {
 					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
 
 					// 前回のアイコンを破棄してリーク防止
+					trayMu.Lock()
 					if prevTrayIcon != 0 {
 						procDestroyIcon.Call(prevTrayIcon)
 					}
 					prevTrayIcon = newIcon
+					trayMu.Unlock()
 				}
 			}
 		}()
@@ -561,23 +581,7 @@ func restoreFromTray() {
 
 	trayMu.Lock()
 	trayHwnd = 0
-	trayMu.Unlock()
-}
-
-func cleanupTray() {
-	trayMu.Lock()
-	active := trayActive
-	hwnd := trayHwnd
-	trayActive = false
-	trayMu.Unlock()
-
-	if active && hwnd != 0 {
-		var nid NOTIFYICONDATAW
-		nid.CbSize = uint32(unsafe.Sizeof(nid))
-		nid.HWnd = hwnd
-		nid.UID = 1
-		procShellNotifyIcon.Call(NIM_DELETE, uintptr(unsafe.Pointer(&nid)))
-	}
+	// アイコンハンドルを破棄してリーク防止
 	if prevTrayIcon != 0 {
 		procDestroyIcon.Call(prevTrayIcon)
 		prevTrayIcon = 0
@@ -586,6 +590,48 @@ func cleanupTray() {
 		procDestroyIcon.Call(trayIcon)
 		trayIcon = 0
 	}
+	trayMu.Unlock()
+}
+
+func cleanupTray() {
+	trayMu.Lock()
+	active := trayActive
+	hwnd := trayHwnd
+	stopCh := trayStop
+	trayActive = false
+	trayMu.Unlock()
+
+	if !active {
+		return
+	}
+
+	// ticker ゴルーチンを停止
+	if stopCh != nil {
+		close(stopCh)
+	}
+
+	if hwnd != 0 {
+		var nid NOTIFYICONDATAW
+		nid.CbSize = uint32(unsafe.Sizeof(nid))
+		nid.HWnd = hwnd
+		nid.UID = 1
+		procShellNotifyIcon.Call(NIM_DELETE, uintptr(unsafe.Pointer(&nid)))
+
+		// メッセージループを終了させる
+		procDestroyWindow.Call(hwnd)
+	}
+
+	trayMu.Lock()
+	trayHwnd = 0
+	if prevTrayIcon != 0 {
+		procDestroyIcon.Call(prevTrayIcon)
+		prevTrayIcon = 0
+	}
+	if trayIcon != 0 {
+		procDestroyIcon.Call(trayIcon)
+		trayIcon = 0
+	}
+	trayMu.Unlock()
 }
 
 func getSystemData() SystemData {
@@ -767,7 +813,7 @@ func startServer(port int) {
 	mux.HandleFunc("/api/setviewmode", func(w http.ResponseWriter, r *http.Request) {
 		modeStr := r.URL.Query().Get("mode")
 		m, err := strconv.Atoi(modeStr)
-		if err != nil || m < 0 || m > 2 {
+		if err != nil || m < 0 || m > 1 {
 			http.Error(w, "invalid mode", http.StatusBadRequest)
 			return
 		}
@@ -1114,11 +1160,14 @@ func getHTML() string {
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 const ssid=document.getElementById('wifi-ssid'); if(data.WiFi && data.WiFi.SSID){ ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected'; let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; } document.getElementById('wifi-band').textContent=band; document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type; document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%'; let compact=data.WiFi.Band; if(data.WiFi.Channel>0){ compact+='('+data.WiFi.Channel+'ch)'; } document.getElementById('wifi-compact').textContent=compact; } else { ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected'; document.getElementById('wifi-band').textContent='---'; document.getElementById('wifi-type').textContent='---'; document.getElementById('wifi-signal').textContent='---'; document.getElementById('wifi-compact').textContent='未接続'; }
-                // トレイから復帰時の viewMode 同期
+                // サーバーとの viewMode 同期
                 if (data.ViewMode !== undefined && data.ViewMode !== currentViewMode) {
                     currentViewMode = data.ViewMode;
                     if (currentViewMode === 0) {
                         document.getElementById('dragArea').classList.remove('compact');
+                        setTimeout(adjustWindowHeight, 50);
+                    } else if (currentViewMode === 1) {
+                        document.getElementById('dragArea').classList.add('compact');
                         setTimeout(adjustWindowHeight, 50);
                     }
                 }
