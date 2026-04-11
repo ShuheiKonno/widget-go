@@ -20,14 +20,46 @@ import (
 )
 
 var (
-	user32            = syscall.NewLazyDLL("user32.dll")
-	procFindWindow    = user32.NewProc("FindWindowW")
-	procGetWindowLong = user32.NewProc("GetWindowLongW")
-	procSetWindowLong = user32.NewProc("SetWindowLongW")
-	procSetWindowPos  = user32.NewProc("SetWindowPos")
-	procGetWindowRect = user32.NewProc("GetWindowRect")
-	procGetCursorPos  = user32.NewProc("GetCursorPos")
+	user32              = syscall.NewLazyDLL("user32.dll")
+	procFindWindow      = user32.NewProc("FindWindowW")
+	procGetWindowLong   = user32.NewProc("GetWindowLongW")
+	procSetWindowLong   = user32.NewProc("SetWindowLongW")
+	procSetWindowPos    = user32.NewProc("SetWindowPos")
+	procGetWindowRect   = user32.NewProc("GetWindowRect")
+	procGetCursorPos    = user32.NewProc("GetCursorPos")
 	procGetDpiForWindow = user32.NewProc("GetDpiForWindow")
+	procShowWindow      = user32.NewProc("ShowWindow")
+	procRegisterClassEx = user32.NewProc("RegisterClassExW")
+	procCreateWindowEx  = user32.NewProc("CreateWindowExW")
+	procDefWindowProc   = user32.NewProc("DefWindowProcW")
+	procGetMessage      = user32.NewProc("GetMessageW")
+	procTranslateMessage = user32.NewProc("TranslateMessage")
+	procDispatchMessage  = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
+	procDestroyWindow    = user32.NewProc("DestroyWindow")
+	procLoadIcon         = user32.NewProc("LoadIconW")
+
+	shell32             = syscall.NewLazyDLL("shell32.dll")
+	procShellNotifyIcon = shell32.NewProc("Shell_NotifyIconW")
+
+	kernel32            = syscall.NewLazyDLL("kernel32.dll")
+	procGetModuleHandle = kernel32.NewProc("GetModuleHandleW")
+
+	gdi32                = syscall.NewLazyDLL("gdi32.dll")
+	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
+	procCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
+	procSelectObject       = gdi32.NewProc("SelectObject")
+	procCreateFontW        = gdi32.NewProc("CreateFontW")
+	procSetTextColor       = gdi32.NewProc("SetTextColor")
+	procSetBkMode          = gdi32.NewProc("SetBkMode")
+	procTextOutW           = gdi32.NewProc("TextOutW")
+	procDeleteDC           = gdi32.NewProc("DeleteDC")
+	procDeleteObject       = gdi32.NewProc("DeleteObject")
+	procCreateBitmap       = gdi32.NewProc("CreateBitmap")
+	procGetTextExtentPoint32 = gdi32.NewProc("GetTextExtentPoint32W")
+
+	procCreateIconIndirect = user32.NewProc("CreateIconIndirect")
+	procDestroyIcon        = user32.NewProc("DestroyIcon")
 )
 
 const (
@@ -38,6 +70,26 @@ const (
 	SWP_NOMOVE       = 0x0002
 	SWP_NOSIZE       = 0x0001
 	SWP_NOZORDER     = 0x0004
+
+	NIM_ADD    = 0x00000000
+	NIM_MODIFY = 0x00000001
+	NIM_DELETE = 0x00000002
+
+	NIF_MESSAGE = 0x00000001
+	NIF_ICON    = 0x00000002
+	NIF_TIP     = 0x00000004
+
+	WM_APP       = 0x8000
+	WM_TRAYICON  = WM_APP + 1
+	WM_LBUTTONUP = 0x0202
+	WM_DESTROY   = 0x0002
+
+	SW_HIDE = 0
+	SW_SHOW = 5
+
+	TRANSPARENT = 1
+	BI_RGB      = 0
+	DIB_RGB_COLORS = 0
 
 	windowWidth  = 210
 	windowHeight = 400
@@ -53,10 +105,79 @@ type RECT struct {
 	Left, Top, Right, Bottom int32
 }
 
+type NOTIFYICONDATAW struct {
+	CbSize           uint32
+	HWnd             uintptr
+	UID              uint32
+	UFlags           uint32
+	UCallbackMessage uint32
+	HIcon            uintptr
+	SzTip            [128]uint16
+	DwState          uint32
+	DwStateMask      uint32
+	SzInfo           [256]uint16
+	UVersion         uint32
+	SzInfoTitle      [64]uint16
+	DwInfoFlags      uint32
+	GuidItem         [16]byte
+	HBalloonIcon     uintptr
+}
+
+type BITMAPINFOHEADER struct {
+	BiSize          uint32
+	BiWidth         int32
+	BiHeight        int32
+	BiPlanes        uint16
+	BiBitCount      uint16
+	BiCompression   uint32
+	BiSizeImage     uint32
+	BiXPelsPerMeter int32
+	BiYPelsPerMeter int32
+	BiClrUsed       uint32
+	BiClrImportant  uint32
+}
+
+type ICONINFO struct {
+	FIcon    uint32
+	XHotspot uint32
+	YHotspot uint32
+	HbmMask  uintptr
+	HbmColor uintptr
+}
+
+type SIZE struct {
+	Cx, Cy int32
+}
+
+type WNDCLASSEXW struct {
+	CbSize        uint32
+	Style         uint32
+	LpfnWndProc   uintptr
+	CbClsExtra    int32
+	CbWndExtra    int32
+	HInstance     uintptr
+	HIcon         uintptr
+	HCursor       uintptr
+	HbrBackground uintptr
+	LpszMenuName  *uint16
+	LpszClassName *uint16
+	HIconSm       uintptr
+}
+
+type MSG struct {
+	HWnd    uintptr
+	Message uint32
+	WParam  uintptr
+	LParam  uintptr
+	Time    uint32
+	Pt      POINT
+}
+
 type SystemData struct {
-	CPU    *sysinfo.CPUInfo    `json:"CPU"`
-	Memory *sysinfo.MemoryInfo `json:"Memory"`
-	WiFi   *sysinfo.WiFiInfo   `json:"WiFi"`
+	CPU      *sysinfo.CPUInfo    `json:"CPU"`
+	Memory   *sysinfo.MemoryInfo `json:"Memory"`
+	WiFi     *sysinfo.WiFiInfo   `json:"WiFi"`
+	ViewMode int                 `json:"ViewMode"`
 }
 
 // バックグラウンドで更新されるスナップショット。
@@ -84,6 +205,19 @@ var (
 	alwaysOnTop   bool
 )
 
+// トレイモード管理
+var (
+	trayMu      sync.Mutex
+	trayHwnd    uintptr
+	trayActive  bool
+	trayIcon    uintptr
+	trayStop    chan struct{}
+	trayWndProc uintptr // GC防止のためパッケージレベルに保持
+
+	viewModeMu sync.RWMutex
+	viewMode   int // 0=normal, 1=compact, 2=tray
+)
+
 func setTopmost(topmost bool) {
 	if windowHandle == 0 {
 		return
@@ -97,13 +231,374 @@ func setTopmost(topmost bool) {
 	procSetWindowPos.Call(windowHandle, insertAfter, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
 }
 
+// --- システムトレイ機能 ---
+
+func loadAppIcon() uintptr {
+	hModule, _, _ := procGetModuleHandle.Call(0)
+	icon, _, _ := procLoadIcon.Call(hModule, uintptr(1))
+	if icon == 0 {
+		icon, _, _ = procLoadIcon.Call(0, uintptr(32512)) // IDI_APPLICATION
+	}
+	return icon
+}
+
+var prevTrayIcon uintptr
+
+// createCPUIcon はCPU使用率の数字をアイコンとして描画して返す (16x16)
+func createCPUIcon(percent int) uintptr {
+	if percent > 99 {
+		percent = 99
+	}
+	if percent < 0 {
+		percent = 0
+	}
+	text := fmt.Sprintf("%d", percent)
+
+	const size = 16
+
+	// メモリDC作成
+	hdc, _, _ := procCreateCompatibleDC.Call(0)
+	if hdc == 0 {
+		return loadAppIcon()
+	}
+
+	// 32bit DIBセクション作成 (カラービットマップ)
+	bmi := BITMAPINFOHEADER{
+		BiWidth:    size,
+		BiHeight:   -size, // トップダウン
+		BiPlanes:   1,
+		BiBitCount: 32,
+	}
+	bmi.BiSize = uint32(unsafe.Sizeof(bmi))
+	var bits uintptr
+	hBitmap, _, _ := procCreateDIBSection.Call(hdc, uintptr(unsafe.Pointer(&bmi)), DIB_RGB_COLORS, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if hBitmap == 0 {
+		procDeleteDC.Call(hdc)
+		return loadAppIcon()
+	}
+	oldBmp, _, _ := procSelectObject.Call(hdc, hBitmap)
+
+	// 背景を白、外枠を黒で描画
+	pixelSlice := unsafe.Slice((*uint32)(unsafe.Pointer(bits)), size*size)
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			if x == 0 || x == size-1 || y == 0 || y == size-1 {
+				pixelSlice[y*size+x] = 0xFF000000 // 黒枠
+			} else {
+				pixelSlice[y*size+x] = 0xFFFFFFFF // 白背景
+			}
+		}
+	}
+
+	// フォント作成
+	fontHeight := int32(-13)
+	if len(text) == 1 {
+		fontHeight = -14
+	}
+	fontName, _ := syscall.UTF16PtrFromString("Segoe UI")
+	hFont, _, _ := procCreateFontW.Call(
+		uintptr(fontHeight), 0, 0, 0,
+		700, // FW_BOLD
+		0, 0, 0,
+		0, 0, 0, 0, 0,
+		uintptr(unsafe.Pointer(fontName)),
+	)
+	oldFont, _, _ := procSelectObject.Call(hdc, hFont)
+
+	// テキスト描画
+	procSetBkMode.Call(hdc, TRANSPARENT)
+	procSetTextColor.Call(hdc, 0x00000000) // 黒 (BGR: 000000)
+
+	// テキストの中央配置
+	textUTF16, _ := syscall.UTF16FromString(text)
+	var sz SIZE
+	procGetTextExtentPoint32.Call(hdc, uintptr(unsafe.Pointer(&textUTF16[0])), uintptr(len(textUTF16)-1), uintptr(unsafe.Pointer(&sz)))
+	x := (int32(size) - sz.Cx) / 2
+	y := (int32(size) - sz.Cy) / 2
+	procTextOutW.Call(hdc, uintptr(x), uintptr(y), uintptr(unsafe.Pointer(&textUTF16[0])), uintptr(len(textUTF16)-1))
+
+	// 後片付け
+	procSelectObject.Call(hdc, oldFont)
+	procSelectObject.Call(hdc, oldBmp)
+	procDeleteObject.Call(hFont)
+	procDeleteDC.Call(hdc)
+
+	// マスクビットマップ (全不透明)
+	hMask, _, _ := procCreateBitmap.Call(size, size, 1, 1, 0)
+
+	// アイコン作成
+	ii := ICONINFO{
+		FIcon:    1,
+		HbmMask:  hMask,
+		HbmColor: hBitmap,
+	}
+	icon, _, _ := procCreateIconIndirect.Call(uintptr(unsafe.Pointer(&ii)))
+
+	procDeleteObject.Call(hBitmap)
+	procDeleteObject.Call(hMask)
+
+	return icon
+}
+
+func formatTrayTooltip() string {
+	cacheMu.RLock()
+	defer cacheMu.RUnlock()
+
+	cpuStr := "---"
+	memStr := "---"
+	wifiStr := "未接続"
+
+	if cachedCPU != nil {
+		cpuStr = fmt.Sprintf("%d%%", int(math.Round(cachedCPU.Overall)))
+	}
+	if cachedMem != nil {
+		memStr = fmt.Sprintf("%d%%", int(math.Round(cachedMem.UsedPercent)))
+	}
+	if cachedWiFi != nil && cachedWiFi.SSID != "" {
+		if cachedWiFi.Channel > 0 {
+			wifiStr = fmt.Sprintf("%s(%dch)", cachedWiFi.Band, cachedWiFi.Channel)
+		} else {
+			wifiStr = cachedWiFi.Band
+		}
+	}
+
+	return fmt.Sprintf("CPU: %s | Mem: %s | %s", cpuStr, memStr, wifiStr)
+}
+
+func setTipText(nid *NOTIFYICONDATAW, text string) {
+	tip, _ := syscall.UTF16FromString(text)
+	copy(nid.SzTip[:], tip)
+}
+
+func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
+	switch msg {
+	case WM_TRAYICON:
+		event := lParam & 0xFFFF
+		if event == WM_LBUTTONUP {
+			restoreFromTray()
+		}
+		return 0
+	case WM_DESTROY:
+		procPostQuitMessage.Call(0)
+		return 0
+	}
+	ret, _, _ := procDefWindowProc.Call(hwnd, msg, wParam, lParam)
+	return ret
+}
+
+func initTrayWindow() uintptr {
+	className, _ := syscall.UTF16PtrFromString("SystemWidgetTrayClass")
+	hInstance, _, _ := procGetModuleHandle.Call(0)
+
+	trayWndProc = syscall.NewCallback(trayWndProcFunc)
+
+	wcx := WNDCLASSEXW{
+		LpfnWndProc:   trayWndProc,
+		HInstance:      hInstance,
+		LpszClassName: className,
+	}
+	wcx.CbSize = uint32(unsafe.Sizeof(wcx))
+
+	procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wcx)))
+
+	windowName, _ := syscall.UTF16PtrFromString("SystemWidgetTrayWindow")
+	hwnd, _, _ := procCreateWindowEx.Call(
+		0,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(windowName)),
+		0,
+		0, 0, 0, 0,
+		^uintptr(2), // HWND_MESSAGE (-3)
+		0,
+		hInstance,
+		0,
+	)
+	return hwnd
+}
+
+func enterTray() {
+	trayMu.Lock()
+	if trayActive {
+		trayMu.Unlock()
+		return
+	}
+	trayActive = true
+	trayStop = make(chan struct{})
+	trayMu.Unlock()
+
+	viewModeMu.Lock()
+	viewMode = 2
+	viewModeMu.Unlock()
+
+	if windowHandle != 0 {
+		procShowWindow.Call(windowHandle, SW_HIDE)
+	}
+
+	// 初期CPU%アイコンを生成
+	cpuPercent := 0
+	cacheMu.RLock()
+	if cachedCPU != nil {
+		cpuPercent = int(math.Round(cachedCPU.Overall))
+	}
+	cacheMu.RUnlock()
+	trayIcon = createCPUIcon(cpuPercent)
+
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		hwnd := initTrayWindow()
+		trayMu.Lock()
+		trayHwnd = hwnd
+		trayMu.Unlock()
+
+		var nid NOTIFYICONDATAW
+		nid.CbSize = uint32(unsafe.Sizeof(nid))
+		nid.HWnd = hwnd
+		nid.UID = 1
+		nid.UFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+		nid.UCallbackMessage = WM_TRAYICON
+		nid.HIcon = trayIcon
+		setTipText(&nid, formatTrayTooltip())
+		procShellNotifyIcon.Call(NIM_ADD, uintptr(unsafe.Pointer(&nid)))
+
+		// ツールチップ定期更新
+		stopCh := trayStop
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stopCh:
+					return
+				case <-ticker.C:
+					trayMu.Lock()
+					if !trayActive {
+						trayMu.Unlock()
+						return
+					}
+					h := trayHwnd
+					trayMu.Unlock()
+
+					// CPU%アイコンを更新
+					cp := 0
+					cacheMu.RLock()
+					if cachedCPU != nil {
+						cp = int(math.Round(cachedCPU.Overall))
+					}
+					cacheMu.RUnlock()
+					newIcon := createCPUIcon(cp)
+
+					var upd NOTIFYICONDATAW
+					upd.CbSize = uint32(unsafe.Sizeof(upd))
+					upd.HWnd = h
+					upd.UID = 1
+					upd.UFlags = NIF_TIP | NIF_ICON
+					upd.HIcon = newIcon
+					setTipText(&upd, formatTrayTooltip())
+					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+
+					// 前回のアイコンを破棄してリーク防止
+					if prevTrayIcon != 0 {
+						procDestroyIcon.Call(prevTrayIcon)
+					}
+					prevTrayIcon = newIcon
+				}
+			}
+		}()
+
+		// メッセージループ
+		var m MSG
+		for {
+			ret, _, _ := procGetMessage.Call(
+				uintptr(unsafe.Pointer(&m)),
+				0, 0, 0,
+			)
+			if ret == 0 || ret == ^uintptr(0) {
+				break
+			}
+			procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
+			procDispatchMessage.Call(uintptr(unsafe.Pointer(&m)))
+		}
+	}()
+}
+
+func restoreFromTray() {
+	trayMu.Lock()
+	if !trayActive {
+		trayMu.Unlock()
+		return
+	}
+	trayActive = false
+	hwnd := trayHwnd
+	close(trayStop)
+	trayMu.Unlock()
+
+	// トレイアイコン削除
+	var nid NOTIFYICONDATAW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	procShellNotifyIcon.Call(NIM_DELETE, uintptr(unsafe.Pointer(&nid)))
+
+	viewModeMu.Lock()
+	viewMode = 0
+	viewModeMu.Unlock()
+
+	// ウィンドウ復元
+	if windowHandle != 0 {
+		procShowWindow.Call(windowHandle, SW_SHOW)
+		alwaysOnTopMu.Lock()
+		top := alwaysOnTop
+		alwaysOnTopMu.Unlock()
+		if top {
+			setTopmost(true)
+		}
+	}
+
+	// メッセージループ終了のため非表示ウィンドウを破棄
+	procDestroyWindow.Call(hwnd)
+
+	trayMu.Lock()
+	trayHwnd = 0
+	trayMu.Unlock()
+}
+
+func cleanupTray() {
+	trayMu.Lock()
+	active := trayActive
+	hwnd := trayHwnd
+	trayActive = false
+	trayMu.Unlock()
+
+	if active && hwnd != 0 {
+		var nid NOTIFYICONDATAW
+		nid.CbSize = uint32(unsafe.Sizeof(nid))
+		nid.HWnd = hwnd
+		nid.UID = 1
+		procShellNotifyIcon.Call(NIM_DELETE, uintptr(unsafe.Pointer(&nid)))
+	}
+	if prevTrayIcon != 0 {
+		procDestroyIcon.Call(prevTrayIcon)
+		prevTrayIcon = 0
+	}
+	if trayIcon != 0 {
+		procDestroyIcon.Call(trayIcon)
+		trayIcon = 0
+	}
+}
+
 func getSystemData() SystemData {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
+	viewModeMu.RLock()
+	vm := viewMode
+	viewModeMu.RUnlock()
 	return SystemData{
-		CPU:    cachedCPU,
-		Memory: cachedMem,
-		WiFi:   cachedWiFi,
+		CPU:      cachedCPU,
+		Memory:   cachedMem,
+		WiFi:     cachedWiFi,
+		ViewMode: vm,
 	}
 }
 
@@ -258,7 +753,28 @@ func startServer(port int) {
 
 	mux.HandleFunc("/api/close", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		go func() { os.Exit(0) }()
+		go func() {
+			cleanupTray()
+			os.Exit(0)
+		}()
+	})
+
+	mux.HandleFunc("/api/entertray", func(w http.ResponseWriter, r *http.Request) {
+		enterTray()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("/api/setviewmode", func(w http.ResponseWriter, r *http.Request) {
+		modeStr := r.URL.Query().Get("mode")
+		m, err := strconv.Atoi(modeStr)
+		if err != nil || m < 0 || m > 2 {
+			http.Error(w, "invalid mode", http.StatusBadRequest)
+			return
+		}
+		viewModeMu.Lock()
+		viewMode = m
+		viewModeMu.Unlock()
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// ドラッグ開始時に現在のカーソル位置とウィンドウ位置を返す
@@ -478,11 +994,19 @@ func getHTML() string {
             } catch(err) {}
         });
 
-        // Compact toggle
+        // 3段階表示切替: Normal → Compact → Tray
+        let currentViewMode = 0;
         document.getElementById('compactBtn').addEventListener('click', function(e) {
             e.stopPropagation();
-            document.getElementById('dragArea').classList.toggle('compact');
-            setTimeout(adjustWindowHeight, 50);
+            if (currentViewMode === 0) {
+                currentViewMode = 1;
+                document.getElementById('dragArea').classList.add('compact');
+                fetch('/api/setviewmode?mode=1').catch(()=>{});
+                setTimeout(adjustWindowHeight, 50);
+            } else if (currentViewMode === 1) {
+                currentViewMode = 2;
+                fetch('/api/entertray').catch(()=>{});
+            }
         });
 
         // Drag functionality
@@ -590,6 +1114,14 @@ func getHTML() string {
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 const ssid=document.getElementById('wifi-ssid'); if(data.WiFi && data.WiFi.SSID){ ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected'; let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; } document.getElementById('wifi-band').textContent=band; document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type; document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%'; let compact=data.WiFi.Band; if(data.WiFi.Channel>0){ compact+='('+data.WiFi.Channel+'ch)'; } document.getElementById('wifi-compact').textContent=compact; } else { ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected'; document.getElementById('wifi-band').textContent='---'; document.getElementById('wifi-type').textContent='---'; document.getElementById('wifi-signal').textContent='---'; document.getElementById('wifi-compact').textContent='未接続'; }
+                // トレイから復帰時の viewMode 同期
+                if (data.ViewMode !== undefined && data.ViewMode !== currentViewMode) {
+                    currentViewMode = data.ViewMode;
+                    if (currentViewMode === 0) {
+                        document.getElementById('dragArea').classList.remove('compact');
+                        setTimeout(adjustWindowHeight, 50);
+                    }
+                }
             }catch(e){ console.error('Update error:',e); }
         }
         let heightAdjusted = false;
