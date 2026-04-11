@@ -79,6 +79,24 @@ var (
 	dragStartWinY int32
 )
 
+var (
+	alwaysOnTopMu sync.Mutex
+	alwaysOnTop   bool
+)
+
+func setTopmost(topmost bool) {
+	if windowHandle == 0 {
+		return
+	}
+	var insertAfter uintptr
+	if topmost {
+		insertAfter = ^uintptr(0) // HWND_TOPMOST (-1)
+	} else {
+		insertAfter = ^uintptr(1) // HWND_NOTOPMOST (-2)
+	}
+	procSetWindowPos.Call(windowHandle, insertAfter, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
+}
+
 func getSystemData() SystemData {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
@@ -213,8 +231,8 @@ func resizeWindow(width, height int32) {
 	if width > 600 {
 		width = 600
 	}
-	if height < 200 {
-		height = 200
+	if height < 100 {
+		height = 100
 	}
 	if height > 1000 {
 		height = 1000
@@ -272,6 +290,16 @@ func startServer(port int) {
 			"width":  wid,
 			"height": hei,
 		})
+	})
+
+	mux.HandleFunc("/api/toggletopmost", func(w http.ResponseWriter, r *http.Request) {
+		alwaysOnTopMu.Lock()
+		alwaysOnTop = !alwaysOnTop
+		current := alwaysOnTop
+		alwaysOnTopMu.Unlock()
+		setTopmost(current)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"topmost": current})
 	})
 
 	mux.HandleFunc("/api/resize", func(w http.ResponseWriter, r *http.Request) {
@@ -357,12 +385,25 @@ func getHTML() string {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; }
         body { font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; background: linear-gradient(135deg, #3b3b6d 0%, #2e4a7a 100%); color: #fff; font-size: 13px; user-select: none; }
-        .container { width: 100%; height: 100%; background: rgba(60,60,95,0.96); padding: 10px; position: relative; cursor: grab; }
+        .container { width: 100%; height: 100%; background: rgba(60,60,95,0.96); padding: 30px 10px 10px 10px; position: relative; cursor: grab; }
         .container.dragging { cursor: grabbing; }
-        .close-btn { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border-radius: 50%; background: #ff5f57; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; color: transparent; transition: all 0.2s; z-index: 100; }
+        .top-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
+        .top-btn { width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: all 0.2s; }
+        .close-btn { background: #ff5f57; color: transparent; }
         .close-btn:hover { background: #ff3b30; color: rgba(0,0,0,0.6); }
-        .header { text-align: center; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.18); }
-        .header h1 { font-size: 15px; font-weight: 600; color: #f5f5ff; }
+        .pin-btn { background: rgba(255,255,255,0.2); color: #aaa; font-size: 9px; }
+        .pin-btn:hover { background: rgba(255,255,255,0.35); }
+        .pin-btn.active { background: #4CAF50; color: #fff; }
+        .compact-btn { background: rgba(255,255,255,0.2); color: #ccc; font-size: 10px; line-height: 1; }
+        .compact-btn:hover { background: rgba(255,255,255,0.35); }
+        .compact .section { padding: 5px 10px; margin-bottom: 4px; }
+        .compact .section-header { margin-bottom: 0; }
+        .compact .cores-container { display: none; }
+        .compact .cpu-progress { display: none; }
+        .compact .mem-progress { display: none; }
+        .compact .memory-details { display: none; }
+        .compact .wifi-info { display: none; }
+        .compact .wifi-compact-value { display: inline; }
         .section { background: rgba(255,255,255,0.09); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.16); }
         .section:last-child { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
@@ -387,29 +428,33 @@ func getHTML() string {
         .wifi-value { color:#fff; font-size:11px; font-weight:600; font-family:'Consolas', monospace; }
         .wifi-connected { color:#7fffaa; }
         .wifi-disconnected { color:#ff8a8a; }
+        .wifi-compact-value { display:none; }
     </style>
 </head>
 <body>
     <div class="container" id="dragArea">
-        <button class="close-btn" id="closeBtn" title="閉じる">✕</button>
-        <div class="header"><h1>システムモニター</h1></div>
+        <div class="top-btns">
+            <button class="top-btn pin-btn" id="pinBtn" title="常に前面に表示">📌</button>
+            <button class="top-btn compact-btn" id="compactBtn" title="コンパクト表示">▬</button>
+            <button class="top-btn close-btn" id="closeBtn" title="閉じる">✕</button>
+        </div>
         <div class="section">
             <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span></div>
-            <div class="progress-bar"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
+            <div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
             <div class="cores-container" id="cores-container"></div>
         </div>
         <div class="section">
             <div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value" id="memory-percent">0%</span></div>
-            <div class="progress-bar"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
+            <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
             <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
         </div>
         <div class="section">
-            <div class="section-header"><span class="section-icon">📶</span><span class="section-title">Wi-Fi</span></div>
+            <div class="section-header"><span class="section-icon">📶</span><span class="section-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span></div>
             <div class="wifi-info">
-                <div class="wifi-row"><span class="wifi-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
+                <div class="wifi-row wifi-detail"><span class="wifi-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
                 <div class="wifi-row"><span class="wifi-label">帯域</span><span class="wifi-value" id="wifi-band">---</span></div>
-                <div class="wifi-row"><span class="wifi-label">規格</span><span class="wifi-value" id="wifi-type">---</span></div>
-                <div class="wifi-row"><span class="wifi-label">信号強度</span><span class="wifi-value" id="wifi-signal">---</span></div>
+                <div class="wifi-row wifi-detail"><span class="wifi-label">規格</span><span class="wifi-value" id="wifi-type">---</span></div>
+                <div class="wifi-row wifi-detail"><span class="wifi-label">信号強度</span><span class="wifi-value" id="wifi-signal">---</span></div>
             </div>
         </div>
     </div>
@@ -421,6 +466,23 @@ func getHTML() string {
         document.getElementById('closeBtn').addEventListener('click', function(e) {
             e.stopPropagation();
             fetch('/api/close').catch(()=>{});
+        });
+
+        // Pin button (always-on-top)
+        document.getElementById('pinBtn').addEventListener('click', async function(e) {
+            e.stopPropagation();
+            try {
+                const res = await fetch('/api/toggletopmost');
+                const data = await res.json();
+                this.classList.toggle('active', data.topmost);
+            } catch(err) {}
+        });
+
+        // Compact toggle
+        document.getElementById('compactBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            document.getElementById('dragArea').classList.toggle('compact');
+            setTimeout(adjustWindowHeight, 50);
         });
 
         // Drag functionality
@@ -527,7 +589,7 @@ func getHTML() string {
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label">Core '+i+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div><span class="core-value" id="core-value-'+i+'">0%</span></div>'; c.appendChild(d);}); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
-                const ssid=document.getElementById('wifi-ssid'); if(data.WiFi && data.WiFi.SSID){ ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected'; let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; } document.getElementById('wifi-band').textContent=band; document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type; document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%'; } else { ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected'; document.getElementById('wifi-band').textContent='---'; document.getElementById('wifi-type').textContent='---'; document.getElementById('wifi-signal').textContent='---'; }
+                const ssid=document.getElementById('wifi-ssid'); if(data.WiFi && data.WiFi.SSID){ ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected'; let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; } document.getElementById('wifi-band').textContent=band; document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type; document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%'; let compact=data.WiFi.Band; if(data.WiFi.Channel>0){ compact+='('+data.WiFi.Channel+'ch)'; } document.getElementById('wifi-compact').textContent=compact; } else { ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected'; document.getElementById('wifi-band').textContent='---'; document.getElementById('wifi-type').textContent='---'; document.getElementById('wifi-signal').textContent='---'; document.getElementById('wifi-compact').textContent='未接続'; }
             }catch(e){ console.error('Update error:',e); }
         }
         let heightAdjusted = false;
