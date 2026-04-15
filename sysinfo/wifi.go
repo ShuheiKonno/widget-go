@@ -42,14 +42,18 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 		// 状態 / State （接続/切断 を判定）
 		// ※ SSID / BSSID より先に評価。"State" を含む別行（"Radio state" 等）と混同しないよう
 		//    行頭が "状態" または "State" で始まるものだけを対象にする。
+		// ※ 日本語版 Windows の netsh は "接続されました" / "切断されました" を出すため、
+		//    "接続済み" 等の固定文字列ではマッチしない。負の条件（切断系のみ false）で判定する。
 		if !stateFound && (strings.HasPrefix(trimmed, "状態") || strings.HasPrefix(trimmed, "State")) {
 			if match := colonRe.FindStringSubmatch(trimmed); len(match) > 1 {
 				val := strings.TrimSpace(match[1])
-				// 接続中と見なす文字列: "connected" / "接続済み"
 				lower := strings.ToLower(val)
-				if strings.Contains(lower, "connected") && !strings.Contains(lower, "disconnected") {
-					info.Connected = true
-				} else if strings.Contains(val, "接続済み") || strings.Contains(val, "接続中") {
+				// "disconnected" または "切断" を含む場合のみ未接続とみなす。
+				// それ以外（"connected" / "接続されました" / "authenticating" 等の過渡状態）は
+				// 接続中扱い（過渡状態でも SSID/Channel が出ていれば表示する方が UX が良い）。
+				if strings.Contains(lower, "disconnected") || strings.Contains(val, "切断") {
+					info.Connected = false
+				} else {
 					info.Connected = true
 				}
 				stateFound = true
