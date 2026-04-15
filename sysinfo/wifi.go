@@ -9,11 +9,13 @@ import (
 )
 
 type WiFiInfo struct {
-	SSID    string
-	Band    string
-	Type    string
-	Signal  int
-	Channel int
+	SSID      string
+	BSSID     string
+	Band      string
+	Type      string
+	Signal    int
+	Channel   int
+	Connected bool
 }
 
 func GetWiFiInfo() (*WiFiInfo, error) {
@@ -28,18 +30,52 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 	info := &WiFiInfo{}
 
 	ssidRe := regexp.MustCompile(`SSID\s*:\s*(.+)`)
+	bssidRe := regexp.MustCompile(`BSSID\s*:\s*(.+)`)
+	colonRe := regexp.MustCompile(`:\s*(.+)`) // State / Radio type など "key : value" 共通
 	signalRe := regexp.MustCompile(`(\d+)%`)
-	radioRe := regexp.MustCompile(`:\s*(.+)`)
 	channelRe := regexp.MustCompile(`:\s*(\d+)`)
 
+	stateFound := false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 
+		// 状態 / State （接続/切断 を判定）
+		// ※ SSID / BSSID より先に評価。"State" を含む別行（"Radio state" 等）と混同しないよう
+		//    行頭が "状態" または "State" で始まるものだけを対象にする。
+		// ※ 日本語版 Windows の netsh は "接続されました" / "切断されました" を出すため、
+		//    "接続済み" 等の固定文字列ではマッチしない。負の条件（切断系のみ false）で判定する。
+		if !stateFound && (strings.HasPrefix(trimmed, "状態") || strings.HasPrefix(trimmed, "State")) {
+			if match := colonRe.FindStringSubmatch(trimmed); len(match) > 1 {
+				val := strings.TrimSpace(match[1])
+				lower := strings.ToLower(val)
+				// "disconnected" または "切断" を含む場合のみ未接続とみなす。
+				// それ以外（"connected" / "接続されました" / "authenticating" 等の過渡状態）は
+				// 接続中扱い（過渡状態でも SSID/Channel が出ていれば表示する方が UX が良い）。
+				if strings.Contains(lower, "disconnected") || strings.Contains(val, "切断") {
+					info.Connected = false
+				} else {
+					info.Connected = true
+				}
+				stateFound = true
+			}
+		}
+
+		// BSSID （SSID より先に判定しないと SSID の HasPrefix に吸われる）
+		if strings.HasPrefix(trimmed, "BSSID") {
+			if info.BSSID == "" {
+				if match := bssidRe.FindStringSubmatch(trimmed); len(match) > 1 {
+					info.BSSID = strings.TrimSpace(match[1])
+				}
+			}
+			continue
+		}
+
 		// SSID
-		if strings.HasPrefix(trimmed, "SSID") && !strings.Contains(trimmed, "BSSID") {
+		if strings.HasPrefix(trimmed, "SSID") {
 			if match := ssidRe.FindStringSubmatch(trimmed); len(match) > 1 {
 				info.SSID = strings.TrimSpace(match[1])
 			}
+			continue
 		}
 
 		// シグナル (Signal)
@@ -51,7 +87,7 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 
 		// 無線の種類 (Radio type)
 		if strings.HasPrefix(trimmed, "無線の種類") || strings.Contains(trimmed, "Radio type") {
-			if match := radioRe.FindStringSubmatch(trimmed); len(match) > 1 {
+			if match := colonRe.FindStringSubmatch(trimmed); len(match) > 1 {
 				info.Type = strings.TrimSpace(match[1])
 			}
 		}
@@ -64,9 +100,15 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 		}
 	}
 
+	// State を取得できた場合は State を優先して切断を判定する。
+	// State が取得できない環境向けに SSID 空フォールバックも残す。
+	if stateFound && !info.Connected {
+		return nil, nil
+	}
 	if info.SSID == "" {
 		return nil, nil
 	}
+	info.Connected = true
 
 	// チャネルから帯域を判定
 	if info.Channel >= 36 {
