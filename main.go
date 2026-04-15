@@ -662,21 +662,40 @@ func refreshCPUAndMem() {
 	cacheMu.Unlock()
 }
 
+// wifiFailureStreak は netsh 連続失敗回数。
+// AP ハンドオフ中の瞬間的な失敗でキャッシュをクリアしないよう猶予を設ける。
+// refreshWiFi 専用に使うので goroutine 1 本からしか触らない前提。
+var wifiFailureStreak int
+
+// wifiFailureTolerance 回以上連続で失敗したらキャッシュを捨てて「未接続」扱いにする。
+// ポーリング間隔 3 秒 × 2 回 = 6 秒以内に実状態を反映する。
+const wifiFailureTolerance = 2
+
 func refreshWiFi() {
 	wifiInfo, err := sysinfo.GetWiFiInfo()
 	if err != nil {
-		// netsh が失敗した場合は前回のキャッシュを保持
+		// netsh の一時失敗は許容するが、続けて失敗したら古いキャッシュを捨てる。
+		// （AP 切替中に netsh が一時的にエラーを返しても、スタレなデータを見せ続けない）
+		wifiFailureStreak++
+		if wifiFailureStreak >= wifiFailureTolerance {
+			cacheMu.Lock()
+			cachedWiFi = nil
+			cacheMu.Unlock()
+		}
 		return
 	}
-	// 未接続（wifiInfo == nil）の場合もそのまま反映する
+	wifiFailureStreak = 0
+	// 未接続（wifiInfo == nil）の場合もそのまま反映する。
+	// AP 切替後は BSSID/SSID の違いがここで上書きされ、UI に即時反映される。
 	cacheMu.Lock()
 	cachedWiFi = wifiInfo
 	cacheMu.Unlock()
 }
 
 // startCollector はバックグラウンドで周期的にシステム情報を取得し、
-// キャッシュを更新する。CPU/メモリは 2 秒ごと、Wi-Fi は 15 秒ごと
-// （netsh の呼び出しコストが高いため）。
+// キャッシュを更新する。CPU/メモリは 2 秒ごと、Wi-Fi は 3 秒ごと。
+// （フロア移動などで AP が切り替わったときに UI が「未接続」のまま固まるのを
+//   防ぐため、Wi-Fi の検出間隔は短めに保つ。netsh は 100ms 程度で完了する）。
 func startCollector() {
 	sysinfo.PrimeCPU()
 	refreshCPUAndMem()
@@ -691,7 +710,7 @@ func startCollector() {
 	}()
 
 	go func() {
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(3 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			refreshWiFi()
