@@ -88,6 +88,15 @@ widget-go/
 
 ## 変更履歴
 
+### 1.3.0 (2026-04-17)
+
+- **Wi-Fi 7 / Windows 11 新 netsh フォーマット対応** — Windows 11 build 26200 で `netsh wlan show interfaces` の出力フィールドが変わっており、BSSID と帯域が取れなくなっていたのを修正。
+  - `BSSID` → `AP BSSID` 表記への改名に追随 (`HasPrefix` → `Contains` で "AP BSSID" も吸収)
+  - 新フィールド `バンド` (ja) / `Band` (en) をパースし最優先で採用。Wi-Fi 6E/7 では 6 GHz と 2.4 GHz のチャネル番号が被るため、バンド行がないとチャネルだけでは帯域を決定できない
+  - フォールバック帯域判定を 6 GHz 対応に拡張 (`ch >= 178` は UNII-8 上位として 6GHz 確定、`36-177` 5GHz、`1-14` 2.4GHz)
+  - `バンド: 5 GHz` のような値を `5GHz` 形式に正規化する `normalizeBand` ヘルパを追加
+- **前提条件**: `netsh wlan show interfaces` は Windows 11 で位置情報サービス ON が必須。グループポリシー `DisableLocation=1` が有効だと権限エラーで取得不能。
+
 ### 1.2.0 (2026-04-17)
 
 - **Ethernet 接続の表示に対応** — Wi-Fi 未接続時に有線 NIC を検出し、アダプタ名と `iphlpapi.GetIfEntry2` 経由で取得した `TransmitLinkSpeed` (100Mbps / 1Gbps / 2.5Gbps / 10Gbps 等) を表示。セクションのアイコンとタイトルも `🔌 Ethernet` に切り替わり、トレイツールチップにも反映。

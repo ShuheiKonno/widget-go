@@ -61,7 +61,9 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 		}
 
 		// BSSID （SSID より先に判定しないと SSID の HasPrefix に吸われる）
-		if strings.HasPrefix(trimmed, "BSSID") {
+		// Windows 11 26200 では "AP BSSID" 表記に変わっているため Contains で拾う。
+		// ("SSID" 行には "BSSID" が含まれないので誤マッチはしない)
+		if strings.Contains(trimmed, "BSSID") {
 			if info.BSSID == "" {
 				if match := bssidRe.FindStringSubmatch(trimmed); len(match) > 1 {
 					info.BSSID = strings.TrimSpace(match[1])
@@ -98,6 +100,22 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 				info.Channel, _ = strconv.Atoi(match[1])
 			}
 		}
+
+		// バンド / 帯域 (Band) — Windows 11 22H2 以降で netsh が出力するようになった。
+		// 6GHz と 2.4GHz はチャネル番号が被る (どちらも 1〜) ため、
+		// この行があれば最優先で採用する。
+		// 日本語ロケール実機 (Win11 26200) では "バンド" だった。ビルド/バージョン依存で
+		// "帯域" と表記される環境もありうるのでどちらも受け付ける。
+		// 注意:
+		//   ja: "帯域" と "帯域幅" (channel bandwidth) を区別する
+		//   en: "Band" と "Bandwidth" を区別する
+		if strings.HasPrefix(trimmed, "バンド") ||
+			(strings.HasPrefix(trimmed, "帯域") && !strings.HasPrefix(trimmed, "帯域幅")) ||
+			(strings.HasPrefix(trimmed, "Band") && !strings.HasPrefix(trimmed, "Bandwidth")) {
+			if match := colonRe.FindStringSubmatch(trimmed); len(match) > 1 {
+				info.Band = normalizeBand(strings.TrimSpace(match[1]))
+			}
+		}
 	}
 
 	// State を取得できた場合は State を優先して切断を判定する。
@@ -110,14 +128,36 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 	}
 	info.Connected = true
 
-	// チャネルから帯域を判定
-	if info.Channel >= 36 {
-		info.Band = "5GHz"
-	} else {
-		info.Band = "2.4GHz"
+	// netsh が "バンド"/"帯域" 行を出してくれた場合は info.Band は既に埋まっている。
+	// 出さない環境 (Windows 10 / 古い Win11) 向けにチャネルから推定する。
+	// ※ 6GHz と 2.4GHz はチャネル番号が被る (どちらも 1〜) ので、バンド行がない場合の
+	//   ch 1-14 は 2.4GHz 扱いで割り切る (Wi-Fi 7 実機は通常バンド行を出す Win11 新ビルド)。
+	//   ch >= 178 は 6GHz 専用帯 (UNII-8 上位) なので 6GHz と確定できる。
+	if info.Band == "" {
+		switch {
+		case info.Channel >= 178:
+			info.Band = "6GHz"
+		case info.Channel >= 36 && info.Channel <= 177:
+			info.Band = "5GHz"
+		case info.Channel >= 1 && info.Channel <= 14:
+			info.Band = "2.4GHz"
+		}
 	}
 
 	return info, nil
+}
+
+// bandValueRe は netsh の "バンド"/"Band" 行の値から周波数帯を抽出する。
+// "5 GHz", "2.4 GHz", "6 GHz" 等の表記揺れに対応。
+var bandValueRe = regexp.MustCompile(`(?i)(2\.4|5|6)\s*GHz`)
+
+// normalizeBand は "5 GHz" のような値を "5GHz" 形式に正規化する。
+// UI 側は Band 値をそのまま表示するため、2.4/5/6 の 3 値で揃える。
+func normalizeBand(raw string) string {
+	if m := bandValueRe.FindStringSubmatch(raw); len(m) > 1 {
+		return m[1] + "GHz"
+	}
+	return raw
 }
 
 // GetWiFiStandard はWi-Fi規格名を返す

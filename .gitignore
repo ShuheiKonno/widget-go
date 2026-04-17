@@ -1,1 +1,12 @@
 /CLAUDE.md
+
+# Editor / IDE / tooling state
+.claude/
+.vscode/
+.idea/
+
+# Helper script outputs
+_findgo_result.txt
+_fix_location*.log
+_fix_location*.ps1
+_wifitest*.go
