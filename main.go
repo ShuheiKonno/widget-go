@@ -38,12 +38,21 @@ var (
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
 	procDestroyWindow    = user32.NewProc("DestroyWindow")
 	procLoadIcon         = user32.NewProc("LoadIconW")
+	procLoadImageW       = user32.NewProc("LoadImageW")
+	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 
 	shell32             = syscall.NewLazyDLL("shell32.dll")
 	procShellNotifyIcon = shell32.NewProc("Shell_NotifyIconW")
 
 	kernel32            = syscall.NewLazyDLL("kernel32.dll")
 	procGetModuleHandle = kernel32.NewProc("GetModuleHandleW")
+	procCreateMutexW    = kernel32.NewProc("CreateMutexW")
+
+	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
+	procSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
+	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
+	procMonitorFromWindow = user32.NewProc("MonitorFromWindow")
+	procGetMonitorInfoW   = user32.NewProc("GetMonitorInfoW")
 
 	gdi32                = syscall.NewLazyDLL("gdi32.dll")
 	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
@@ -60,6 +69,12 @@ var (
 
 	procCreateIconIndirect = user32.NewProc("CreateIconIndirect")
 	procDestroyIcon        = user32.NewProc("DestroyIcon")
+
+	procCreatePopupMenu = user32.NewProc("CreatePopupMenu")
+	procAppendMenuW     = user32.NewProc("AppendMenuW")
+	procTrackPopupMenu  = user32.NewProc("TrackPopupMenu")
+	procDestroyMenu     = user32.NewProc("DestroyMenu")
+	procPostMessageW    = user32.NewProc("PostMessageW")
 )
 
 const (
@@ -82,10 +97,35 @@ const (
 	WM_APP       = 0x8000
 	WM_TRAYICON  = WM_APP + 1
 	WM_LBUTTONUP = 0x0202
+	WM_RBUTTONUP = 0x0205
+	WM_COMMAND   = 0x0111
 	WM_DESTROY   = 0x0002
+
+	MF_STRING        = 0x00000000
+	TPM_RIGHTBUTTON  = 0x0002
+	TPM_RETURNCMD    = 0x0100
+
+	ID_TRAY_EXIT = 1001
+
+	SPI_GETWORKAREA = 0x0030
+
+	MONITOR_DEFAULTTONEAREST = 0x00000002
+
+	GWL_EXSTYLE   = -20
+	WS_EX_LAYERED = 0x00080000
+	LWA_ALPHA     = 0x00000002
+
+	ALPHA_OPAQUE      = 255
+	ALPHA_TRANSPARENT = 160
 
 	SW_HIDE = 0
 	SW_SHOW = 5
+
+	IMAGE_ICON     = 1
+	LR_DEFAULTSIZE = 0x00000040
+	LR_SHARED      = 0x00008000
+	SM_CXSMICON    = 49
+	SM_CYSMICON    = 50
 
 	TRANSPARENT = 1
 	BI_RGB      = 0
@@ -149,6 +189,13 @@ type SIZE struct {
 	Cx, Cy int32
 }
 
+type MONITORINFO struct {
+	CbSize    uint32
+	RcMonitor RECT
+	RcWork    RECT
+	DwFlags   uint32
+}
+
 type WNDCLASSEXW struct {
 	CbSize        uint32
 	Style         uint32
@@ -174,19 +221,23 @@ type MSG struct {
 }
 
 type SystemData struct {
-	CPU      *sysinfo.CPUInfo    `json:"CPU"`
-	Memory   *sysinfo.MemoryInfo `json:"Memory"`
-	WiFi     *sysinfo.WiFiInfo   `json:"WiFi"`
-	ViewMode int                 `json:"ViewMode"`
+	CPU      *sysinfo.CPUInfo      `json:"CPU"`
+	Memory   *sysinfo.MemoryInfo   `json:"Memory"`
+	WiFi     *sysinfo.WiFiInfo     `json:"WiFi"`
+	Ethernet *sysinfo.EthernetInfo `json:"Ethernet"`
+	Network  *sysinfo.NetworkInfo  `json:"Network"`
+	ViewMode int                   `json:"ViewMode"`
 }
 
 // バックグラウンドで更新されるスナップショット。
 // /api/system はこのキャッシュを読むだけで、その場での計測は行わない。
 var (
-	cacheMu    sync.RWMutex
-	cachedCPU  *sysinfo.CPUInfo
-	cachedMem  *sysinfo.MemoryInfo
-	cachedWiFi *sysinfo.WiFiInfo
+	cacheMu        sync.RWMutex
+	cachedCPU      *sysinfo.CPUInfo
+	cachedMem      *sysinfo.MemoryInfo
+	cachedWiFi     *sysinfo.WiFiInfo
+	cachedEthernet *sysinfo.EthernetInfo
+	cachedNet      *sysinfo.NetworkInfo
 )
 
 // ドラッグ開始時の状態（物理ピクセル）。
@@ -203,6 +254,9 @@ var (
 var (
 	alwaysOnTopMu sync.Mutex
 	alwaysOnTop   bool
+
+	transparentMu sync.Mutex
+	transparent   bool
 )
 
 // トレイモード管理
@@ -217,6 +271,23 @@ var (
 	viewModeMu sync.RWMutex
 	viewMode   int // 0=normal, 1=compact, 2=tray
 )
+
+func setTransparent(enabled bool) {
+	if windowHandle == 0 {
+		return
+	}
+	gwlExStyle := int32(GWL_EXSTYLE)
+	exStyle, _, _ := procGetWindowLong.Call(windowHandle, uintptr(gwlExStyle))
+	newStyle := exStyle | WS_EX_LAYERED
+	if newStyle != exStyle {
+		procSetWindowLong.Call(windowHandle, uintptr(gwlExStyle), newStyle)
+	}
+	var alpha uintptr = ALPHA_OPAQUE
+	if enabled {
+		alpha = ALPHA_TRANSPARENT
+	}
+	procSetLayeredWindowAttributes.Call(windowHandle, 0, alpha, LWA_ALPHA)
+}
 
 func setTopmost(topmost bool) {
 	if windowHandle == 0 {
@@ -233,111 +304,51 @@ func setTopmost(topmost bool) {
 
 // --- システムトレイ機能 ---
 
-func loadAppIcon() uintptr {
+// loadTrayIcon は winres/icon.ico から埋め込まれたアイコンを
+// トレイに適したサイズ (SM_CXSMICON) でロードする。
+// 返されるハンドルは LR_SHARED 付きなのでシステム管理 — 呼び出し側は破棄しない。
+func loadTrayIcon() uintptr {
 	hModule, _, _ := procGetModuleHandle.Call(0)
-	icon, _, _ := procLoadIcon.Call(hModule, uintptr(1))
-	if icon == 0 {
-		icon, _, _ = procLoadIcon.Call(0, uintptr(32512)) // IDI_APPLICATION
+	// winres.json の RT_GROUP_ICON キー "APP" が Windows リソース名になる
+	name, _ := syscall.UTF16PtrFromString("APP")
+
+	cx, _, _ := procGetSystemMetrics.Call(SM_CXSMICON)
+	cy, _, _ := procGetSystemMetrics.Call(SM_CYSMICON)
+	if cx == 0 {
+		cx = 16
 	}
+	if cy == 0 {
+		cy = 16
+	}
+
+	icon, _, _ := procLoadImageW.Call(hModule, uintptr(unsafe.Pointer(name)), IMAGE_ICON, cx, cy, LR_SHARED)
+	if icon != 0 {
+		return icon
+	}
+	// フォールバック 1: リソース名でデフォルトサイズのグループアイコンを取得
+	icon, _, _ = procLoadIcon.Call(hModule, uintptr(unsafe.Pointer(name)))
+	if icon != 0 {
+		return icon
+	}
+	// フォールバック 2: Windows 既定のアプリアイコン
+	icon, _, _ = procLoadIcon.Call(0, uintptr(32512)) // IDI_APPLICATION
 	return icon
 }
 
-var prevTrayIcon uintptr
-
-// createCPUIcon はCPU使用率の数字をアイコンとして描画して返す (16x16)
-func createCPUIcon(percent int) uintptr {
-	if percent > 99 {
-		percent = 99
+// formatLinkSpeedShort は bit/s を短縮文字列化する。例: 1000000000 -> "1G", 2500000000 -> "2.5G"。
+func formatLinkSpeedShort(bps uint64) string {
+	if bps == 0 {
+		return ""
 	}
-	if percent < 0 {
-		percent = 0
-	}
-	text := fmt.Sprintf("%d", percent)
-
-	const size = 16
-
-	// メモリDC作成
-	hdc, _, _ := procCreateCompatibleDC.Call(0)
-	if hdc == 0 {
-		return loadAppIcon()
-	}
-
-	// 32bit DIBセクション作成 (カラービットマップ)
-	bmi := BITMAPINFOHEADER{
-		BiWidth:    size,
-		BiHeight:   -size, // トップダウン
-		BiPlanes:   1,
-		BiBitCount: 32,
-	}
-	bmi.BiSize = uint32(unsafe.Sizeof(bmi))
-	var bits uintptr
-	hBitmap, _, _ := procCreateDIBSection.Call(hdc, uintptr(unsafe.Pointer(&bmi)), DIB_RGB_COLORS, uintptr(unsafe.Pointer(&bits)), 0, 0)
-	if hBitmap == 0 {
-		procDeleteDC.Call(hdc)
-		return loadAppIcon()
-	}
-	oldBmp, _, _ := procSelectObject.Call(hdc, hBitmap)
-
-	// 背景を白、外枠を黒で描画
-	pixelSlice := unsafe.Slice((*uint32)(unsafe.Pointer(bits)), size*size)
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			if x == 0 || x == size-1 || y == 0 || y == size-1 {
-				pixelSlice[y*size+x] = 0xFF000000 // 黒枠
-			} else {
-				pixelSlice[y*size+x] = 0xFFFFFFFF // 白背景
-			}
+	mbps := float64(bps) / 1e6
+	if mbps >= 1000 {
+		gbps := mbps / 1000
+		if gbps == math.Trunc(gbps) {
+			return fmt.Sprintf("%.0fG", gbps)
 		}
+		return fmt.Sprintf("%.1fG", gbps)
 	}
-
-	// フォント作成
-	fontHeight := int32(-13)
-	if len(text) == 1 {
-		fontHeight = -14
-	}
-	fontName, _ := syscall.UTF16PtrFromString("Segoe UI")
-	hFont, _, _ := procCreateFontW.Call(
-		uintptr(fontHeight), 0, 0, 0,
-		700, // FW_BOLD
-		0, 0, 0,
-		0, 0, 0, 0, 0,
-		uintptr(unsafe.Pointer(fontName)),
-	)
-	oldFont, _, _ := procSelectObject.Call(hdc, hFont)
-
-	// テキスト描画
-	procSetBkMode.Call(hdc, TRANSPARENT)
-	procSetTextColor.Call(hdc, 0x00000000) // 黒 (BGR: 000000)
-
-	// テキストの中央配置
-	textUTF16, _ := syscall.UTF16FromString(text)
-	var sz SIZE
-	procGetTextExtentPoint32.Call(hdc, uintptr(unsafe.Pointer(&textUTF16[0])), uintptr(len(textUTF16)-1), uintptr(unsafe.Pointer(&sz)))
-	x := (int32(size) - sz.Cx) / 2
-	y := (int32(size) - sz.Cy) / 2
-	procTextOutW.Call(hdc, uintptr(x), uintptr(y), uintptr(unsafe.Pointer(&textUTF16[0])), uintptr(len(textUTF16)-1))
-
-	// 後片付け
-	procSelectObject.Call(hdc, oldFont)
-	procSelectObject.Call(hdc, oldBmp)
-	procDeleteObject.Call(hFont)
-	procDeleteDC.Call(hdc)
-
-	// マスクビットマップ (全不透明)
-	hMask, _, _ := procCreateBitmap.Call(size, size, 1, 1, 0)
-
-	// アイコン作成
-	ii := ICONINFO{
-		FIcon:    1,
-		HbmMask:  hMask,
-		HbmColor: hBitmap,
-	}
-	icon, _, _ := procCreateIconIndirect.Call(uintptr(unsafe.Pointer(&ii)))
-
-	procDeleteObject.Call(hBitmap)
-	procDeleteObject.Call(hMask)
-
-	return icon
+	return fmt.Sprintf("%.0fM", math.Round(mbps))
 }
 
 func formatTrayTooltip() string {
@@ -346,7 +357,7 @@ func formatTrayTooltip() string {
 
 	cpuStr := "---"
 	memStr := "---"
-	wifiStr := "未接続"
+	netStr := "未接続"
 
 	if cachedCPU != nil {
 		cpuStr = fmt.Sprintf("%d%%", int(math.Round(cachedCPU.Overall)))
@@ -356,18 +367,44 @@ func formatTrayTooltip() string {
 	}
 	if cachedWiFi != nil && cachedWiFi.SSID != "" {
 		if cachedWiFi.Channel > 0 {
-			wifiStr = fmt.Sprintf("%s(%dch)", cachedWiFi.Band, cachedWiFi.Channel)
+			netStr = fmt.Sprintf("%s(%dch)", cachedWiFi.Band, cachedWiFi.Channel)
 		} else {
-			wifiStr = cachedWiFi.Band
+			netStr = cachedWiFi.Band
+		}
+	} else if cachedEthernet != nil && cachedEthernet.Connected {
+		if cachedEthernet.LinkSpeedBps > 0 {
+			netStr = "Ethernet " + formatLinkSpeedShort(cachedEthernet.LinkSpeedBps)
+		} else {
+			netStr = "Ethernet"
 		}
 	}
 
-	return fmt.Sprintf("CPU: %s | Mem: %s | %s", cpuStr, memStr, wifiStr)
+	return fmt.Sprintf("CPU: %s | Mem: %s | %s", cpuStr, memStr, netStr)
 }
 
 func setTipText(nid *NOTIFYICONDATAW, text string) {
 	tip, _ := syscall.UTF16FromString(text)
 	copy(nid.SzTip[:], tip)
+}
+
+func showTrayMenu(hwnd uintptr) {
+	menu, _, _ := procCreatePopupMenu.Call()
+	if menu == 0 {
+		return
+	}
+	defer procDestroyMenu.Call(menu)
+
+	exitText, _ := syscall.UTF16PtrFromString("終了")
+	procAppendMenuW.Call(menu, MF_STRING, ID_TRAY_EXIT, uintptr(unsafe.Pointer(exitText)))
+
+	var pt POINT
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+
+	// ポップアップメニューを閉じるために SetForegroundWindow が必要
+	procSetForegroundWindow.Call(hwnd)
+	procTrackPopupMenu.Call(menu, TPM_RIGHTBUTTON, uintptr(pt.X), uintptr(pt.Y), 0, hwnd, 0)
+	// ポップアップを確実に閉じるためダミーメッセージ
+	procPostMessageW.Call(hwnd, 0, 0, 0)
 }
 
 func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
@@ -376,8 +413,18 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		event := lParam & 0xFFFF
 		if event == WM_LBUTTONUP {
 			restoreFromTray()
+		} else if event == WM_RBUTTONUP {
+			showTrayMenu(hwnd)
 		}
 		return 0
+	case WM_COMMAND:
+		if (wParam & 0xFFFF) == ID_TRAY_EXIT {
+			go func() {
+				cleanupTray()
+				os.Exit(0)
+			}()
+			return 0
+		}
 	case WM_DESTROY:
 		procPostQuitMessage.Call(0)
 		return 0
@@ -417,6 +464,16 @@ func initTrayWindow() uintptr {
 }
 
 func enterTray() {
+	// ウィンドウハンドル未取得でトレイ化に入ると、本体が隠れないまま
+	// trayActive=true が残り続けて二度と ✕ に反応しなくなる。
+	// ここで一度リカバリを試み、それでも取れないならトレイ化を諦める。
+	if windowHandle == 0 {
+		setupMainWindow("システムモニター")
+	}
+	if windowHandle == 0 {
+		return
+	}
+
 	trayMu.Lock()
 	if trayActive {
 		trayMu.Unlock()
@@ -430,18 +487,10 @@ func enterTray() {
 	viewMode = 2
 	viewModeMu.Unlock()
 
-	if windowHandle != 0 {
-		procShowWindow.Call(windowHandle, SW_HIDE)
-	}
+	procShowWindow.Call(windowHandle, SW_HIDE)
 
-	// 初期CPU%アイコンを生成
-	cpuPercent := 0
-	cacheMu.RLock()
-	if cachedCPU != nil {
-		cpuPercent = int(math.Round(cachedCPU.Overall))
-	}
-	cacheMu.RUnlock()
-	icon := createCPUIcon(cpuPercent)
+	// トレイには icon.ico から作られた埋め込みアイコンを表示する
+	icon := loadTrayIcon()
 	trayMu.Lock()
 	trayIcon = icon
 	trayMu.Unlock()
@@ -498,31 +547,14 @@ func enterTray() {
 					h := trayHwnd
 					trayMu.Unlock()
 
-					// CPU%アイコンを更新
-					cp := 0
-					cacheMu.RLock()
-					if cachedCPU != nil {
-						cp = int(math.Round(cachedCPU.Overall))
-					}
-					cacheMu.RUnlock()
-					newIcon := createCPUIcon(cp)
-
+					// アイコンは固定 (icon.ico) なので更新不要。ツールチップだけ更新する。
 					var upd NOTIFYICONDATAW
 					upd.CbSize = uint32(unsafe.Sizeof(upd))
 					upd.HWnd = h
 					upd.UID = 1
-					upd.UFlags = NIF_TIP | NIF_ICON
-					upd.HIcon = newIcon
+					upd.UFlags = NIF_TIP
 					setTipText(&upd, formatTrayTooltip())
 					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
-
-					// 前回のアイコンを破棄してリーク防止
-					trayMu.Lock()
-					if prevTrayIcon != 0 {
-						procDestroyIcon.Call(prevTrayIcon)
-					}
-					prevTrayIcon = newIcon
-					trayMu.Unlock()
 				}
 			}
 		}()
@@ -581,15 +613,8 @@ func restoreFromTray() {
 
 	trayMu.Lock()
 	trayHwnd = 0
-	// アイコンハンドルを破棄してリーク防止
-	if prevTrayIcon != 0 {
-		procDestroyIcon.Call(prevTrayIcon)
-		prevTrayIcon = 0
-	}
-	if trayIcon != 0 {
-		procDestroyIcon.Call(trayIcon)
-		trayIcon = 0
-	}
+	// trayIcon は LR_SHARED でロードされた共有ハンドルなので破棄しない
+	trayIcon = 0
 	trayMu.Unlock()
 }
 
@@ -623,14 +648,8 @@ func cleanupTray() {
 
 	trayMu.Lock()
 	trayHwnd = 0
-	if prevTrayIcon != 0 {
-		procDestroyIcon.Call(prevTrayIcon)
-		prevTrayIcon = 0
-	}
-	if trayIcon != 0 {
-		procDestroyIcon.Call(trayIcon)
-		trayIcon = 0
-	}
+	trayIcon = 0
+
 	trayMu.Unlock()
 }
 
@@ -644,8 +663,20 @@ func getSystemData() SystemData {
 		CPU:      cachedCPU,
 		Memory:   cachedMem,
 		WiFi:     cachedWiFi,
+		Ethernet: cachedEthernet,
+		Network:  cachedNet,
 		ViewMode: vm,
 	}
+}
+
+func refreshNetwork() {
+	netInfo, err := sysinfo.GetNetworkInfo()
+	if err != nil {
+		return
+	}
+	cacheMu.Lock()
+	cachedNet = netInfo
+	cacheMu.Unlock()
 }
 
 func refreshCPUAndMem() {
@@ -670,6 +701,19 @@ var wifiFailureStreak int
 // wifiFailureTolerance 回以上連続で失敗したらキャッシュを捨てて「未接続」扱いにする。
 // ポーリング間隔 3 秒 × 2 回 = 6 秒以内に実状態を反映する。
 const wifiFailureTolerance = 2
+
+func refreshEthernet() {
+	eth, err := sysinfo.GetEthernetInfo()
+	if err != nil {
+		cacheMu.Lock()
+		cachedEthernet = nil
+		cacheMu.Unlock()
+		return
+	}
+	cacheMu.Lock()
+	cachedEthernet = eth
+	cacheMu.Unlock()
+}
 
 func refreshWiFi() {
 	wifiInfo, err := sysinfo.GetWiFiInfo()
@@ -700,12 +744,16 @@ func startCollector() {
 	sysinfo.PrimeCPU()
 	refreshCPUAndMem()
 	refreshWiFi()
+	refreshEthernet()
+	// ネットワーク計測の基準値を仕込む（初回は差分計算できないので 0 を返す）
+	refreshNetwork()
 
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			refreshCPUAndMem()
+			refreshNetwork()
 		}
 	}()
 
@@ -714,6 +762,7 @@ func startCollector() {
 		defer ticker.Stop()
 		for range ticker.C {
 			refreshWiFi()
+			refreshEthernet()
 		}
 	}()
 }
@@ -800,7 +849,13 @@ func resizeWindow(width, height int32) {
 	scale := getWindowDpiScale()
 	scaledW := int32(math.Round(float64(width) * scale))
 	scaledH := int32(math.Round(float64(height) * scale))
-	procSetWindowPos.Call(windowHandle, 0, 0, 0, uintptr(scaledW), uintptr(scaledH), SWP_NOMOVE|SWP_NOZORDER)
+
+	// 下端を固定してリサイズする (コンパクト化時に下に揃える)
+	var rect RECT
+	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	newLeft := rect.Left
+	newTop := rect.Bottom - scaledH
+	procSetWindowPos.Call(windowHandle, 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
 }
 
 func startServer(port int) {
@@ -883,6 +938,16 @@ func startServer(port int) {
 		json.NewEncoder(w).Encode(map[string]bool{"topmost": current})
 	})
 
+	mux.HandleFunc("/api/toggletransparent", func(w http.ResponseWriter, r *http.Request) {
+		transparentMu.Lock()
+		transparent = !transparent
+		current := transparent
+		transparentMu.Unlock()
+		setTransparent(current)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"transparent": current})
+	})
+
 	mux.HandleFunc("/api/resize", func(w http.ResponseWriter, r *http.Request) {
 		wStr := r.URL.Query().Get("w")
 		hStr := r.URL.Query().Get("h")
@@ -905,11 +970,50 @@ func getAvailablePort() int {
 	return port
 }
 
-func removeWindowFrame(title string) {
+// 作業領域 (タスクバーを除いた画面領域) の右下にウィンドウを移動する。
+// サイズは GetWindowRect の実測値を使う。go-webview2 は DPI スケーリングせず
+// 生のピクセルで CreateWindowExW を呼ぶため、論理サイズ×DPIスケールで計算すると
+// 過大見積もりになって左に寄りすぎる。
+// 作業領域は MonitorFromWindow で実際にウィンドウが乗っているモニタの値を使う
+// (SPI_GETWORKAREA だとプライマリ固定で、マルチモニタ環境でズレる)。
+func moveToBottomRight() {
+	if windowHandle == 0 {
+		return
+	}
+	hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+	if hmon == 0 {
+		return
+	}
+	var mi MONITORINFO
+	mi.CbSize = uint32(unsafe.Sizeof(mi))
+	ret, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi)))
+	if ret == 0 {
+		return
+	}
+	var winRect RECT
+	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&winRect)))
+	w := winRect.Right - winRect.Left
+	h := winRect.Bottom - winRect.Top
+	newX := mi.RcWork.Right - w
+	newY := mi.RcWork.Bottom - h
+	procSetWindowPos.Call(windowHandle, 0, uintptr(newX), uintptr(newY), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
+}
+
+// findMainWindow は WebView2 ウィンドウのハンドルを FindWindow で取得する。
+// WebView2 の初期化タイミング次第でウィンドウタイトルがすぐには反映されないため、
+// 呼び出し側でリトライすることを前提にしている。
+func findMainWindow(title string) uintptr {
 	titlePtr, _ := syscall.UTF16PtrFromString(title)
 	hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(titlePtr)))
+	return hwnd
+}
+
+// setupMainWindow はウィンドウを見つけ、フレームを外して windowHandle にセットする。
+// 成功時に true、ウィンドウ未発見時に false を返す。
+func setupMainWindow(title string) bool {
+	hwnd := findMainWindow(title)
 	if hwnd == 0 {
-		return
+		return false
 	}
 	windowHandle = hwnd
 
@@ -918,16 +1022,36 @@ func removeWindowFrame(title string) {
 	newStyle := style &^ (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU)
 	procSetWindowLong.Call(hwnd, uintptr(gwlStyle), newStyle)
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED|SWP_NOMOVE|SWP_NOZORDER|SWP_NOSIZE)
+	return true
+}
+
+// 多重起動を防ぐ。既に起動していれば既存ウィンドウを前面化して false を返す
+func ensureSingleInstance(windowTitle string) bool {
+	const errorAlreadyExists = 183
+	mutexName, _ := syscall.UTF16PtrFromString("Global\\widget-go-single-instance-mutex")
+	_, _, err := procCreateMutexW.Call(0, 0, uintptr(unsafe.Pointer(mutexName)))
+	if errno, ok := err.(syscall.Errno); ok && errno == errorAlreadyExists {
+		titlePtr, _ := syscall.UTF16PtrFromString(windowTitle)
+		if hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(titlePtr))); hwnd != 0 {
+			procShowWindow.Call(hwnd, SW_SHOW)
+			procSetForegroundWindow.Call(hwnd)
+		}
+		return false
+	}
+	return true
 }
 
 func main() {
 	runtime.LockOSThread()
 
+	windowTitle := "システムモニター"
+	if !ensureSingleInstance(windowTitle) {
+		return
+	}
+
 	port := getAvailablePort()
 	startCollector()
 	go startServer(port)
-
-	windowTitle := "システムモニター"
 
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
@@ -944,9 +1068,18 @@ func main() {
 	}
 	defer w.Destroy()
 
+	// WebView2 のウィンドウが立ち上がるタイミングは環境依存で 200ms では間に合わないことがある。
+	// FindWindow を成功するまでポーリングしないと windowHandle=0 のまま固まり、
+	// ✕ クリック時にウィンドウを隠せずトレイ遷移が破綻する。
 	go func() {
-		time.Sleep(200 * time.Millisecond)
-		removeWindowFrame(windowTitle)
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+			if setupMainWindow(windowTitle) {
+				moveToBottomRight()
+				return
+			}
+		}
 	}()
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
@@ -975,9 +1108,13 @@ func getHTML() string {
         .pin-btn { background: rgba(255,255,255,0.2); color: #aaa; font-size: 9px; }
         .pin-btn:hover { background: rgba(255,255,255,0.35); }
         .pin-btn.active { background: #4CAF50; color: #fff; }
+        .opacity-btn { background: rgba(255,255,255,0.2); color: #ccc; font-size: 10px; line-height: 1; }
+        .opacity-btn:hover { background: rgba(255,255,255,0.35); }
+        .opacity-btn.active { background: #5aa0ff; color: #fff; }
         .compact-btn { background: rgba(255,255,255,0.2); color: #ccc; font-size: 10px; line-height: 1; }
         .compact-btn:hover { background: rgba(255,255,255,0.35); }
         .compact .section { padding: 5px 10px; margin-bottom: 4px; }
+        .compact .wifi-section { padding: 0; }
         .compact .section-header { margin-bottom: 0; }
         .compact .cores-container { display: none; }
         .compact .cpu-progress { display: none; }
@@ -1010,12 +1147,29 @@ func getHTML() string {
         .wifi-connected { color:#7fffaa; }
         .wifi-disconnected { color:#ff8a8a; }
         .wifi-compact-value { display:none; }
+        .wifi-section { background:transparent; border:none; padding:0; perspective:800px; }
+        .flip-card { display:grid; transform-style:preserve-3d; transition:transform 0.55s; }
+        .flip-card > .flip-face { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; background:rgba(255,255,255,0.09); border:1px solid rgba(255,255,255,0.16); border-radius:8px; padding:8px 10px; cursor:pointer; }
+        .flip-card > .flip-back { transform:rotateY(180deg); display:flex; flex-direction:column; }
+        .wifi-section.flipped .flip-card { transform:rotateY(180deg); }
+        .wifi-section.ethernet-mode .wifi-wireless-only { display:none; }
+        .wifi-ethernet-only { display:none; }
+        .wifi-section.ethernet-mode .wifi-ethernet-only { display:flex; }
+        .net-peak-toggle { cursor:pointer; padding:1px 4px; border-radius:4px; transition:background 0.15s; }
+        .net-peak-toggle:hover { background:rgba(255,255,255,0.15); }
+        .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background:rgba(0,0,0,0.2); border-radius:4px; }
+        .compact .net-canvas { height:36px; }
+        .net-legend { display:flex; justify-content:space-between; margin-top:4px; font-size:11px; font-family:'Consolas', monospace; }
+        .net-leg-rx { color:#7fffaa; }
+        .net-leg-tx { color:#ffa3ff; }
+        .compact .net-legend { font-size:10px; margin-top:2px; }
     </style>
 </head>
 <body>
     <div class="container" id="dragArea">
         <div class="top-btns">
             <button class="top-btn pin-btn" id="pinBtn" title="常に前面に表示">📌</button>
+            <button class="top-btn opacity-btn" id="opacityBtn" title="透過">◐</button>
             <button class="top-btn compact-btn" id="compactBtn" title="コンパクト表示">▬</button>
             <button class="top-btn close-btn" id="closeBtn" title="閉じる">✕</button>
         </div>
@@ -1029,24 +1183,46 @@ func getHTML() string {
             <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
             <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
         </div>
-        <div class="section">
-            <div class="section-header"><span class="section-icon">📶</span><span class="section-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span></div>
-            <div class="wifi-info">
-                <div class="wifi-row wifi-detail"><span class="wifi-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
-                <div class="wifi-row"><span class="wifi-label">帯域</span><span class="wifi-value" id="wifi-band">---</span></div>
-                <div class="wifi-row wifi-detail"><span class="wifi-label">規格</span><span class="wifi-value" id="wifi-type">---</span></div>
-                <div class="wifi-row wifi-detail"><span class="wifi-label">信号強度</span><span class="wifi-value" id="wifi-signal">---</span></div>
+        <div class="section wifi-section" id="wifiSection">
+            <div class="flip-card">
+                <div class="flip-face flip-front">
+                    <div class="section-header"><span class="section-icon" id="conn-icon">📶</span><span class="section-title" id="conn-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span></div>
+                    <div class="wifi-info">
+                        <div class="wifi-row wifi-detail"><span class="wifi-label" id="wifi-ssid-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
+                        <div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value" id="wifi-band">---</span></div>
+                        <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">規格</span><span class="wifi-value" id="wifi-type">---</span></div>
+                        <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">信号強度</span><span class="wifi-value" id="wifi-signal">---</span></div>
+                        <div class="wifi-row wifi-ethernet-only"><span class="wifi-label">速度</span><span class="wifi-value" id="eth-speed">---</span></div>
+                    </div>
+                </div>
+                <div class="flip-face flip-back">
+                    <div class="section-header"><span class="section-icon">📊</span><span class="section-title">ネットワーク</span><span class="section-value net-peak-toggle" id="net-peak" title="クリックで単位切替 (B ⇔ bit)">---</span></div>
+                    <canvas class="net-canvas" id="netCanvas"></canvas>
+                    <div class="net-legend">
+                        <span class="net-leg-rx">↓ <span id="net-rx-val">0 B/s</span></span>
+                        <span class="net-leg-tx">↑ <span id="net-tx-val">0 B/s</span></span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
     <script>
         const wifiStandards = { '802.11a':'802.11a','802.11b':'802.11b','802.11g':'802.11g','802.11n':'802.11n (Wi-Fi 4)','802.11ac':'802.11ac (Wi-Fi 5)','802.11ax':'802.11ax (Wi-Fi 6)','802.11be':'802.11be (Wi-Fi 7)' };
         function formatBytes(b){return (b/(1024*1024*1024)).toFixed(1)+' GB';}
+        function formatLinkSpeed(bps){
+            if(!bps || bps <= 0) return '---';
+            const mbps = bps / 1000000;
+            if (mbps >= 1000){
+                const gbps = mbps / 1000;
+                return (gbps % 1 === 0 ? gbps.toFixed(0) : gbps.toFixed(1)) + ' Gbps';
+            }
+            return Math.round(mbps) + ' Mbps';
+        }
 
-        // Close button
+        // Close button (✕): タスクトレイに格納する
         document.getElementById('closeBtn').addEventListener('click', function(e) {
             e.stopPropagation();
-            fetch('/api/close').catch(()=>{});
+            fetch('/api/entertray').catch(()=>{});
         });
 
         // Pin button (always-on-top)
@@ -1059,7 +1235,17 @@ func getHTML() string {
             } catch(err) {}
         });
 
-        // 3段階表示切替: Normal → Compact → Tray
+        // Opacity toggle button
+        document.getElementById('opacityBtn').addEventListener('click', async function(e) {
+            e.stopPropagation();
+            try {
+                const res = await fetch('/api/toggletransparent');
+                const data = await res.json();
+                this.classList.toggle('active', data.transparent);
+            } catch(err) {}
+        });
+
+        // Normal ⇔ Compact のトグル
         let currentViewMode = 0;
         document.getElementById('compactBtn').addEventListener('click', function(e) {
             e.stopPropagation();
@@ -1069,8 +1255,36 @@ func getHTML() string {
                 fetch('/api/setviewmode?mode=1').catch(()=>{});
                 setTimeout(adjustWindowHeight, 50);
             } else if (currentViewMode === 1) {
-                currentViewMode = 2;
-                fetch('/api/entertray').catch(()=>{});
+                currentViewMode = 0;
+                document.getElementById('dragArea').classList.remove('compact');
+                fetch('/api/setviewmode?mode=0').catch(()=>{});
+                setTimeout(adjustWindowHeight, 50);
+            }
+        });
+
+        // ネットワーク部 peak 表示: クリックで B/s ⇔ bps トグル
+        // wifi-section のクリック(フリップ)より先に捕まえる必要があるので stopPropagation
+        document.getElementById('net-peak').addEventListener('click', function(e){
+            e.stopPropagation();
+            netUnit = (netUnit === 'byte') ? 'bit' : 'byte';
+            try { localStorage.setItem('netUnit', netUnit); } catch(err) {}
+            refreshNetLegend();
+            drawNetGraph();
+        });
+
+        // Wi-Fi ⇔ ネットワークグラフ の反転トグル
+        // ドラッグとクリックを区別するため、mousedown からの移動量で判定する
+        let mouseDownX = 0, mouseDownY = 0, movedSinceDown = false;
+        const wifiSection = document.getElementById('wifiSection');
+        wifiSection.addEventListener('click', function(e) {
+            if (movedSinceDown) return;
+            e.stopPropagation();
+            wifiSection.classList.toggle('flipped');
+            if (wifiSection.classList.contains('flipped')) {
+                // フリップ直後はキャンバスの clientWidth が 0 のことがあるので
+                // アニメーション完了後も含めて二度描画しておく
+                setTimeout(drawNetGraph, 30);
+                setTimeout(drawNetGraph, 600);
             }
         });
 
@@ -1106,6 +1320,9 @@ func getHTML() string {
         });
 
         dragArea.addEventListener('mousedown', async function(e) {
+            mouseDownX = e.screenX;
+            mouseDownY = e.screenY;
+            movedSinceDown = false;
             if (e.target.id === 'closeBtn') return;
             const rect = dragArea.getBoundingClientRect();
             const onRight = (rect.right - e.clientX) <= resizeMargin;
@@ -1134,6 +1351,11 @@ func getHTML() string {
         });
 
         document.addEventListener('mousemove', function(e) {
+            if (!movedSinceDown) {
+                const dx = Math.abs(e.screenX - mouseDownX);
+                const dy = Math.abs(e.screenY - mouseDownY);
+                if (dx > 3 || dy > 3) movedSinceDown = true;
+            }
             if (isResizing) {
                 const dx = e.screenX - startCursorX;
                 const dy = e.screenY - startCursorY;
@@ -1173,12 +1395,128 @@ func getHTML() string {
             fetch('/api/resize?h=' + h).catch(()=>{});
         }
 
+        // ネットワーク履歴（直近 N サンプル分のスループット）
+        const netHistory = [];
+        const netMaxSamples = 60;
+        // 単位モード: 'byte' は B/s・KB/s・MB/s (1024 基準)、'bit' は bps・Kbps・Mbps (1000 基準)
+        let netUnit = (function(){
+            try { return localStorage.getItem('netUnit') || 'byte'; } catch(e) { return 'byte'; }
+        })();
+        function formatRate(bytesPerSec){
+            // 単位は固定: byte モードは常に KB/s、bit モードは常に Mbps。
+            // 値域に応じて小数桁数だけ調整する。
+            function withDecimals(v){
+                if (v >= 100) return v.toFixed(0);
+                if (v >= 10)  return v.toFixed(1);
+                return v.toFixed(2);
+            }
+            if (netUnit === 'bit'){
+                const mbps = bytesPerSec * 8 / 1000000;
+                return withDecimals(mbps) + ' Mbps';
+            }
+            const kbs = bytesPerSec / 1024;
+            return withDecimals(kbs) + ' KB/s';
+        }
+        function refreshNetLegend(){
+            if (netHistory.length === 0) return;
+            const last = netHistory[netHistory.length - 1];
+            document.getElementById('net-rx-val').textContent = formatRate(last.rx);
+            document.getElementById('net-tx-val').textContent = formatRate(last.tx);
+        }
+        function drawNetGraph(){
+            const canvas = document.getElementById('netCanvas');
+            if (!canvas) return;
+            // 内部解像度を CSS サイズに合わせる（DPI スケール込み）
+            const dpr = window.devicePixelRatio || 1;
+            const cssW = canvas.clientWidth;
+            const cssH = canvas.clientHeight;
+            if (cssW === 0 || cssH === 0) return;
+            if (canvas.width !== Math.round(cssW*dpr) || canvas.height !== Math.round(cssH*dpr)){
+                canvas.width = Math.round(cssW*dpr);
+                canvas.height = Math.round(cssH*dpr);
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, cssW, cssH);
+            if (netHistory.length < 2){
+                ctx.fillStyle = 'rgba(255,255,255,0.35)';
+                ctx.font = '10px Segoe UI';
+                ctx.fillText('計測中...', 6, cssH/2);
+                return;
+            }
+            let peak = 0;
+            for (const p of netHistory){
+                if (p.rx > peak) peak = p.rx;
+                if (p.tx > peak) peak = p.tx;
+            }
+            // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
+            const scale = Math.max(peak, 8*1024);
+            const step = cssW / (netMaxSamples - 1);
+            const offset = netMaxSamples - netHistory.length;
+            function drawSeries(getVal, fill, stroke){
+                ctx.fillStyle = fill;
+                ctx.beginPath();
+                ctx.moveTo((offset) * step, cssH);
+                netHistory.forEach((p, i) => {
+                    const x = (offset + i) * step;
+                    const y = cssH - (getVal(p) / scale) * cssH;
+                    ctx.lineTo(x, y);
+                });
+                ctx.lineTo((offset + netHistory.length - 1) * step, cssH);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                netHistory.forEach((p, i) => {
+                    const x = (offset + i) * step;
+                    const y = cssH - (getVal(p) / scale) * cssH;
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+            drawSeries(p => p.rx, 'rgba(127,255,170,0.25)', '#7fffaa');
+            drawSeries(p => p.tx, 'rgba(255,163,255,0.22)', '#ffa3ff');
+            document.getElementById('net-peak').textContent = formatRate(peak);
+        }
+
         async function updateData(){
             try{ const res=await fetch('/api/system'); const data=await res.json();
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label">Core '+i+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
-                const ssid=document.getElementById('wifi-ssid'); if(data.WiFi && data.WiFi.SSID){ ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected'; let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; } document.getElementById('wifi-band').textContent=band; document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type; document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%'; let compact=data.WiFi.Band; if(data.WiFi.Channel>0){ compact+='('+data.WiFi.Channel+'ch)'; } document.getElementById('wifi-compact').textContent=compact; } else { ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected'; document.getElementById('wifi-band').textContent='---'; document.getElementById('wifi-type').textContent='---'; document.getElementById('wifi-signal').textContent='---'; document.getElementById('wifi-compact').textContent='未接続'; }
+                if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
+                const ssid=document.getElementById('wifi-ssid');
+                const connIcon=document.getElementById('conn-icon');
+                const connTitle=document.getElementById('conn-title');
+                const ssidLabel=document.getElementById('wifi-ssid-label');
+                const connSection=document.getElementById('wifiSection');
+                if(data.WiFi && data.WiFi.SSID){
+                    connSection.classList.remove('ethernet-mode');
+                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; ssidLabel.textContent='SSID';
+                    ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected';
+                    let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; }
+                    document.getElementById('wifi-band').textContent=band;
+                    document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type;
+                    document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%';
+                    let compact=data.WiFi.Band; if(data.WiFi.Channel>0){ compact+='('+data.WiFi.Channel+'ch)'; }
+                    document.getElementById('wifi-compact').textContent=compact;
+                } else if(data.Ethernet && data.Ethernet.Connected){
+                    connSection.classList.add('ethernet-mode');
+                    connIcon.textContent='🔌'; connTitle.textContent='Ethernet'; ssidLabel.textContent='アダプタ';
+                    ssid.textContent=data.Ethernet.Name; ssid.className='wifi-value wifi-connected';
+                    const spdStr=formatLinkSpeed(data.Ethernet.LinkSpeedBps);
+                    document.getElementById('eth-speed').textContent=spdStr;
+                    document.getElementById('wifi-compact').textContent=(spdStr==='---')?'Ethernet':spdStr;
+                } else {
+                    connSection.classList.remove('ethernet-mode');
+                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; ssidLabel.textContent='SSID';
+                    ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected';
+                    document.getElementById('wifi-band').textContent='---';
+                    document.getElementById('wifi-type').textContent='---';
+                    document.getElementById('wifi-signal').textContent='---';
+                    document.getElementById('wifi-compact').textContent='未接続';
+                }
                 // サーバーとの viewMode 同期
                 if (data.ViewMode !== undefined && data.ViewMode !== currentViewMode) {
                     currentViewMode = data.ViewMode;
