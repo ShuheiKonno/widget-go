@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -139,6 +140,101 @@ const (
 )
 
 var windowHandle uintptr
+
+// Config はプロセスをまたいで永続化される設定。
+// WebView2 の localStorage は os.Exit(0) で flush されずに失われる可能性があるため、
+// Go 側で JSON ファイルに保存する。
+type Config struct {
+	Window struct {
+		X      int32 `json:"x"`
+		Y      int32 `json:"y"`
+		Width  int32 `json:"width"`
+		Height int32 `json:"height"`
+		Saved  bool  `json:"saved"`
+	} `json:"window"`
+	Topmost     bool   `json:"topmost"`
+	ViewMode    int    `json:"viewMode"`
+	Transparent bool   `json:"transparent"`
+	TrayDisplay string `json:"trayDisplay"` // "icon" | "cpu"
+	Theme       string `json:"theme"`       // "dark" | "light" | "system"
+	CoreBase    int    `json:"coreBase"`    // 0 | 1
+	NetUnit     string `json:"netUnit"`     // "byte" | "bit"
+}
+
+var (
+	configMu   sync.Mutex
+	configPath string
+	config     Config
+)
+
+func defaultConfig() Config {
+	var c Config
+	c.TrayDisplay = "icon"
+	c.Theme = "system"
+	c.CoreBase = 0
+	c.NetUnit = "byte"
+	return c
+}
+
+func loadConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	config = defaultConfig()
+	if configPath == "" {
+		return
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	// デフォルト値を上書きする形で JSON を読み込む
+	tmp := config
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return
+	}
+	config = tmp
+}
+
+func saveConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	if configPath == "" {
+		return
+	}
+	data, err := json.MarshalIndent(&config, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(configPath), 0755)
+	tmp := configPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, configPath)
+}
+
+// mutateConfig は config をロックしたうえで変更関数を適用し、ディスクに保存する。
+func mutateConfig(f func(c *Config)) {
+	configMu.Lock()
+	f(&config)
+	data, err := json.MarshalIndent(&config, "", "  ")
+	configMu.Unlock()
+	if err != nil || configPath == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(configPath), 0755)
+	tmp := configPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, configPath)
+}
+
+func snapshotConfig() Config {
+	configMu.Lock()
+	defer configMu.Unlock()
+	return config
+}
 
 type POINT struct {
 	X, Y int32
@@ -1099,6 +1195,7 @@ func startServer(port int) {
 		viewModeMu.Lock()
 		viewMode = m
 		viewModeMu.Unlock()
+		mutateConfig(func(c *Config) { c.ViewMode = m })
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -1139,8 +1236,108 @@ func startServer(port int) {
 		current := alwaysOnTop
 		alwaysOnTopMu.Unlock()
 		setTopmost(current)
+		mutateConfig(func(c *Config) { c.Topmost = current })
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"topmost": current})
+	})
+
+	// 常に前面表示を明示設定する (enable=true|false)
+	mux.HandleFunc("/api/topmost", func(w http.ResponseWriter, r *http.Request) {
+		v := r.URL.Query().Get("enable")
+		enable := v == "true" || v == "1"
+		alwaysOnTopMu.Lock()
+		alwaysOnTop = enable
+		alwaysOnTopMu.Unlock()
+		setTopmost(enable)
+		mutateConfig(func(c *Config) { c.Topmost = enable })
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"topmost": enable})
+	})
+
+	// ウィンドウ位置とサイズ (論理ピクセル) をまとめて返す
+	mux.HandleFunc("/api/windowgeometry", func(w http.ResponseWriter, r *http.Request) {
+		var x, y int32
+		if windowHandle != 0 {
+			var rect RECT
+			procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+			scale := getWindowDpiScale()
+			if scale <= 0 {
+				scale = 1.0
+			}
+			x = int32(math.Round(float64(rect.Left) / scale))
+			y = int32(math.Round(float64(rect.Top) / scale))
+		}
+		wid, hei := getWindowSize()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int32{
+			"x":      x,
+			"y":      y,
+			"width":  wid,
+			"height": hei,
+		})
+	})
+
+	// ウィンドウ位置とサイズを明示的に設定する (論理ピクセル)
+	mux.HandleFunc("/api/setwindow", func(w http.ResponseWriter, r *http.Request) {
+		if windowHandle == 0 {
+			http.Error(w, "window not ready", http.StatusServiceUnavailable)
+			return
+		}
+		q := r.URL.Query()
+		xVal, xErr := strconv.Atoi(q.Get("x"))
+		yVal, yErr := strconv.Atoi(q.Get("y"))
+		wVal, _ := strconv.Atoi(q.Get("w"))
+		hVal, _ := strconv.Atoi(q.Get("h"))
+
+		if wVal > 0 && hVal > 0 {
+			resizeWindow(int32(wVal), int32(hVal))
+		}
+		if xErr == nil && yErr == nil {
+			scale := getWindowDpiScale()
+			if scale <= 0 {
+				scale = 1.0
+			}
+			// 画面外に完全に出ないよう、アクティブモニタの作業領域でクランプする
+			hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+			if hmon != 0 {
+				var mi MONITORINFO
+				mi.CbSize = uint32(unsafe.Sizeof(mi))
+				if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+					var rect RECT
+					procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+					ww := rect.Right - rect.Left
+					hh := rect.Bottom - rect.Top
+					physX := int32(math.Round(float64(xVal) * scale))
+					physY := int32(math.Round(float64(yVal) * scale))
+					minX := mi.RcWork.Left
+					minY := mi.RcWork.Top
+					maxX := mi.RcWork.Right - ww
+					maxY := mi.RcWork.Bottom - hh
+					if physX < minX {
+						physX = minX
+					}
+					if physX > maxX {
+						physX = maxX
+					}
+					if physY < minY {
+						physY = minY
+					}
+					if physY > maxY {
+						physY = maxY
+					}
+					moveWindow(physX, physY)
+					persistCurrentWindowGeometry()
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+			}
+			// モニタ情報が取れない場合はそのまま適用
+			physX := int32(math.Round(float64(xVal) * scale))
+			physY := int32(math.Round(float64(yVal) * scale))
+			moveWindow(physX, physY)
+		}
+		persistCurrentWindowGeometry()
+		w.WriteHeader(http.StatusOK)
 	})
 
 	// 透過モードトグル (旧 UI 互換)。現行 UI は /api/transparent?enable= を使う。
@@ -1150,6 +1347,7 @@ func startServer(port int) {
 		current := transparent
 		transparentMu.Unlock()
 		setTransparent(current)
+		mutateConfig(func(c *Config) { c.Transparent = current })
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"transparent": current})
 	})
@@ -1162,6 +1360,7 @@ func startServer(port int) {
 		transparent = enable
 		transparentMu.Unlock()
 		setTransparent(enable)
+		mutateConfig(func(c *Config) { c.Transparent = enable })
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"transparent": enable})
 	})
@@ -1170,11 +1369,14 @@ func startServer(port int) {
 	mux.HandleFunc("/api/traydisplay", func(w http.ResponseWriter, r *http.Request) {
 		modeStr := r.URL.Query().Get("mode")
 		var m int
+		var label string
 		switch modeStr {
 		case "icon", "0":
 			m = TRAY_DISPLAY_ICON
+			label = "icon"
 		case "cpu", "1":
 			m = TRAY_DISPLAY_CPU
+			label = "cpu"
 		default:
 			http.Error(w, "invalid mode", http.StatusBadRequest)
 			return
@@ -1182,35 +1384,74 @@ func startServer(port int) {
 		trayDisplayMu.Lock()
 		trayDisplayMode = m
 		trayDisplayMu.Unlock()
+		mutateConfig(func(c *Config) { c.TrayDisplay = label })
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]int{"trayDisplay": m})
 	})
 
-	// 現在のサーバー側設定を一括取得する
+	// theme と coreBase など Go 側の挙動に影響しないフロント向け設定を保存する
+	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
+		key := r.URL.Query().Get("key")
+		val := r.URL.Query().Get("value")
+		switch key {
+		case "theme":
+			if val != "dark" && val != "light" && val != "system" {
+				http.Error(w, "invalid theme", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.Theme = val })
+		case "coreBase":
+			n, err := strconv.Atoi(val)
+			if err != nil || (n != 0 && n != 1) {
+				http.Error(w, "invalid coreBase", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.CoreBase = n })
+		case "netUnit":
+			if val != "byte" && val != "bit" {
+				http.Error(w, "invalid netUnit", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.NetUnit = val })
+		default:
+			http.Error(w, "unknown key", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// 現在のサーバー側設定を一括取得する (フロント側の初期化で使用)
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
-		transparentMu.Lock()
-		tr := transparent
-		transparentMu.Unlock()
-		alwaysOnTopMu.Lock()
-		top := alwaysOnTop
-		alwaysOnTopMu.Unlock()
-		trayDisplayMu.RLock()
-		td := trayDisplayMode
-		trayDisplayMu.RUnlock()
+		c := snapshotConfig()
+		viewModeMu.RLock()
+		vm := viewMode
+		viewModeMu.RUnlock()
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"transparent": tr,
-			"topmost":     top,
-			"trayDisplay": td,
+			"transparent": c.Transparent,
+			"topmost":     c.Topmost,
+			"trayDisplay": c.TrayDisplay,
+			"theme":       c.Theme,
+			"coreBase":    c.CoreBase,
+			"netUnit":     c.NetUnit,
+			"viewMode":    vm,
 		})
 	})
 
+	// リサイズ実行。mousemove 中に連続して呼ばれるので、ここでは永続化しない。
+	// 確定タイミング (mouseup) で /api/persistwindow が呼ばれる。
 	mux.HandleFunc("/api/resize", func(w http.ResponseWriter, r *http.Request) {
 		wStr := r.URL.Query().Get("w")
 		hStr := r.URL.Query().Get("h")
 		wVal, _ := strconv.Atoi(wStr)
 		h, _ := strconv.Atoi(hStr)
 		resizeWindow(int32(wVal), int32(h))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// フロント側のドラッグ/リサイズ確定時に現在位置を config に記録する
+	mux.HandleFunc("/api/persistwindow", func(w http.ResponseWriter, r *http.Request) {
+		persistCurrentWindowGeometry()
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -1225,6 +1466,77 @@ func getAvailablePort() int {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	return port
+}
+
+// restoreWindowGeometry は永続化された位置・サイズを現在のウィンドウに適用する。
+// 保存値が無い場合や windowHandle 未取得時は false を返し、呼び出し元はフォールバックを選ぶ。
+// 論理ピクセル値で保存されているので DPI スケール補正を行う。
+func restoreWindowGeometry() bool {
+	if windowHandle == 0 {
+		return false
+	}
+	c := snapshotConfig()
+	if !c.Window.Saved || c.Window.Width <= 0 || c.Window.Height <= 0 {
+		return false
+	}
+	resizeWindow(c.Window.Width, c.Window.Height)
+
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	physX := int32(math.Round(float64(c.Window.X) * scale))
+	physY := int32(math.Round(float64(c.Window.Y) * scale))
+
+	// 画面外に出ないように作業領域でクランプする
+	hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+	if hmon != 0 {
+		var mi MONITORINFO
+		mi.CbSize = uint32(unsafe.Sizeof(mi))
+		if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+			var rect RECT
+			procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+			ww := rect.Right - rect.Left
+			hh := rect.Bottom - rect.Top
+			if physX < mi.RcWork.Left {
+				physX = mi.RcWork.Left
+			}
+			if physX > mi.RcWork.Right-ww {
+				physX = mi.RcWork.Right - ww
+			}
+			if physY < mi.RcWork.Top {
+				physY = mi.RcWork.Top
+			}
+			if physY > mi.RcWork.Bottom-hh {
+				physY = mi.RcWork.Bottom - hh
+			}
+		}
+	}
+	moveWindow(physX, physY)
+	return true
+}
+
+// persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
+func persistCurrentWindowGeometry() {
+	if windowHandle == 0 {
+		return
+	}
+	var rect RECT
+	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	logicalX := int32(math.Round(float64(rect.Left) / scale))
+	logicalY := int32(math.Round(float64(rect.Top) / scale))
+	wid, hei := getWindowSize()
+	mutateConfig(func(c *Config) {
+		c.Window.X = logicalX
+		c.Window.Y = logicalY
+		c.Window.Width = wid
+		c.Window.Height = hei
+		c.Window.Saved = true
+	})
 }
 
 // 作業領域 (タスクバーを除いた画面領域) の右下にウィンドウを移動する。
@@ -1251,8 +1563,15 @@ func moveToBottomRight() {
 	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&winRect)))
 	w := winRect.Right - winRect.Left
 	h := winRect.Bottom - winRect.Top
-	newX := mi.RcWork.Right - w
-	newY := mi.RcWork.Bottom - h
+	// 画面端にぴったり貼るとタスクバーや他アプリとの境界が見えにくいので、
+	// DPI に比例した 8px 相当のマージンを取る。
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	margin := int32(math.Round(8 * scale))
+	newX := mi.RcWork.Right - w - margin
+	newY := mi.RcWork.Bottom - h - margin
 	procSetWindowPos.Call(windowHandle, 0, uintptr(newX), uintptr(newY), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
 }
 
@@ -1315,6 +1634,41 @@ func main() {
 		return
 	}
 
+	// WebView2 のユーザーデータを固定場所に保存する。
+	// 既定の挙動 (%APPDATA%\{exe 名}) に依存すると、ビルド名変更やカレントディレクトリ違いで
+	// localStorage が別プロファイル扱いになる。明示指定で設定の記憶を確実にする。
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData == "" {
+		localAppData = os.Getenv("APPDATA")
+	}
+	appRoot := filepath.Join(localAppData, "widget-go")
+	dataPath := filepath.Join(appRoot, "WebView2")
+	_ = os.MkdirAll(dataPath, 0755)
+
+	// 設定ファイルを読み込み、永続化された設定を適用する。
+	// 以降の状態変更は即ファイルに書き込むので、os.Exit で強制終了されても記憶が残る。
+	configPath = filepath.Join(appRoot, "config.json")
+	loadConfig()
+	c := snapshotConfig()
+	transparentMu.Lock()
+	transparent = c.Transparent
+	transparentMu.Unlock()
+	alwaysOnTopMu.Lock()
+	alwaysOnTop = c.Topmost
+	alwaysOnTopMu.Unlock()
+	viewModeMu.Lock()
+	if c.ViewMode == 0 || c.ViewMode == 1 {
+		viewMode = c.ViewMode
+	}
+	viewModeMu.Unlock()
+	trayDisplayMu.Lock()
+	if c.TrayDisplay == "cpu" {
+		trayDisplayMode = TRAY_DISPLAY_CPU
+	} else {
+		trayDisplayMode = TRAY_DISPLAY_ICON
+	}
+	trayDisplayMu.Unlock()
+
 	port := getAvailablePort()
 	startCollector()
 	go startServer(port)
@@ -1322,6 +1676,7 @@ func main() {
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
 		AutoFocus: true,
+		DataPath:  dataPath,
 		WindowOptions: webview2.WindowOptions{
 			Title:  windowTitle,
 			Width:  windowWidth,
@@ -1342,7 +1697,24 @@ func main() {
 		for time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 			if setupMainWindow(windowTitle) {
-				moveToBottomRight()
+				restored := restoreWindowGeometry()
+				if !restored {
+					moveToBottomRight()
+				}
+				// go-webview2 の SetSize(HintFixed) が後段で位置をリセットすることがあるため、
+				// 初期化が落ち着いたあとに再適用する。
+				time.AfterFunc(500*time.Millisecond, func() {
+					if !restoreWindowGeometry() {
+						moveToBottomRight()
+					}
+				})
+				// 常に前面表示の復元
+				alwaysOnTopMu.Lock()
+				top := alwaysOnTop
+				alwaysOnTopMu.Unlock()
+				if top {
+					setTopmost(true)
+				}
 				return
 			}
 		}
@@ -1409,8 +1781,8 @@ func getHTML() string {
         .container.dragging { cursor: grabbing; }
         .top-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
         .top-btn { width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: all 0.2s; }
-        .close-btn { background: #ff5f57; color: transparent; }
-        .close-btn:hover { background: #ff3b30; color: rgba(0,0,0,0.6); }
+        .tray-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 14px; line-height: 1; padding: 0 0 5px 0; font-weight: 700; }
+        .tray-btn:hover { background: var(--btn-bg-hover); }
         .pin-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 9px; }
         .pin-btn:hover { background: var(--btn-bg-hover); }
         .pin-btn.active { background: #4CAF50; color: #fff; }
@@ -1418,8 +1790,13 @@ func getHTML() string {
         .settings-btn:hover { background: var(--btn-bg-hover); }
         .compact-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
         .compact-btn:hover { background: var(--btn-bg-hover); }
+        /* コンパクト状態時はフル表示に戻す意図が伝わるよう強調色にする */
+        .compact-btn.expanded { background: #5aa0ff; color: #fff; font-size: 11px; }
+        .compact-btn.expanded:hover { background: #4a90ef; }
         .compact .section { padding: 5px 10px; margin-bottom: 4px; }
         .compact .wifi-section { padding: 0; }
+        /* wifi-section の中身は flip-face で描画されるので、flip-face 自体も縮める */
+        .compact .flip-card > .flip-face { padding: 5px 10px; }
         .compact .section-header { margin-bottom: 0; }
         .compact .cores-container { display: none; }
         .compact .cpu-progress { display: none; }
@@ -1467,13 +1844,14 @@ func getHTML() string {
         .net-peak-toggle { cursor:pointer; padding:1px 4px; border-radius:4px; transition:background 0.15s; }
         .net-peak-toggle:hover { background: var(--btn-bg-hover); }
         .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background: var(--net-canvas-bg); border-radius:4px; }
-        .compact .net-canvas { height:36px; }
+        /* コンパクト時はグラフも rx/tx 数値も非表示にし、CPU/メモリと同じヘッダのみのサイズに揃える */
+        .compact .net-canvas { display:none; }
         .net-legend { display:flex; justify-content:space-between; margin-top:4px; font-size:11px; font-family:'Consolas', monospace; }
         .net-leg-rx { color:#1aa86b; }
         body:not(.theme-light) .net-leg-rx { color:#7fffaa; }
         .net-leg-tx { color:#b74da6; }
         body:not(.theme-light) .net-leg-tx { color:#ffa3ff; }
-        .compact .net-legend { font-size:10px; margin-top:2px; }
+        .compact .net-legend { display:none; }
 
         /* 設定モーダル */
         .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:200; cursor:default; }
@@ -1499,7 +1877,7 @@ func getHTML() string {
             <button class="top-btn pin-btn" id="pinBtn" title="常に前面に表示">📌</button>
             <button class="top-btn settings-btn" id="settingsBtn" title="表示オプション">⚙</button>
             <button class="top-btn compact-btn" id="compactBtn" title="コンパクト表示">▬</button>
-            <button class="top-btn close-btn" id="closeBtn" title="閉じる">✕</button>
+            <button class="top-btn tray-btn" id="closeBtn" title="タスクバーに格納">_</button>
         </div>
         <div class="modal-overlay" id="settingsModal">
             <div class="modal">
@@ -1578,10 +1956,23 @@ func getHTML() string {
             return Math.round(mbps) + ' Mbps';
         }
 
+        // 設定は Go 側の config.json に永続化される。フロント側は API 経由で読み書きする。
+        // ここで保持する settings オブジェクトは UI 反映のためのキャッシュ。
+        const settings = {
+            theme: 'system',
+            transparent: false,
+            coreBase: 0,
+            trayDisplay: 'icon',
+            topmost: false,
+            viewMode: 0,
+            netUnit: 'byte'
+        };
+
         // Close button (✕): タスクトレイに格納する
         document.getElementById('closeBtn').addEventListener('click', function(e) {
             e.stopPropagation();
-            fetch('/api/entertray').catch(()=>{});
+            // トレイ格納前に現在の位置・サイズを保存
+            fetch('/api/persistwindow').finally(() => fetch('/api/entertray').catch(()=>{}));
         });
 
         // Pin button (always-on-top)
@@ -1591,11 +1982,24 @@ func getHTML() string {
                 const res = await fetch('/api/toggletopmost');
                 const data = await res.json();
                 this.classList.toggle('active', data.topmost);
+                settings.topmost = !!data.topmost;
             } catch(err) {}
         });
 
         // Normal ⇔ Compact のトグル
         let currentViewMode = 0;
+        function applyCompactBtn(){
+            const btn = document.getElementById('compactBtn');
+            if (currentViewMode === 1) {
+                btn.textContent = '▢';
+                btn.title = 'フル表示';
+                btn.classList.add('expanded');
+            } else {
+                btn.textContent = '▬';
+                btn.title = 'コンパクト表示';
+                btn.classList.remove('expanded');
+            }
+        }
         document.getElementById('compactBtn').addEventListener('click', function(e) {
             e.stopPropagation();
             if (currentViewMode === 0) {
@@ -1609,6 +2013,10 @@ func getHTML() string {
                 fetch('/api/setviewmode?mode=0').catch(()=>{});
                 setTimeout(adjustWindowHeight, 50);
             }
+            settings.viewMode = currentViewMode;
+            applyCompactBtn();
+            // 高さ確定後にウィンドウ位置・サイズを config に永続化
+            setTimeout(() => fetch('/api/persistwindow').catch(()=>{}), 300);
         });
 
         // ネットワーク部 peak 表示: クリックで B/s ⇔ bps トグル
@@ -1616,7 +2024,8 @@ func getHTML() string {
         document.getElementById('net-peak').addEventListener('click', function(e){
             e.stopPropagation();
             netUnit = (netUnit === 'byte') ? 'bit' : 'byte';
-            try { localStorage.setItem('netUnit', netUnit); } catch(err) {}
+            settings.netUnit = netUnit;
+            fetch('/api/setoption?key=netUnit&value=' + netUnit).catch(()=>{});
             refreshNetLegend();
             drawNetGraph();
         });
@@ -1724,12 +2133,17 @@ func getHTML() string {
         });
 
         document.addEventListener('mouseup', function() {
+            const wasDragging = isDragging;
+            const wasResizing = isResizing;
             if (isResizing) {
                 isResizing = false;
                 dragArea.classList.remove('resizing');
             }
             isDragging = false;
             dragArea.classList.remove('dragging');
+            if (wasDragging || wasResizing) {
+                fetch('/api/persistwindow').catch(()=>{});
+            }
         });
 
         function adjustWindowHeight() {
@@ -1748,9 +2162,8 @@ func getHTML() string {
         const netHistory = [];
         const netMaxSamples = 60;
         // 単位モード: 'byte' は B/s・KB/s・MB/s (1024 基準)、'bit' は bps・Kbps・Mbps (1000 基準)
-        let netUnit = (function(){
-            try { return localStorage.getItem('netUnit') || 'byte'; } catch(e) { return 'byte'; }
-        })();
+        // 初期値は 'byte'。/api/settings 取得後に Go 側の値で上書きされる。
+        let netUnit = 'byte';
         function formatRate(bytesPerSec){
             // 単位は固定: byte モードは常に KB/s、bit モードは常に Mbps。
             // 値域に応じて小数桁数だけ調整する。
@@ -1773,6 +2186,15 @@ func getHTML() string {
             document.getElementById('net-tx-val').textContent = formatRate(last.tx);
         }
         function drawNetGraph(){
+            // ピーク値の計算と net-peak 表示はキャンバス非表示 (コンパクト時) でも行う
+            let peak = 0;
+            for (const p of netHistory){
+                if (p.rx > peak) peak = p.rx;
+                if (p.tx > peak) peak = p.tx;
+            }
+            if (netHistory.length >= 2) {
+                document.getElementById('net-peak').textContent = formatRate(peak);
+            }
             const canvas = document.getElementById('netCanvas');
             if (!canvas) return;
             // 内部解像度を CSS サイズに合わせる（DPI スケール込み）
@@ -1793,11 +2215,7 @@ func getHTML() string {
                 ctx.fillText('計測中...', 6, cssH/2);
                 return;
             }
-            let peak = 0;
-            for (const p of netHistory){
-                if (p.rx > peak) peak = p.rx;
-                if (p.tx > peak) peak = p.tx;
-            }
+            // peak は関数冒頭で計算済み。キャンバスへの描画スケール用に再利用する。
             // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
             const scale = Math.max(peak, 8*1024);
             const step = cssW / (netMaxSamples - 1);
@@ -1826,23 +2244,9 @@ func getHTML() string {
             }
             drawSeries(p => p.rx, 'rgba(127,255,170,0.25)', '#7fffaa');
             drawSeries(p => p.tx, 'rgba(255,163,255,0.22)', '#ffa3ff');
-            document.getElementById('net-peak').textContent = formatRate(peak);
         }
 
-        // ============ 設定モーダル ============
-        // 永続化はフロント側 localStorage。サーバー側の状態 (透過/トレイ表示モード) は
-        // 毎回 API で同期する。テーマ/コア番号はブラウザ完結。
-        const settings = {
-            theme: 'system',    // dark | light | system
-            transparent: false,
-            coreBase: 0,        // 0 | 1
-            trayDisplay: 'icon' // icon | cpu
-        };
-        try {
-            const raw = localStorage.getItem('widgetSettings');
-            if (raw) Object.assign(settings, JSON.parse(raw));
-        } catch(e) {}
-
+        // ============ 設定モーダルと初期化 ============
         const systemThemeMql = window.matchMedia('(prefers-color-scheme: light)');
         function applyTheme(){
             let effective = settings.theme;
@@ -1858,10 +2262,6 @@ func getHTML() string {
             });
         }
 
-        function saveSettings(){
-            try { localStorage.setItem('widgetSettings', JSON.stringify(settings)); } catch(e) {}
-        }
-
         function refreshModalUI(){
             document.querySelectorAll('.modal-options').forEach(group => {
                 const key = group.dataset.group;
@@ -1872,6 +2272,7 @@ func getHTML() string {
             document.getElementById('optTransparent').checked = !!settings.transparent;
         }
 
+        // モーダル選択肢: Go 側 API に保存してから UI 反映
         document.querySelectorAll('.modal-options').forEach(group => {
             const key = group.dataset.group;
             group.addEventListener('click', (e) => {
@@ -1880,18 +2281,22 @@ func getHTML() string {
                 e.stopPropagation();
                 const val = btn.dataset.value;
                 settings[key] = (key === 'coreBase') ? Number(val) : val;
-                saveSettings();
                 refreshModalUI();
-                if (key === 'theme') applyTheme();
-                else if (key === 'coreBase') applyCoreBase();
-                else if (key === 'trayDisplay') fetch('/api/traydisplay?mode=' + val).catch(()=>{});
+                if (key === 'theme') {
+                    applyTheme();
+                    fetch('/api/setoption?key=theme&value=' + val).catch(()=>{});
+                } else if (key === 'coreBase') {
+                    applyCoreBase();
+                    fetch('/api/setoption?key=coreBase&value=' + val).catch(()=>{});
+                } else if (key === 'trayDisplay') {
+                    fetch('/api/traydisplay?mode=' + val).catch(()=>{});
+                }
             });
         });
 
         document.getElementById('optTransparent').addEventListener('change', function(e){
             e.stopPropagation();
             settings.transparent = this.checked;
-            saveSettings();
             fetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
         });
 
@@ -1911,14 +2316,28 @@ func getHTML() string {
         // モーダル内の mousedown がドラッグ判定に回らないよう抑止
         settingsModal.addEventListener('mousedown', (e) => e.stopPropagation());
 
-        // 起動時の状態同期: テーマ反映 → サーバー側へ透過/トレイ表示をセット
-        applyTheme();
-        fetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
-        fetch('/api/traydisplay?mode=' + settings.trayDisplay).catch(()=>{});
-        // pinBtn の初期状態をサーバーの alwaysOnTop に合わせる
-        fetch('/api/settings').then(r=>r.json()).then(s=>{
-            if (s && s.topmost) document.getElementById('pinBtn').classList.add('active');
-        }).catch(()=>{});
+        // Go 側の永続設定を起動時に取得して UI に反映する。
+        // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
+        // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
+        fetch('/api/settings').then(r => r.json()).then(s => {
+            if (!s) return;
+            if (s.theme) settings.theme = s.theme;
+            if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
+            if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
+            if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
+            if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
+            if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
+            if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
+
+            applyTheme();
+            applyCoreBase();
+            if (settings.topmost) document.getElementById('pinBtn').classList.add('active');
+            if (settings.viewMode === 1) {
+                currentViewMode = 1;
+                document.getElementById('dragArea').classList.add('compact');
+            }
+            applyCompactBtn();
+        }).catch(()=>{ applyTheme(); });
 
         async function updateData(){
             try{ const res=await fetch('/api/system'); const data=await res.json();

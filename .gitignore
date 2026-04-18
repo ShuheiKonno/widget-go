@@ -10,3 +10,6 @@ _findgo_result.txt
 _fix_location*.log
 _fix_location*.ps1
 _wifitest*.go
+
+# Build artifacts — exe は GitHub Releases で配布する
+/system-widget.exe
