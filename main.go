@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -107,6 +108,9 @@ const (
 
 	ID_TRAY_EXIT = 1001
 
+	TRAY_DISPLAY_ICON = 0
+	TRAY_DISPLAY_CPU  = 1
+
 	SPI_GETWORKAREA = 0x0030
 
 	MONITOR_DEFAULTTONEAREST = 0x00000002
@@ -136,6 +140,101 @@ const (
 )
 
 var windowHandle uintptr
+
+// Config はプロセスをまたいで永続化される設定。
+// WebView2 の localStorage は os.Exit(0) で flush されずに失われる可能性があるため、
+// Go 側で JSON ファイルに保存する。
+type Config struct {
+	Window struct {
+		X      int32 `json:"x"`
+		Y      int32 `json:"y"`
+		Width  int32 `json:"width"`
+		Height int32 `json:"height"`
+		Saved  bool  `json:"saved"`
+	} `json:"window"`
+	Topmost     bool   `json:"topmost"`
+	ViewMode    int    `json:"viewMode"`
+	Transparent bool   `json:"transparent"`
+	TrayDisplay string `json:"trayDisplay"` // "icon" | "cpu"
+	Theme       string `json:"theme"`       // "dark" | "light" | "system"
+	CoreBase    int    `json:"coreBase"`    // 0 | 1
+	NetUnit     string `json:"netUnit"`     // "byte" | "bit"
+}
+
+var (
+	configMu   sync.Mutex
+	configPath string
+	config     Config
+)
+
+func defaultConfig() Config {
+	var c Config
+	c.TrayDisplay = "icon"
+	c.Theme = "system"
+	c.CoreBase = 0
+	c.NetUnit = "byte"
+	return c
+}
+
+func loadConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	config = defaultConfig()
+	if configPath == "" {
+		return
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	// デフォルト値を上書きする形で JSON を読み込む
+	tmp := config
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return
+	}
+	config = tmp
+}
+
+func saveConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	if configPath == "" {
+		return
+	}
+	data, err := json.MarshalIndent(&config, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(configPath), 0755)
+	tmp := configPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, configPath)
+}
+
+// mutateConfig は config をロックしたうえで変更関数を適用し、ディスクに保存する。
+func mutateConfig(f func(c *Config)) {
+	configMu.Lock()
+	f(&config)
+	data, err := json.MarshalIndent(&config, "", "  ")
+	configMu.Unlock()
+	if err != nil || configPath == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(configPath), 0755)
+	tmp := configPath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	_ = os.Rename(tmp, configPath)
+}
+
+func snapshotConfig() Config {
+	configMu.Lock()
+	defer configMu.Unlock()
+	return config
+}
 
 type POINT struct {
 	X, Y int32
@@ -270,6 +369,9 @@ var (
 
 	viewModeMu sync.RWMutex
 	viewMode   int // 0=normal, 1=compact, 2=tray
+
+	trayDisplayMu   sync.RWMutex
+	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%
 )
 
 func setTransparent(enabled bool) {
@@ -333,6 +435,141 @@ func loadTrayIcon() uintptr {
 	// フォールバック 2: Windows 既定のアプリアイコン
 	icon, _, _ = procLoadIcon.Call(0, uintptr(32512)) // IDI_APPLICATION
 	return icon
+}
+
+// digitFont5x7 は 0-9 のドットフォント (幅5, 高さ7)。
+// 各要素は 1 行 5 ビット (bit4=左端, bit0=右端)。
+var digitFont5x7 = [10][7]uint8{
+	{0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
+	{0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
+	{0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F},
+	{0x0E, 0x11, 0x01, 0x06, 0x01, 0x11, 0x0E},
+	{0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02},
+	{0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
+	{0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E},
+	{0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
+	{0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E},
+	{0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
+}
+
+// drawDigits は pixels (32bpp ARGB, top-down) に数字を中央描画する。
+// 最大 2 桁。scale を自動決定し、白 α=255 で描く。
+func drawDigits(pixels []uint32, w, h int, value int) {
+	if value < 0 {
+		value = 0
+	}
+	if value > 99 {
+		value = 99
+	}
+	var digits []int
+	if value < 10 {
+		digits = []int{value}
+	} else {
+		digits = []int{value / 10, value % 10}
+	}
+
+	scale := 1
+	if h >= 22 {
+		scale = 2
+	}
+	if h >= 34 {
+		scale = 3
+	}
+
+	charW := 5 * scale
+	gap := scale
+	totalW := charW*len(digits) + gap*(len(digits)-1)
+	totalH := 7 * scale
+	xStart := (w - totalW) / 2
+	yStart := (h - totalH) / 2
+
+	const fg = uint32(0xFFFFFFFF) // 白 α=255 (プリマルチプライド済み)
+
+	for di, d := range digits {
+		baseX := xStart + di*(charW+gap)
+		for row := 0; row < 7; row++ {
+			rowBits := digitFont5x7[d][row]
+			for col := 0; col < 5; col++ {
+				if (rowBits>>(4-col))&1 == 0 {
+					continue
+				}
+				for sy := 0; sy < scale; sy++ {
+					for sx := 0; sx < scale; sx++ {
+						x := baseX + col*scale + sx
+						y := yStart + row*scale + sy
+						if x >= 0 && x < w && y >= 0 && y < h {
+							pixels[y*w+x] = fg
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// buildCpuIcon は CPU 使用率 (0-100) を示すトレイアイコンを GDI で生成する。
+// 背景は半透明の角丸ダーク矩形、文字は白。
+// 返値が 0 でない場合、呼び出し側は不要になったら procDestroyIcon.Call(hIcon) で解放する必要がある。
+func buildCpuIcon(percent int) uintptr {
+	cx, _, _ := procGetSystemMetrics.Call(SM_CXSMICON)
+	cy, _, _ := procGetSystemMetrics.Call(SM_CYSMICON)
+	if cx == 0 {
+		cx = 16
+	}
+	if cy == 0 {
+		cy = 16
+	}
+	w := int32(cx)
+	h := int32(cy)
+
+	hdc, _, _ := procCreateCompatibleDC.Call(0)
+	if hdc == 0 {
+		return 0
+	}
+	defer procDeleteDC.Call(hdc)
+
+	var bmi BITMAPINFOHEADER
+	bmi.BiSize = uint32(unsafe.Sizeof(bmi))
+	bmi.BiWidth = w
+	bmi.BiHeight = -h // top-down
+	bmi.BiPlanes = 1
+	bmi.BiBitCount = 32
+	bmi.BiCompression = BI_RGB
+
+	var bitsPtr unsafe.Pointer
+	hBmColor, _, _ := procCreateDIBSection.Call(hdc, uintptr(unsafe.Pointer(&bmi)), DIB_RGB_COLORS, uintptr(unsafe.Pointer(&bitsPtr)), 0, 0)
+	if hBmColor == 0 {
+		return 0
+	}
+	defer procDeleteObject.Call(hBmColor)
+
+	pixels := unsafe.Slice((*uint32)(bitsPtr), int(w)*int(h))
+
+	// 背景: 半透明ダーク (プリマルチプライド ARGB)
+	// α=200, RGB=(20,22,40) → premul RGB=(15,17,31)
+	const bgColor = uint32(200)<<24 | uint32(15)<<16 | uint32(17)<<8 | uint32(31)
+	for i := range pixels {
+		pixels[i] = bgColor
+	}
+	// 角落とし (1px)
+	iw := int(w)
+	ih := int(h)
+	pixels[0] = 0
+	pixels[iw-1] = 0
+	pixels[(ih-1)*iw] = 0
+	pixels[ih*iw-1] = 0
+
+	drawDigits(pixels, iw, ih, percent)
+
+	hBmMask, _, _ := procCreateBitmap.Call(uintptr(w), uintptr(h), 1, 1, 0)
+	if hBmMask == 0 {
+		return 0
+	}
+	defer procDeleteObject.Call(hBmMask)
+
+	ii := ICONINFO{FIcon: 1, HbmMask: hBmMask, HbmColor: hBmColor}
+	hIcon, _, _ := procCreateIconIndirect.Call(uintptr(unsafe.Pointer(&ii)))
+	return hIcon
 }
 
 // formatLinkSpeedShort は bit/s を短縮文字列化する。例: 1000000000 -> "1G", 2500000000 -> "2.5G"。
@@ -495,6 +732,26 @@ func enterTray() {
 	trayIcon = icon
 	trayMu.Unlock()
 
+	// トレイが CPU% モードなら、初期アイコンとして現在値で合成したアイコンを使う。
+	// 初期合成で失敗したら fallback で icon.ico 側を表示する。
+	trayDisplayMu.RLock()
+	tm := trayDisplayMode
+	trayDisplayMu.RUnlock()
+	var initialCpuIcon uintptr
+	startIcon := icon
+	if tm == TRAY_DISPLAY_CPU {
+		cacheMu.RLock()
+		p := 0
+		if cachedCPU != nil {
+			p = int(math.Round(cachedCPU.Overall))
+		}
+		cacheMu.RUnlock()
+		if h := buildCpuIcon(p); h != 0 {
+			initialCpuIcon = h
+			startIcon = h
+		}
+	}
+
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
@@ -523,12 +780,15 @@ func enterTray() {
 		nid.UID = 1
 		nid.UFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
 		nid.UCallbackMessage = WM_TRAYICON
-		nid.HIcon = trayIcon
+		nid.HIcon = startIcon
 		setTipText(&nid, formatTrayTooltip())
 		procShellNotifyIcon.Call(NIM_ADD, uintptr(unsafe.Pointer(&nid)))
 
-		// ツールチップ定期更新
+		// トレイ定期更新: ツールチップと (CPU% モード時の) アイコンを差し替える。
+		// currentCpuIcon は手動生成した HICON 所有権を追跡する。
+		// LR_SHARED な icon.ico は絶対に DestroyIcon しない。
 		stopCh := trayStop
+		currentCpuIcon := initialCpuIcon
 		go func() {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
@@ -537,24 +797,65 @@ func enterTray() {
 			for {
 				select {
 				case <-stopCh:
+					if currentCpuIcon != 0 {
+						procDestroyIcon.Call(currentCpuIcon)
+						currentCpuIcon = 0
+					}
 					return
 				case <-ticker.C:
 					trayMu.Lock()
 					if !trayActive {
 						trayMu.Unlock()
+						if currentCpuIcon != 0 {
+							procDestroyIcon.Call(currentCpuIcon)
+							currentCpuIcon = 0
+						}
 						return
 					}
 					h := trayHwnd
+					staticIcon := trayIcon
 					trayMu.Unlock()
 
-					// アイコンは固定 (icon.ico) なので更新不要。ツールチップだけ更新する。
+					trayDisplayMu.RLock()
+					mode := trayDisplayMode
+					trayDisplayMu.RUnlock()
+
 					var upd NOTIFYICONDATAW
 					upd.CbSize = uint32(unsafe.Sizeof(upd))
 					upd.HWnd = h
 					upd.UID = 1
 					upd.UFlags = NIF_TIP
 					setTipText(&upd, formatTrayTooltip())
+
+					if mode == TRAY_DISPLAY_CPU {
+						cacheMu.RLock()
+						p := 0
+						if cachedCPU != nil {
+							p = int(math.Round(cachedCPU.Overall))
+						}
+						cacheMu.RUnlock()
+						if newIcon := buildCpuIcon(p); newIcon != 0 {
+							upd.UFlags |= NIF_ICON
+							upd.HIcon = newIcon
+							procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+							if currentCpuIcon != 0 {
+								procDestroyIcon.Call(currentCpuIcon)
+							}
+							currentCpuIcon = newIcon
+							continue
+						}
+					}
+
+					// アイコン表示モード (または CPU 合成失敗時) — LR_SHARED のアイコンに戻す
+					if currentCpuIcon != 0 {
+						upd.UFlags |= NIF_ICON
+						upd.HIcon = staticIcon
+					}
 					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+					if currentCpuIcon != 0 && (upd.UFlags&NIF_ICON) != 0 {
+						procDestroyIcon.Call(currentCpuIcon)
+						currentCpuIcon = 0
+					}
 				}
 			}
 		}()
@@ -894,6 +1195,7 @@ func startServer(port int) {
 		viewModeMu.Lock()
 		viewMode = m
 		viewModeMu.Unlock()
+		mutateConfig(func(c *Config) { c.ViewMode = m })
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -934,26 +1236,222 @@ func startServer(port int) {
 		current := alwaysOnTop
 		alwaysOnTopMu.Unlock()
 		setTopmost(current)
+		mutateConfig(func(c *Config) { c.Topmost = current })
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"topmost": current})
 	})
 
+	// 常に前面表示を明示設定する (enable=true|false)
+	mux.HandleFunc("/api/topmost", func(w http.ResponseWriter, r *http.Request) {
+		v := r.URL.Query().Get("enable")
+		enable := v == "true" || v == "1"
+		alwaysOnTopMu.Lock()
+		alwaysOnTop = enable
+		alwaysOnTopMu.Unlock()
+		setTopmost(enable)
+		mutateConfig(func(c *Config) { c.Topmost = enable })
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"topmost": enable})
+	})
+
+	// ウィンドウ位置とサイズ (論理ピクセル) をまとめて返す
+	mux.HandleFunc("/api/windowgeometry", func(w http.ResponseWriter, r *http.Request) {
+		var x, y int32
+		if windowHandle != 0 {
+			var rect RECT
+			procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+			scale := getWindowDpiScale()
+			if scale <= 0 {
+				scale = 1.0
+			}
+			x = int32(math.Round(float64(rect.Left) / scale))
+			y = int32(math.Round(float64(rect.Top) / scale))
+		}
+		wid, hei := getWindowSize()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int32{
+			"x":      x,
+			"y":      y,
+			"width":  wid,
+			"height": hei,
+		})
+	})
+
+	// ウィンドウ位置とサイズを明示的に設定する (論理ピクセル)
+	mux.HandleFunc("/api/setwindow", func(w http.ResponseWriter, r *http.Request) {
+		if windowHandle == 0 {
+			http.Error(w, "window not ready", http.StatusServiceUnavailable)
+			return
+		}
+		q := r.URL.Query()
+		xVal, xErr := strconv.Atoi(q.Get("x"))
+		yVal, yErr := strconv.Atoi(q.Get("y"))
+		wVal, _ := strconv.Atoi(q.Get("w"))
+		hVal, _ := strconv.Atoi(q.Get("h"))
+
+		if wVal > 0 && hVal > 0 {
+			resizeWindow(int32(wVal), int32(hVal))
+		}
+		if xErr == nil && yErr == nil {
+			scale := getWindowDpiScale()
+			if scale <= 0 {
+				scale = 1.0
+			}
+			// 画面外に完全に出ないよう、アクティブモニタの作業領域でクランプする
+			hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+			if hmon != 0 {
+				var mi MONITORINFO
+				mi.CbSize = uint32(unsafe.Sizeof(mi))
+				if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+					var rect RECT
+					procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+					ww := rect.Right - rect.Left
+					hh := rect.Bottom - rect.Top
+					physX := int32(math.Round(float64(xVal) * scale))
+					physY := int32(math.Round(float64(yVal) * scale))
+					minX := mi.RcWork.Left
+					minY := mi.RcWork.Top
+					maxX := mi.RcWork.Right - ww
+					maxY := mi.RcWork.Bottom - hh
+					if physX < minX {
+						physX = minX
+					}
+					if physX > maxX {
+						physX = maxX
+					}
+					if physY < minY {
+						physY = minY
+					}
+					if physY > maxY {
+						physY = maxY
+					}
+					moveWindow(physX, physY)
+					persistCurrentWindowGeometry()
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+			}
+			// モニタ情報が取れない場合はそのまま適用
+			physX := int32(math.Round(float64(xVal) * scale))
+			physY := int32(math.Round(float64(yVal) * scale))
+			moveWindow(physX, physY)
+		}
+		persistCurrentWindowGeometry()
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// 透過モードトグル (旧 UI 互換)。現行 UI は /api/transparent?enable= を使う。
 	mux.HandleFunc("/api/toggletransparent", func(w http.ResponseWriter, r *http.Request) {
 		transparentMu.Lock()
 		transparent = !transparent
 		current := transparent
 		transparentMu.Unlock()
 		setTransparent(current)
+		mutateConfig(func(c *Config) { c.Transparent = current })
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{"transparent": current})
 	})
 
+	// 透過モードを明示的に設定する (enable=true|false)
+	mux.HandleFunc("/api/transparent", func(w http.ResponseWriter, r *http.Request) {
+		v := r.URL.Query().Get("enable")
+		enable := v == "true" || v == "1"
+		transparentMu.Lock()
+		transparent = enable
+		transparentMu.Unlock()
+		setTransparent(enable)
+		mutateConfig(func(c *Config) { c.Transparent = enable })
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"transparent": enable})
+	})
+
+	// トレイ表示モード (icon|cpu) を設定する
+	mux.HandleFunc("/api/traydisplay", func(w http.ResponseWriter, r *http.Request) {
+		modeStr := r.URL.Query().Get("mode")
+		var m int
+		var label string
+		switch modeStr {
+		case "icon", "0":
+			m = TRAY_DISPLAY_ICON
+			label = "icon"
+		case "cpu", "1":
+			m = TRAY_DISPLAY_CPU
+			label = "cpu"
+		default:
+			http.Error(w, "invalid mode", http.StatusBadRequest)
+			return
+		}
+		trayDisplayMu.Lock()
+		trayDisplayMode = m
+		trayDisplayMu.Unlock()
+		mutateConfig(func(c *Config) { c.TrayDisplay = label })
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"trayDisplay": m})
+	})
+
+	// theme と coreBase など Go 側の挙動に影響しないフロント向け設定を保存する
+	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
+		key := r.URL.Query().Get("key")
+		val := r.URL.Query().Get("value")
+		switch key {
+		case "theme":
+			if val != "dark" && val != "light" && val != "system" {
+				http.Error(w, "invalid theme", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.Theme = val })
+		case "coreBase":
+			n, err := strconv.Atoi(val)
+			if err != nil || (n != 0 && n != 1) {
+				http.Error(w, "invalid coreBase", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.CoreBase = n })
+		case "netUnit":
+			if val != "byte" && val != "bit" {
+				http.Error(w, "invalid netUnit", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.NetUnit = val })
+		default:
+			http.Error(w, "unknown key", http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// 現在のサーバー側設定を一括取得する (フロント側の初期化で使用)
+	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {
+		c := snapshotConfig()
+		viewModeMu.RLock()
+		vm := viewMode
+		viewModeMu.RUnlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"transparent": c.Transparent,
+			"topmost":     c.Topmost,
+			"trayDisplay": c.TrayDisplay,
+			"theme":       c.Theme,
+			"coreBase":    c.CoreBase,
+			"netUnit":     c.NetUnit,
+			"viewMode":    vm,
+		})
+	})
+
+	// リサイズ実行。mousemove 中に連続して呼ばれるので、ここでは永続化しない。
+	// 確定タイミング (mouseup) で /api/persistwindow が呼ばれる。
 	mux.HandleFunc("/api/resize", func(w http.ResponseWriter, r *http.Request) {
 		wStr := r.URL.Query().Get("w")
 		hStr := r.URL.Query().Get("h")
 		wVal, _ := strconv.Atoi(wStr)
 		h, _ := strconv.Atoi(hStr)
 		resizeWindow(int32(wVal), int32(h))
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// フロント側のドラッグ/リサイズ確定時に現在位置を config に記録する
+	mux.HandleFunc("/api/persistwindow", func(w http.ResponseWriter, r *http.Request) {
+		persistCurrentWindowGeometry()
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -968,6 +1466,77 @@ func getAvailablePort() int {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	return port
+}
+
+// restoreWindowGeometry は永続化された位置・サイズを現在のウィンドウに適用する。
+// 保存値が無い場合や windowHandle 未取得時は false を返し、呼び出し元はフォールバックを選ぶ。
+// 論理ピクセル値で保存されているので DPI スケール補正を行う。
+func restoreWindowGeometry() bool {
+	if windowHandle == 0 {
+		return false
+	}
+	c := snapshotConfig()
+	if !c.Window.Saved || c.Window.Width <= 0 || c.Window.Height <= 0 {
+		return false
+	}
+	resizeWindow(c.Window.Width, c.Window.Height)
+
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	physX := int32(math.Round(float64(c.Window.X) * scale))
+	physY := int32(math.Round(float64(c.Window.Y) * scale))
+
+	// 画面外に出ないように作業領域でクランプする
+	hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+	if hmon != 0 {
+		var mi MONITORINFO
+		mi.CbSize = uint32(unsafe.Sizeof(mi))
+		if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+			var rect RECT
+			procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+			ww := rect.Right - rect.Left
+			hh := rect.Bottom - rect.Top
+			if physX < mi.RcWork.Left {
+				physX = mi.RcWork.Left
+			}
+			if physX > mi.RcWork.Right-ww {
+				physX = mi.RcWork.Right - ww
+			}
+			if physY < mi.RcWork.Top {
+				physY = mi.RcWork.Top
+			}
+			if physY > mi.RcWork.Bottom-hh {
+				physY = mi.RcWork.Bottom - hh
+			}
+		}
+	}
+	moveWindow(physX, physY)
+	return true
+}
+
+// persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
+func persistCurrentWindowGeometry() {
+	if windowHandle == 0 {
+		return
+	}
+	var rect RECT
+	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	logicalX := int32(math.Round(float64(rect.Left) / scale))
+	logicalY := int32(math.Round(float64(rect.Top) / scale))
+	wid, hei := getWindowSize()
+	mutateConfig(func(c *Config) {
+		c.Window.X = logicalX
+		c.Window.Y = logicalY
+		c.Window.Width = wid
+		c.Window.Height = hei
+		c.Window.Saved = true
+	})
 }
 
 // 作業領域 (タスクバーを除いた画面領域) の右下にウィンドウを移動する。
@@ -994,8 +1563,15 @@ func moveToBottomRight() {
 	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&winRect)))
 	w := winRect.Right - winRect.Left
 	h := winRect.Bottom - winRect.Top
-	newX := mi.RcWork.Right - w
-	newY := mi.RcWork.Bottom - h
+	// 画面端にぴったり貼るとタスクバーや他アプリとの境界が見えにくいので、
+	// DPI に比例した 8px 相当のマージンを取る。
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	margin := int32(math.Round(8 * scale))
+	newX := mi.RcWork.Right - w - margin
+	newY := mi.RcWork.Bottom - h - margin
 	procSetWindowPos.Call(windowHandle, 0, uintptr(newX), uintptr(newY), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
 }
 
@@ -1022,6 +1598,15 @@ func setupMainWindow(title string) bool {
 	newStyle := style &^ (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU)
 	procSetWindowLong.Call(hwnd, uintptr(gwlStyle), newStyle)
 	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED|SWP_NOMOVE|SWP_NOZORDER|SWP_NOSIZE)
+
+	// ウィンドウ確保前に /api/transparent が届いていた場合、状態だけ保持されて
+	// 実適用がされていない。ハンドル取得後にもう一度反映する。
+	transparentMu.Lock()
+	tr := transparent
+	transparentMu.Unlock()
+	if tr {
+		setTransparent(true)
+	}
 	return true
 }
 
@@ -1049,6 +1634,41 @@ func main() {
 		return
 	}
 
+	// WebView2 のユーザーデータを固定場所に保存する。
+	// 既定の挙動 (%APPDATA%\{exe 名}) に依存すると、ビルド名変更やカレントディレクトリ違いで
+	// localStorage が別プロファイル扱いになる。明示指定で設定の記憶を確実にする。
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData == "" {
+		localAppData = os.Getenv("APPDATA")
+	}
+	appRoot := filepath.Join(localAppData, "widget-go")
+	dataPath := filepath.Join(appRoot, "WebView2")
+	_ = os.MkdirAll(dataPath, 0755)
+
+	// 設定ファイルを読み込み、永続化された設定を適用する。
+	// 以降の状態変更は即ファイルに書き込むので、os.Exit で強制終了されても記憶が残る。
+	configPath = filepath.Join(appRoot, "config.json")
+	loadConfig()
+	c := snapshotConfig()
+	transparentMu.Lock()
+	transparent = c.Transparent
+	transparentMu.Unlock()
+	alwaysOnTopMu.Lock()
+	alwaysOnTop = c.Topmost
+	alwaysOnTopMu.Unlock()
+	viewModeMu.Lock()
+	if c.ViewMode == 0 || c.ViewMode == 1 {
+		viewMode = c.ViewMode
+	}
+	viewModeMu.Unlock()
+	trayDisplayMu.Lock()
+	if c.TrayDisplay == "cpu" {
+		trayDisplayMode = TRAY_DISPLAY_CPU
+	} else {
+		trayDisplayMode = TRAY_DISPLAY_ICON
+	}
+	trayDisplayMu.Unlock()
+
 	port := getAvailablePort()
 	startCollector()
 	go startServer(port)
@@ -1056,6 +1676,7 @@ func main() {
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
 		AutoFocus: true,
+		DataPath:  dataPath,
 		WindowOptions: webview2.WindowOptions{
 			Title:  windowTitle,
 			Width:  windowWidth,
@@ -1076,7 +1697,24 @@ func main() {
 		for time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 			if setupMainWindow(windowTitle) {
-				moveToBottomRight()
+				restored := restoreWindowGeometry()
+				if !restored {
+					moveToBottomRight()
+				}
+				// go-webview2 の SetSize(HintFixed) が後段で位置をリセットすることがあるため、
+				// 初期化が落ち着いたあとに再適用する。
+				time.AfterFunc(500*time.Millisecond, func() {
+					if !restoreWindowGeometry() {
+						moveToBottomRight()
+					}
+				})
+				// 常に前面表示の復元
+				alwaysOnTopMu.Lock()
+				top := alwaysOnTop
+				alwaysOnTopMu.Unlock()
+				if top {
+					setTopmost(true)
+				}
 				return
 			}
 		}
@@ -1096,25 +1734,69 @@ func getHTML() string {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>システムモニター</title>
     <style>
+        :root {
+            --bg-grad: linear-gradient(135deg, #3b3b6d 0%, #2e4a7a 100%);
+            --container-bg: rgba(60,60,95,0.96);
+            --text-color: #fff;
+            --muted-color: #c5c5e0;
+            --section-bg: rgba(255,255,255,0.09);
+            --section-border: rgba(255,255,255,0.16);
+            --section-title: #e8e8ff;
+            --section-value: #7bffe0;
+            --bar-track: rgba(255,255,255,0.18);
+            --core-track: rgba(255,255,255,0.16);
+            --net-canvas-bg: rgba(0,0,0,0.2);
+            --btn-bg: rgba(255,255,255,0.2);
+            --btn-bg-hover: rgba(255,255,255,0.35);
+            --btn-color: #ccc;
+            --modal-bg: rgba(40,40,60,0.98);
+            --modal-border: rgba(255,255,255,0.18);
+            --input-bg: rgba(255,255,255,0.08);
+            --input-border: rgba(255,255,255,0.22);
+        }
+        body.theme-light {
+            --bg-grad: linear-gradient(135deg, #e6e9f5 0%, #cdd6ec 100%);
+            --container-bg: rgba(245,246,252,0.96);
+            --text-color: #24263a;
+            --muted-color: #606078;
+            --section-bg: rgba(0,0,0,0.04);
+            --section-border: rgba(0,0,0,0.1);
+            --section-title: #3b3b5a;
+            --section-value: #0a7f68;
+            --bar-track: rgba(0,0,0,0.1);
+            --core-track: rgba(0,0,0,0.08);
+            --net-canvas-bg: rgba(0,0,0,0.06);
+            --btn-bg: rgba(0,0,0,0.08);
+            --btn-bg-hover: rgba(0,0,0,0.16);
+            --btn-color: #444;
+            --modal-bg: rgba(250,250,255,0.99);
+            --modal-border: rgba(0,0,0,0.1);
+            --input-bg: rgba(0,0,0,0.04);
+            --input-border: rgba(0,0,0,0.15);
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; }
-        body { font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; background: linear-gradient(135deg, #3b3b6d 0%, #2e4a7a 100%); color: #fff; font-size: 13px; user-select: none; }
-        .container { width: 100%; height: 100%; background: rgba(60,60,95,0.96); padding: 30px 10px 10px 10px; position: relative; cursor: grab; }
+        body { font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; background: var(--bg-grad); color: var(--text-color); font-size: 13px; user-select: none; }
+        .container { width: 100%; height: 100%; background: var(--container-bg); padding: 30px 10px 10px 10px; position: relative; cursor: grab; }
         .container.dragging { cursor: grabbing; }
         .top-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
         .top-btn { width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: all 0.2s; }
-        .close-btn { background: #ff5f57; color: transparent; }
-        .close-btn:hover { background: #ff3b30; color: rgba(0,0,0,0.6); }
-        .pin-btn { background: rgba(255,255,255,0.2); color: #aaa; font-size: 9px; }
-        .pin-btn:hover { background: rgba(255,255,255,0.35); }
+        .tray-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 14px; line-height: 1; padding: 0 0 5px 0; font-weight: 700; }
+        .tray-btn:hover { background: var(--btn-bg-hover); }
+        .pin-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 9px; }
+        .pin-btn:hover { background: var(--btn-bg-hover); }
         .pin-btn.active { background: #4CAF50; color: #fff; }
-        .opacity-btn { background: rgba(255,255,255,0.2); color: #ccc; font-size: 10px; line-height: 1; }
-        .opacity-btn:hover { background: rgba(255,255,255,0.35); }
-        .opacity-btn.active { background: #5aa0ff; color: #fff; }
-        .compact-btn { background: rgba(255,255,255,0.2); color: #ccc; font-size: 10px; line-height: 1; }
-        .compact-btn:hover { background: rgba(255,255,255,0.35); }
+        .settings-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
+        .settings-btn:hover { background: var(--btn-bg-hover); }
+        .compact-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
+        .compact-btn:hover { background: var(--btn-bg-hover); }
+        /* コンパクト状態時はフル表示に戻す意図が伝わるよう強調色にする */
+        .compact-btn.expanded { background: #5aa0ff; color: #fff; font-size: 11px; }
+        .compact-btn.expanded:hover { background: #4a90ef; }
         .compact .section { padding: 5px 10px; margin-bottom: 4px; }
         .compact .wifi-section { padding: 0; }
+        /* wifi-section の中身は flip-face で描画されるので、flip-face 自体も縮める */
+        .compact .flip-card > .flip-face { padding: 5px 10px; }
         .compact .section-header { margin-bottom: 0; }
         .compact .cores-container { display: none; }
         .compact .cpu-progress { display: none; }
@@ -1122,56 +1804,111 @@ func getHTML() string {
         .compact .memory-details { display: none; }
         .compact .wifi-info { display: none; }
         .compact .wifi-compact-value { display: inline; }
-        .section { background: rgba(255,255,255,0.09); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,0.16); }
+        .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
         .section:last-child { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
         .section-icon { font-size: 14px; margin-right: 6px; }
-        .section-title { font-size: 12px; font-weight: 600; flex-grow: 1; color: #e8e8ff; }
-        .section-value { color: #7bffe0; font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; }
-        .progress-bar { height: 5px; background: rgba(255,255,255,0.18); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+        .section-title { font-size: 12px; font-weight: 600; flex-grow: 1; color: var(--section-title); }
+        .section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; }
+        .progress-bar { height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
         .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
         .cpu-fill { background: linear-gradient(90deg, #8a9cff, #b07cff); }
         .memory-fill { background: linear-gradient(90deg, #ffa3ff, #ff7a8a); }
         .cores-container { display: grid; grid-template-columns: repeat(4,1fr); gap: 3px; margin-top: 5px; }
         .core-item { text-align: center; }
-        .core-label { color:#c5c5e0; font-size:8px; display:block; margin-bottom:2px; }
-        .core-bar-container { height:24px; background:rgba(255,255,255,0.16); border-radius:3px; position:relative; overflow:hidden; }
+        .core-label { color: var(--muted-color); font-size:8px; display:block; margin-bottom:2px; }
+        .core-bar-container { height:24px; background: var(--core-track); border-radius:3px; position:relative; overflow:hidden; }
         .core-bar { position:absolute; bottom:0; width:100%; background:linear-gradient(180deg,#8a9cff,#b07cff); border-radius:3px; transition:height 0.3s ease; }
         .core-value { display:block; text-align:center; color:#fff; font-size:9px; font-weight:600; line-height:24px; height:24px; margin-top:-24px; position:relative; text-shadow:0 1px 2px rgba(0,0,0,0.6); pointer-events:none; }
-        .memory-details { text-align:right; font-size:11px; color:#c5c5e0; font-family:'Consolas', monospace; }
-        .memory-details .used { color:#ffa3ff; font-weight:600; }
+        body.theme-light .core-value { color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.35); }
+        .memory-details { text-align:right; font-size:11px; color: var(--muted-color); font-family:'Consolas', monospace; }
+        .memory-details .used { color:#e85ad0; font-weight:600; }
+        body:not(.theme-light) .memory-details .used { color:#ffa3ff; }
         .wifi-info { display:flex; flex-direction:column; gap:4px; }
         .wifi-row { display:flex; justify-content:space-between; align-items:center; }
-        .wifi-label { color:#c5c5e0; font-size:11px; }
-        .wifi-value { color:#fff; font-size:11px; font-weight:600; font-family:'Consolas', monospace; }
-        .wifi-connected { color:#7fffaa; }
-        .wifi-disconnected { color:#ff8a8a; }
+        .wifi-label { color: var(--muted-color); font-size:11px; }
+        .wifi-value { color: var(--text-color); font-size:11px; font-weight:600; font-family:'Consolas', monospace; }
+        .wifi-connected { color:#1aa86b; }
+        body:not(.theme-light) .wifi-connected { color:#7fffaa; }
+        .wifi-disconnected { color:#d33; }
+        body:not(.theme-light) .wifi-disconnected { color:#ff8a8a; }
         .wifi-compact-value { display:none; }
         .wifi-section { background:transparent; border:none; padding:0; perspective:800px; }
         .flip-card { display:grid; transform-style:preserve-3d; transition:transform 0.55s; }
-        .flip-card > .flip-face { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; background:rgba(255,255,255,0.09); border:1px solid rgba(255,255,255,0.16); border-radius:8px; padding:8px 10px; cursor:pointer; }
+        .flip-card > .flip-face { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; background: var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:8px 10px; cursor:pointer; }
         .flip-card > .flip-back { transform:rotateY(180deg); display:flex; flex-direction:column; }
         .wifi-section.flipped .flip-card { transform:rotateY(180deg); }
         .wifi-section.ethernet-mode .wifi-wireless-only { display:none; }
         .wifi-ethernet-only { display:none; }
         .wifi-section.ethernet-mode .wifi-ethernet-only { display:flex; }
         .net-peak-toggle { cursor:pointer; padding:1px 4px; border-radius:4px; transition:background 0.15s; }
-        .net-peak-toggle:hover { background:rgba(255,255,255,0.15); }
-        .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background:rgba(0,0,0,0.2); border-radius:4px; }
-        .compact .net-canvas { height:36px; }
+        .net-peak-toggle:hover { background: var(--btn-bg-hover); }
+        .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background: var(--net-canvas-bg); border-radius:4px; }
+        /* コンパクト時はグラフも rx/tx 数値も非表示にし、CPU/メモリと同じヘッダのみのサイズに揃える */
+        .compact .net-canvas { display:none; }
         .net-legend { display:flex; justify-content:space-between; margin-top:4px; font-size:11px; font-family:'Consolas', monospace; }
-        .net-leg-rx { color:#7fffaa; }
-        .net-leg-tx { color:#ffa3ff; }
-        .compact .net-legend { font-size:10px; margin-top:2px; }
+        .net-leg-rx { color:#1aa86b; }
+        body:not(.theme-light) .net-leg-rx { color:#7fffaa; }
+        .net-leg-tx { color:#b74da6; }
+        body:not(.theme-light) .net-leg-tx { color:#ffa3ff; }
+        .compact .net-legend { display:none; }
+
+        /* 設定モーダル */
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:200; cursor:default; }
+        .modal-overlay.show { display:flex; }
+        .modal { background: var(--modal-bg); border:1px solid var(--modal-border); border-radius:10px; padding:14px 14px 10px 14px; width:92%; max-width:260px; max-height:92vh; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+        .modal h2 { font-size:13px; font-weight:600; margin-bottom:10px; color: var(--section-title); display:flex; align-items:center; justify-content:space-between; }
+        .modal h2 .modal-close { background:none; border:none; color: var(--muted-color); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px; }
+        .modal h2 .modal-close:hover { color: var(--text-color); }
+        .modal-field { margin-bottom:10px; }
+        .modal-field:last-child { margin-bottom:4px; }
+        .modal-label { font-size:11px; color: var(--muted-color); display:block; margin-bottom:4px; }
+        .modal-options { display:flex; gap:4px; flex-wrap:wrap; }
+        .modal-opt { flex:1 1 auto; min-width:46px; text-align:center; padding:5px 6px; font-size:11px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; color: var(--text-color); transition:all 0.15s; }
+        .modal-opt:hover { background: var(--btn-bg-hover); }
+        .modal-opt.active { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
+        .modal-toggle { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; font-size:11px; }
+        .modal-toggle input { margin:0; cursor:pointer; }
     </style>
 </head>
 <body>
     <div class="container" id="dragArea">
         <div class="top-btns">
             <button class="top-btn pin-btn" id="pinBtn" title="常に前面に表示">📌</button>
-            <button class="top-btn opacity-btn" id="opacityBtn" title="透過">◐</button>
+            <button class="top-btn settings-btn" id="settingsBtn" title="表示オプション">⚙</button>
             <button class="top-btn compact-btn" id="compactBtn" title="コンパクト表示">▬</button>
-            <button class="top-btn close-btn" id="closeBtn" title="閉じる">✕</button>
+            <button class="top-btn tray-btn" id="closeBtn" title="タスクバーに格納">_</button>
+        </div>
+        <div class="modal-overlay" id="settingsModal">
+            <div class="modal">
+                <h2>表示オプション<button class="modal-close" id="modalCloseBtn" title="閉じる">✕</button></h2>
+                <div class="modal-field">
+                    <span class="modal-label">テーマ</span>
+                    <div class="modal-options" data-group="theme">
+                        <button class="modal-opt" data-value="dark">ダーク</button>
+                        <button class="modal-opt" data-value="light">ライト</button>
+                        <button class="modal-opt" data-value="system">システム</button>
+                    </div>
+                </div>
+                <div class="modal-field">
+                    <span class="modal-label">透過モード</span>
+                    <label class="modal-toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
+                </div>
+                <div class="modal-field">
+                    <span class="modal-label">CPU Core 番号</span>
+                    <div class="modal-options" data-group="coreBase">
+                        <button class="modal-opt" data-value="0">0 から</button>
+                        <button class="modal-opt" data-value="1">1 から</button>
+                    </div>
+                </div>
+                <div class="modal-field">
+                    <span class="modal-label">タスクバー (最小化時)</span>
+                    <div class="modal-options" data-group="trayDisplay">
+                        <button class="modal-opt" data-value="icon">アイコンのみ</button>
+                        <button class="modal-opt" data-value="cpu">CPU 使用率</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="section">
             <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span></div>
@@ -1219,10 +1956,23 @@ func getHTML() string {
             return Math.round(mbps) + ' Mbps';
         }
 
+        // 設定は Go 側の config.json に永続化される。フロント側は API 経由で読み書きする。
+        // ここで保持する settings オブジェクトは UI 反映のためのキャッシュ。
+        const settings = {
+            theme: 'system',
+            transparent: false,
+            coreBase: 0,
+            trayDisplay: 'icon',
+            topmost: false,
+            viewMode: 0,
+            netUnit: 'byte'
+        };
+
         // Close button (✕): タスクトレイに格納する
         document.getElementById('closeBtn').addEventListener('click', function(e) {
             e.stopPropagation();
-            fetch('/api/entertray').catch(()=>{});
+            // トレイ格納前に現在の位置・サイズを保存
+            fetch('/api/persistwindow').finally(() => fetch('/api/entertray').catch(()=>{}));
         });
 
         // Pin button (always-on-top)
@@ -1232,21 +1982,24 @@ func getHTML() string {
                 const res = await fetch('/api/toggletopmost');
                 const data = await res.json();
                 this.classList.toggle('active', data.topmost);
-            } catch(err) {}
-        });
-
-        // Opacity toggle button
-        document.getElementById('opacityBtn').addEventListener('click', async function(e) {
-            e.stopPropagation();
-            try {
-                const res = await fetch('/api/toggletransparent');
-                const data = await res.json();
-                this.classList.toggle('active', data.transparent);
+                settings.topmost = !!data.topmost;
             } catch(err) {}
         });
 
         // Normal ⇔ Compact のトグル
         let currentViewMode = 0;
+        function applyCompactBtn(){
+            const btn = document.getElementById('compactBtn');
+            if (currentViewMode === 1) {
+                btn.textContent = '▢';
+                btn.title = 'フル表示';
+                btn.classList.add('expanded');
+            } else {
+                btn.textContent = '▬';
+                btn.title = 'コンパクト表示';
+                btn.classList.remove('expanded');
+            }
+        }
         document.getElementById('compactBtn').addEventListener('click', function(e) {
             e.stopPropagation();
             if (currentViewMode === 0) {
@@ -1260,6 +2013,10 @@ func getHTML() string {
                 fetch('/api/setviewmode?mode=0').catch(()=>{});
                 setTimeout(adjustWindowHeight, 50);
             }
+            settings.viewMode = currentViewMode;
+            applyCompactBtn();
+            // 高さ確定後にウィンドウ位置・サイズを config に永続化
+            setTimeout(() => fetch('/api/persistwindow').catch(()=>{}), 300);
         });
 
         // ネットワーク部 peak 表示: クリックで B/s ⇔ bps トグル
@@ -1267,7 +2024,8 @@ func getHTML() string {
         document.getElementById('net-peak').addEventListener('click', function(e){
             e.stopPropagation();
             netUnit = (netUnit === 'byte') ? 'bit' : 'byte';
-            try { localStorage.setItem('netUnit', netUnit); } catch(err) {}
+            settings.netUnit = netUnit;
+            fetch('/api/setoption?key=netUnit&value=' + netUnit).catch(()=>{});
             refreshNetLegend();
             drawNetGraph();
         });
@@ -1375,12 +2133,17 @@ func getHTML() string {
         });
 
         document.addEventListener('mouseup', function() {
+            const wasDragging = isDragging;
+            const wasResizing = isResizing;
             if (isResizing) {
                 isResizing = false;
                 dragArea.classList.remove('resizing');
             }
             isDragging = false;
             dragArea.classList.remove('dragging');
+            if (wasDragging || wasResizing) {
+                fetch('/api/persistwindow').catch(()=>{});
+            }
         });
 
         function adjustWindowHeight() {
@@ -1399,9 +2162,8 @@ func getHTML() string {
         const netHistory = [];
         const netMaxSamples = 60;
         // 単位モード: 'byte' は B/s・KB/s・MB/s (1024 基準)、'bit' は bps・Kbps・Mbps (1000 基準)
-        let netUnit = (function(){
-            try { return localStorage.getItem('netUnit') || 'byte'; } catch(e) { return 'byte'; }
-        })();
+        // 初期値は 'byte'。/api/settings 取得後に Go 側の値で上書きされる。
+        let netUnit = 'byte';
         function formatRate(bytesPerSec){
             // 単位は固定: byte モードは常に KB/s、bit モードは常に Mbps。
             // 値域に応じて小数桁数だけ調整する。
@@ -1424,6 +2186,15 @@ func getHTML() string {
             document.getElementById('net-tx-val').textContent = formatRate(last.tx);
         }
         function drawNetGraph(){
+            // ピーク値の計算と net-peak 表示はキャンバス非表示 (コンパクト時) でも行う
+            let peak = 0;
+            for (const p of netHistory){
+                if (p.rx > peak) peak = p.rx;
+                if (p.tx > peak) peak = p.tx;
+            }
+            if (netHistory.length >= 2) {
+                document.getElementById('net-peak').textContent = formatRate(peak);
+            }
             const canvas = document.getElementById('netCanvas');
             if (!canvas) return;
             // 内部解像度を CSS サイズに合わせる（DPI スケール込み）
@@ -1444,11 +2215,7 @@ func getHTML() string {
                 ctx.fillText('計測中...', 6, cssH/2);
                 return;
             }
-            let peak = 0;
-            for (const p of netHistory){
-                if (p.rx > peak) peak = p.rx;
-                if (p.tx > peak) peak = p.tx;
-            }
+            // peak は関数冒頭で計算済み。キャンバスへの描画スケール用に再利用する。
             // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
             const scale = Math.max(peak, 8*1024);
             const step = cssW / (netMaxSamples - 1);
@@ -1477,12 +2244,104 @@ func getHTML() string {
             }
             drawSeries(p => p.rx, 'rgba(127,255,170,0.25)', '#7fffaa');
             drawSeries(p => p.tx, 'rgba(255,163,255,0.22)', '#ffa3ff');
-            document.getElementById('net-peak').textContent = formatRate(peak);
         }
+
+        // ============ 設定モーダルと初期化 ============
+        const systemThemeMql = window.matchMedia('(prefers-color-scheme: light)');
+        function applyTheme(){
+            let effective = settings.theme;
+            if (effective === 'system') effective = systemThemeMql.matches ? 'light' : 'dark';
+            document.body.classList.toggle('theme-light', effective === 'light');
+        }
+        systemThemeMql.addEventListener('change', () => { if (settings.theme === 'system') applyTheme(); });
+
+        function applyCoreBase(){
+            document.querySelectorAll('.core-label[data-core-index]').forEach(el => {
+                const i = Number(el.dataset.coreIndex);
+                el.textContent = 'Core ' + (i + settings.coreBase);
+            });
+        }
+
+        function refreshModalUI(){
+            document.querySelectorAll('.modal-options').forEach(group => {
+                const key = group.dataset.group;
+                group.querySelectorAll('.modal-opt').forEach(btn => {
+                    btn.classList.toggle('active', String(settings[key]) === btn.dataset.value);
+                });
+            });
+            document.getElementById('optTransparent').checked = !!settings.transparent;
+        }
+
+        // モーダル選択肢: Go 側 API に保存してから UI 反映
+        document.querySelectorAll('.modal-options').forEach(group => {
+            const key = group.dataset.group;
+            group.addEventListener('click', (e) => {
+                const btn = e.target.closest('.modal-opt');
+                if (!btn) return;
+                e.stopPropagation();
+                const val = btn.dataset.value;
+                settings[key] = (key === 'coreBase') ? Number(val) : val;
+                refreshModalUI();
+                if (key === 'theme') {
+                    applyTheme();
+                    fetch('/api/setoption?key=theme&value=' + val).catch(()=>{});
+                } else if (key === 'coreBase') {
+                    applyCoreBase();
+                    fetch('/api/setoption?key=coreBase&value=' + val).catch(()=>{});
+                } else if (key === 'trayDisplay') {
+                    fetch('/api/traydisplay?mode=' + val).catch(()=>{});
+                }
+            });
+        });
+
+        document.getElementById('optTransparent').addEventListener('change', function(e){
+            e.stopPropagation();
+            settings.transparent = this.checked;
+            fetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
+        });
+
+        const settingsModal = document.getElementById('settingsModal');
+        document.getElementById('settingsBtn').addEventListener('click', function(e){
+            e.stopPropagation();
+            refreshModalUI();
+            settingsModal.classList.add('show');
+        });
+        document.getElementById('modalCloseBtn').addEventListener('click', function(e){
+            e.stopPropagation();
+            settingsModal.classList.remove('show');
+        });
+        settingsModal.addEventListener('click', function(e){
+            if (e.target === settingsModal) settingsModal.classList.remove('show');
+        });
+        // モーダル内の mousedown がドラッグ判定に回らないよう抑止
+        settingsModal.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        // Go 側の永続設定を起動時に取得して UI に反映する。
+        // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
+        // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
+        fetch('/api/settings').then(r => r.json()).then(s => {
+            if (!s) return;
+            if (s.theme) settings.theme = s.theme;
+            if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
+            if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
+            if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
+            if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
+            if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
+            if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
+
+            applyTheme();
+            applyCoreBase();
+            if (settings.topmost) document.getElementById('pinBtn').classList.add('active');
+            if (settings.viewMode === 1) {
+                currentViewMode = 1;
+                document.getElementById('dragArea').classList.add('compact');
+            }
+            applyCompactBtn();
+        }).catch(()=>{ applyTheme(); });
 
         async function updateData(){
             try{ const res=await fetch('/api/system'); const data=await res.json();
-                if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label">Core '+i+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); }
+                if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
