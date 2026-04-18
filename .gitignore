@@ -4,6 +4,9 @@
 .claude/
 .vscode/
 .idea/
+.omc/
+AGENTS.md
+**/AGENTS.md
 
 # Helper script outputs
 _findgo_result.txt
