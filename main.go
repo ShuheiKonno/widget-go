@@ -572,12 +572,24 @@ func buildCpuIcon(percent int) uintptr {
 	return hIcon
 }
 
+// snapEthernetLinkSpeedMbps は Mbps 値を Ethernet 標準速度 (10/100/1000/2500/5000/10000) に
+// ±2% 以内ならスナップして返す。ドライバが 995Mbps のように丸めて報告するケースへの対策。
+func snapEthernetLinkSpeedMbps(mbps float64) float64 {
+	standards := []float64{10, 100, 1000, 2500, 5000, 10000}
+	for _, s := range standards {
+		if math.Abs(mbps-s)/s <= 0.02 {
+			return s
+		}
+	}
+	return mbps
+}
+
 // formatLinkSpeedShort は bit/s を短縮文字列化する。例: 1000000000 -> "1G", 2500000000 -> "2.5G"。
 func formatLinkSpeedShort(bps uint64) string {
 	if bps == 0 {
 		return ""
 	}
-	mbps := float64(bps) / 1e6
+	mbps := snapEthernetLinkSpeedMbps(float64(bps) / 1e6)
 	if mbps >= 1000 {
 		gbps := mbps / 1000
 		if gbps == math.Trunc(gbps) {
@@ -1946,9 +1958,18 @@ func getHTML() string {
     <script>
         const wifiStandards = { '802.11a':'802.11a','802.11b':'802.11b','802.11g':'802.11g','802.11n':'802.11n (Wi-Fi 4)','802.11ac':'802.11ac (Wi-Fi 5)','802.11ax':'802.11ax (Wi-Fi 6)','802.11be':'802.11be (Wi-Fi 7)' };
         function formatBytes(b){return (b/(1024*1024*1024)).toFixed(1)+' GB';}
+        // Ethernet 標準速度 (10/100/1000/2500/5000/10000 Mbps) から ±2% 以内ならスナップ。
+        // ドライバが 1Gbps リンクを 995Mbps と報告するようなケースへの対策。
+        function snapEthernetLinkSpeedMbps(mbps){
+            const standards = [10, 100, 1000, 2500, 5000, 10000];
+            for (const s of standards){
+                if (Math.abs(mbps - s) / s <= 0.02) return s;
+            }
+            return mbps;
+        }
         function formatLinkSpeed(bps){
             if(!bps || bps <= 0) return '---';
-            const mbps = bps / 1000000;
+            const mbps = snapEthernetLinkSpeedMbps(bps / 1000000);
             if (mbps >= 1000){
                 const gbps = mbps / 1000;
                 return (gbps % 1 === 0 ? gbps.toFixed(0) : gbps.toFixed(1)) + ' Gbps';
