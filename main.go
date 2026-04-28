@@ -1747,24 +1747,24 @@ func getHTML() string {
     <title>システムモニター</title>
     <style>
         :root {
-            --bg-grad: linear-gradient(135deg, #3b3b6d 0%, #2e4a7a 100%);
-            --container-bg: rgba(60,60,95,0.96);
-            --text-color: #fff;
-            --muted-color: #c5c5e0;
-            --section-bg: rgba(255,255,255,0.09);
-            --section-border: rgba(255,255,255,0.16);
-            --section-title: #e8e8ff;
+            --bg-grad: linear-gradient(135deg, #0d0d12 0%, #16161e 100%);
+            --container-bg: rgba(16,16,22,0.97);
+            --text-color: #f0f0f5;
+            --muted-color: #a8a8b8;
+            --section-bg: rgba(255,255,255,0.05);
+            --section-border: rgba(255,255,255,0.10);
+            --section-title: #d8d8e8;
             --section-value: #7bffe0;
-            --bar-track: rgba(255,255,255,0.18);
-            --core-track: rgba(255,255,255,0.16);
-            --net-canvas-bg: rgba(0,0,0,0.2);
-            --btn-bg: rgba(255,255,255,0.2);
-            --btn-bg-hover: rgba(255,255,255,0.35);
-            --btn-color: #ccc;
-            --modal-bg: rgba(40,40,60,0.98);
-            --modal-border: rgba(255,255,255,0.18);
-            --input-bg: rgba(255,255,255,0.08);
-            --input-border: rgba(255,255,255,0.22);
+            --bar-track: rgba(255,255,255,0.12);
+            --core-track: rgba(255,255,255,0.10);
+            --net-canvas-bg: rgba(0,0,0,0.35);
+            --btn-bg: rgba(255,255,255,0.12);
+            --btn-bg-hover: rgba(255,255,255,0.22);
+            --btn-color: #bbb;
+            --modal-bg: rgba(20,20,28,0.98);
+            --modal-border: rgba(255,255,255,0.12);
+            --input-bg: rgba(255,255,255,0.05);
+            --input-border: rgba(255,255,255,0.14);
         }
         body.theme-light {
             --bg-grad: linear-gradient(135deg, #e6e9f5 0%, #cdd6ec 100%);

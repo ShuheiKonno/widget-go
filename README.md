@@ -126,6 +126,11 @@ widget-go/
 
 ## 変更履歴
 
+### 1.4.2 (2026-04-29)
+
+- **VPN / 仮想アダプタを Ethernet 検出から除外** — Cato Networks Tunnel のような VPN クライアントの仮想アダプタが Windows 側で `TransmitLinkSpeed=100,000,000,000 bps`（100 Gbps のダミー値）を報告し、ウィジェットが物理 NIC ではなくこちらを拾って "100 Gbps" 表示になっていたのを修正。`MIB_IF_ROW2.InterfaceAndOperStatusFlags` の `HardwareInterface` ビット（物理 NIC のみ 1）と `TunnelType` を判定軸に追加し、さらに `MIB_IF_ROW2.Description`（"Cato Networks Tunnel" 等）にも既存の名前ヒント（`tun` / `vpn` / `virtual` 等）を適用。Alias（フレンドリ名）が "CatoNetworks" のように除外語を含まなくても確実に弾けるようにした。
+- **ダークテーマをより黒く** — 背景グラデーションを `#3b3b6d → #2e4a7a` の濃紫青から `#0d0d12 → #16161e` のほぼ純黒に変更。`--container-bg` も `rgba(60,60,95,0.96)` → `rgba(16,16,22,0.97)` に。セクション枠の白オーバーレイ（`--section-bg`/`--section-border`/`--bar-track`）も控えめにして、黒地で輝度が浮きすぎないように調整。アクセント色（CPU シアン・メモリピンク・Wi-Fi 緑）はそのまま維持。
+
 ### 1.4.1 (2026-04-22)
 
 - **Ethernet リンク速度表示を標準値にスナップ** — NIC ドライバによっては 1Gbps リンクでも `TransmitLinkSpeed` を `995,000,000 bps` と報告するため、ウィジェット UI もタスクバーのツールチップも `995 Mbps` と表示されていた。標準 Ethernet 速度 (10 / 100 / 1000 / 2500 / 5000 / 10000 Mbps) に対して ±2% 以内ならスナップする処理を Go 側 (`formatLinkSpeedShort`) と JS 側 (`formatLinkSpeed`) の両方に追加し、`1 Gbps` / `2.5 Gbps` のように正しく表示されるよう修正。
