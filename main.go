@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	"widget-go/ime"
 	"widget-go/sysinfo"
 
 	"github.com/jchv/go-webview2"
@@ -159,6 +160,15 @@ type Config struct {
 	Theme       string `json:"theme"`       // "dark" | "light" | "system"
 	CoreBase    int    `json:"coreBase"`    // 0 | 1
 	NetUnit     string `json:"netUnit"`     // "byte" | "bit"
+	IME         IMEConfig `json:"ime"`
+}
+
+// IMEConfig は IME Composition Window 検知・自動復旧機能の設定。
+type IMEConfig struct {
+	Enabled     bool  `json:"enabled"`
+	CooldownSec int   `json:"cooldownSec"`
+	ThresholdPx int32 `json:"thresholdPx"`
+	DryRun      bool  `json:"dryRun"`
 }
 
 var (
@@ -173,6 +183,12 @@ func defaultConfig() Config {
 	c.Theme = "system"
 	c.CoreBase = 0
 	c.NetUnit = "byte"
+	c.IME = IMEConfig{
+		Enabled:     true,
+		CooldownSec: 2,
+		ThresholdPx: 5,
+		DryRun:      false,
+	}
 	return c
 }
 
@@ -1684,6 +1700,18 @@ func main() {
 	port := getAvailablePort()
 	startCollector()
 	go startServer(port)
+
+	// IME Composition Window の左上吸い込み現象を WinEvent Hook で監視・自動復旧する。
+	// 内部で goroutine + runtime.LockOSThread + GetMessageW ループを起動するので、
+	// ここではブロッキングしない。
+	if c.IME.Enabled {
+		ime.StartWatcher(ime.Config{
+			Enabled:     c.IME.Enabled,
+			CooldownSec: c.IME.CooldownSec,
+			ThresholdPx: c.IME.ThresholdPx,
+			DryRun:      c.IME.DryRun,
+		})
+	}
 
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
