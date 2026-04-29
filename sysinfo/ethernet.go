@@ -81,17 +81,32 @@ type mibIfRow2 struct {
 	OutQLen                     uint64
 }
 
-// getLinkSpeedBps は InterfaceIndex から送信リンク速度(bit/s)を返す。
-// 取得失敗・未接続アダプタでは 0 を返す。
-// DWORD(32bit) の GetIfEntry と違い、>4Gbps も正しく扱える。
-func getLinkSpeedBps(ifIndex int) uint64 {
+// ifRowInfo は MIB_IF_ROW2 から物理 NIC 判定に必要な情報を取り出した結果。
+type ifRowInfo struct {
+	LinkSpeedBps      uint64
+	Description       string
+	HardwareInterface bool
+	TunnelType        uint32
+}
+
+// getIfRowInfo は InterfaceIndex から送信リンク速度・Description・物理 NIC フラグ等を返す。
+// 取得失敗時は ok=false。DWORD(32bit) の GetIfEntry と違い、>4Gbps も正しく扱える。
+//
+// HardwareInterface ビット: InterfaceAndOperStatusFlags の bit 0。
+// 物理 NIC のみ 1 になり、VPN/仮想/ループバック等は 0。
+func getIfRowInfo(ifIndex int) (ifRowInfo, bool) {
 	var row mibIfRow2
 	row.InterfaceIndex = uint32(ifIndex)
 	ret, _, _ := procGetIfEntry2.Call(uintptr(unsafe.Pointer(&row)))
 	if ret != 0 { // NO_ERROR = 0
-		return 0
+		return ifRowInfo{}, false
 	}
-	return row.TransmitLinkSpeed
+	return ifRowInfo{
+		LinkSpeedBps:      row.TransmitLinkSpeed,
+		Description:       syscall.UTF16ToString(row.Description[:]),
+		HardwareInterface: (row.InterfaceAndOperStatusFlags & 0x01) != 0,
+		TunnelType:        row.TunnelType,
+	}, true
 }
 
 // GetEthernetInfo は有線 NIC のうち UP 状態かつ有効な IPv4 を持つものを返す。
@@ -111,10 +126,22 @@ func GetEthernetInfo() (*EthernetInfo, error) {
 		if ifc.Flags&net.FlagUp == 0 {
 			continue
 		}
-		lower := strings.ToLower(ifc.Name)
+		info, ok := getIfRowInfo(ifc.Index)
+		if !ok {
+			continue
+		}
+		// 物理 NIC 以外（VPN・仮想・トンネル）は除外。
+		// VPN クライアント (Cato Networks Tunnel 等) は HardwareInterface=0 になる。
+		if !info.HardwareInterface || info.TunnelType != 0 {
+			continue
+		}
+		// Alias（ifc.Name）と Description の両方を名前ヒントで弾く。
+		// Alias はユーザが自由に変更できるため Description も併用する。
+		lowerName := strings.ToLower(ifc.Name)
+		lowerDesc := strings.ToLower(info.Description)
 		excluded := false
 		for _, hint := range excludeNameHints {
-			if strings.Contains(lower, hint) {
+			if strings.Contains(lowerName, hint) || strings.Contains(lowerDesc, hint) {
 				excluded = true
 				break
 			}
@@ -140,7 +167,7 @@ func GetEthernetInfo() (*EthernetInfo, error) {
 			}
 			return &EthernetInfo{
 				Name:         ifc.Name,
-				LinkSpeedBps: getLinkSpeedBps(ifc.Index),
+				LinkSpeedBps: info.LinkSpeedBps,
 				Connected:    true,
 			}, nil
 		}
