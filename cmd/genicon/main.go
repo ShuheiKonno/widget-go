@@ -94,12 +94,11 @@ func main() {
 
 // ウィジェットのテーマカラー
 var (
-	bgOuter = color.RGBA{30, 30, 52, 255}       // 外周のわずかに暗い色
-	bgInner = color.RGBA{60, 60, 95, 255}       // #3c3c5f — ウィジェット背景
-	border  = color.RGBA{80, 80, 130, 255}       // 微妙なボーダー
-	barCyan = color.RGBA{123, 255, 224, 255}     // #7bffe0 — CPU
-	barPurp = color.RGBA{176, 124, 255, 255}     // #b07cff — コア
-	barPink = color.RGBA{255, 163, 255, 255}     // #ffa3ff — メモリ
+	bgInner = color.RGBA{60, 60, 95, 255}    // #3c3c5f — ウィジェット背景
+	border  = color.RGBA{80, 80, 130, 255}   // 微妙なボーダー
+	barCyan = color.RGBA{123, 255, 224, 255} // #7bffe0 — CPU
+	barPurp = color.RGBA{176, 124, 255, 255} // #b07cff — コア
+	barPink = color.RGBA{255, 163, 255, 255} // #ffa3ff — メモリ
 )
 
 func drawIcon(size int) *image.RGBA {

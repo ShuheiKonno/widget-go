@@ -22,6 +22,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 - **システムトレイ (タスクバー格納)** — `_` ボタンで格納、トレイ設定が「CPU 使用率」の場合はアイコンに使用率を描画。ツールチップで概要確認
 - **常に前面表示 (ピン留め)** — ワンクリックで最前面に固定
 - **ウィンドウリサイズ** — 端をドラッグしてサイズ変更可能
+- **IME Composition Window の自動復旧** — MS-IME の変換ウィンドウが画面左上に張り付く不具合を WinEvent Hook で検知し、IME コンテキストのリセット等で自動復旧 (v1.5.0〜)
 - **DPI 対応** — 高 DPI ディスプレイでも正しくスケーリング
 - **設定の永続化** — ウィンドウ位置・サイズ・各種設定を `%LOCALAPPDATA%\widget-go\config.json` に保存し、次回起動時に復元
 
@@ -29,7 +30,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 
 - Windows 10 以降
 - [WebView2 Runtime](https://developer.microsoft.com/ja-jp/microsoft-edge/webview2/) (Windows 11 ではプリインストール済み)
-- Go 1.21 以降 (ビルドする場合)
+- Go 1.25 以降 (ビルドする場合)
 
 ## ビルド
 
@@ -75,12 +76,17 @@ go build -ldflags "-H windowsgui" -o system-widget.exe .
 ```
 widget-go/
 ├── main.go              # エントリポイント、WebView2 ウィンドウ、HTTP サーバー、Win32 API
+├── ui/
+│   └── index.html       # UI (HTML/CSS/JS)。//go:embed で main.go に埋め込む
 ├── sysinfo/
 │   ├── cpu.go           # CPU 使用率取得 (gopsutil)
 │   ├── memory.go        # メモリ使用量取得 (gopsutil)
 │   ├── wifi.go          # Wi-Fi 情報取得 (netsh)
 │   ├── ethernet.go      # Ethernet 検出・リンク速度取得 (iphlpapi GetIfEntry2)
 │   └── network.go       # ネットワーク送受信スループット取得 (gopsutil)
+├── ime/
+│   ├── watcher.go       # IME Composition Window の検知 (WinEvent Hook)
+│   └── recovery.go      # 検知時の自動復旧処理
 ├── cmd/
 │   └── genicon/         # アイコン生成ツール
 ├── winres/
@@ -101,7 +107,7 @@ widget-go/
 ## 依存ライブラリ
 
 - [go-webview2](https://github.com/jchv/go-webview2) — WebView2 バインディング
-- [gopsutil](https://github.com/shirou/gopsutil) — CPU・メモリ情報取得
+- [gopsutil/v4](https://github.com/shirou/gopsutil) — CPU・メモリ情報取得
 
 ## 設定ファイルの保存場所
 
@@ -125,6 +131,17 @@ widget-go/
 > 多重起動防止に使用しているミューテックス (`Global\widget-go-single-instance-mutex`) はプロセス終了時に自動解放されます。レジストリは使用しません。
 
 ## 変更履歴
+
+### 1.6.0 (2026-07-11)
+
+- **セキュリティ強化** — ローカル HTTP API に CSRF 防御を追加。起動毎のトークンを UI に埋め込み、全 `/api` 呼び出しをカスタムヘッダで検証。`Host` ヘッダ検証 (DNS rebinding 対策) と CSP を付与
+- **不具合修正** — Explorer 再起動でトレイアイコンが消える問題 (`TaskbarCreated` 未対応) を修正。設定保存の競合 (lost update)、`windowHandle` のデータ競合、トレイメッセージループの `GetMessageW` 戻り値判定を修正
+- **保守性** — `w.Window()` でウィンドウハンドルを直接取得し FindWindow ポーリングを撤廃。UI を `//go:embed` で外部ファイル化。CI (go vet / go test / golangci-lint) を追加し、gopsutil v4 へ移行
+- **UX** — ドラッグ/リサイズの通信を最適化しガタつきを解消。下端リサイズのアンカーを修正。ネットワークグラフをライトテーマ対応化
+
+### 1.5.0 (2026-05-21)
+
+- **IME Composition Window の検知・自動復旧** — MS-IME の変換 (Composition) ウィンドウが画面左上に張り付く不具合を WinEvent Hook で監視し、IME コンテキストのリセット・フォーカス再付与で自動復旧する機能を追加。クールダウン・閾値・DryRun を `config.json` の `ime` セクションで調整可能
 
 ### 1.4.2 (2026-04-29)
 

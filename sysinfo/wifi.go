@@ -25,7 +25,13 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseWiFiInfo(output), nil
+}
 
+// parseWiFiInfo は `netsh wlan show interfaces` の出力を解析して WiFiInfo を返す。
+// 未接続（切断状態、または SSID 無し）の場合は nil を返す。
+// exec と分離した純粋関数にすることで、日英ロケールの出力をテストで検証できる。
+func parseWiFiInfo(output []byte) *WiFiInfo {
 	lines := strings.Split(string(output), "\n")
 	info := &WiFiInfo{}
 
@@ -121,10 +127,10 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 	// State を取得できた場合は State を優先して切断を判定する。
 	// State が取得できない環境向けに SSID 空フォールバックも残す。
 	if stateFound && !info.Connected {
-		return nil, nil
+		return nil
 	}
 	if info.SSID == "" {
-		return nil, nil
+		return nil
 	}
 	info.Connected = true
 
@@ -144,7 +150,7 @@ func GetWiFiInfo() (*WiFiInfo, error) {
 		}
 	}
 
-	return info, nil
+	return info
 }
 
 // bandValueRe は netsh の "バンド"/"Band" 行の値から周波数帯を抽出する。

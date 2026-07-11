@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  # syscall を多用する Windows 専用コードのため、既定セットではなく
+  # 高シグナルな linter だけを明示的に有効化する。
+  # errcheck は全ての proc.Call が戻り値を無視する設計上ノイズになるため無効。
+  default: none
+  enable:
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
