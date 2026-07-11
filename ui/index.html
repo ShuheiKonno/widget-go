@@ -339,11 +339,39 @@
         // Drag functionality
         let isDragging = false;
         let isResizing = false;
+        let dragReady = false;    // /api/dragstart 完了までは dragmove を送らない
+        let resizeReady = false;  // 初期サイズ取得までは resize を送らない
         let resizeDir = '';
         let startCursorX, startCursorY;
         let startWinW = 0, startWinH = 0;
         const dragArea = document.getElementById('dragArea');
         const resizeMargin = 6;
+
+        // mousemove ごとに無制限に fetch するとリクエストが詰まってウィンドウがガタつく。
+        // 常に「最新の1件だけ」を in-flight にし、待機中の更新は末尾で1回だけ送る（coalescing）。
+        let dragReqInFlight = false, dragPending = false;
+        function sendDragMove(){
+            if (dragReqInFlight){ dragPending = true; return; }
+            dragReqInFlight = true;
+            apiFetch('/api/dragmove').catch(()=>{}).finally(()=>{
+                dragReqInFlight = false;
+                if (dragPending){ dragPending = false; sendDragMove(); }
+            });
+        }
+        let resizeReqInFlight = false, resizePending = null;
+        function sendResize(w, h, anchorTop){
+            resizePending = { w: w, h: h, anchorTop: anchorTop };
+            if (resizeReqInFlight) return;
+            resizeReqInFlight = true;
+            (function fire(){
+                const p = resizePending; resizePending = null;
+                let url = '/api/resize?w=' + Math.round(p.w) + '&h=' + Math.round(p.h);
+                if (p.anchorTop) url += '&anchor=top';
+                apiFetch(url).catch(()=>{}).finally(()=>{
+                    if (resizePending){ fire(); } else { resizeReqInFlight = false; }
+                });
+            })();
+        }
 
         dragArea.addEventListener('mousemove', function(e) {
             if (isDragging || isResizing) return;
@@ -377,6 +405,7 @@
             const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
             if (onRight || onBottom) {
                 isResizing = true;
+                resizeReady = false;
                 resizeDir = (onRight ? 'r' : '') + (onBottom ? 'b' : '');
                 dragArea.classList.add('resizing');
                 startCursorX = e.screenX;
@@ -386,6 +415,7 @@
                     const data = await res.json();
                     startWinW = data.width;
                     startWinH = data.height;
+                    resizeReady = true;  // 初期サイズ確定後のみ resize を送る
                 } catch(err) {
                     isResizing = false;
                     dragArea.classList.remove('resizing');
@@ -394,8 +424,13 @@
                 return;
             }
             isDragging = true;
+            dragReady = false;
             dragArea.classList.add('dragging');
-            apiFetch('/api/dragstart').catch(()=>{ isDragging = false; dragArea.classList.remove('dragging'); });
+            // dragstart で基準座標を記録し終えるまで dragmove を送らない
+            // (未 await のまま dragmove が走ると誤った基準でウィンドウが飛ぶ)
+            apiFetch('/api/dragstart')
+                .then(()=>{ dragReady = true; })
+                .catch(()=>{ isDragging = false; dragArea.classList.remove('dragging'); });
         });
 
         document.addEventListener('mousemove', function(e) {
@@ -405,6 +440,7 @@
                 if (dx > 3 || dy > 3) movedSinceDown = true;
             }
             if (isResizing) {
+                if (!resizeReady) return;
                 const dx = e.screenX - startCursorX;
                 const dy = e.screenY - startCursorY;
                 let newW = startWinW;
@@ -415,11 +451,13 @@
                 if (resizeDir.indexOf('b') !== -1) {
                     newH = startWinH + dy;
                 }
-                apiFetch('/api/resize?w=' + Math.round(newW) + '&h=' + Math.round(newH)).catch(()=>{});
+                // 下端を掴んだリサイズは上端を固定して下方向に伸ばす
+                // (anchor=top)。掴んだエッジとカーソルが乖離しないようにする。
+                sendResize(newW, newH, resizeDir.indexOf('b') !== -1);
                 return;
             }
-            if (!isDragging) return;
-            apiFetch('/api/dragmove').catch(()=>{});
+            if (!isDragging || !dragReady) return;
+            sendDragMove();
         });
 
         document.addEventListener('mouseup', function() {
@@ -499,8 +537,11 @@
             const ctx = canvas.getContext('2d');
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, cssW, cssH);
+            // ライトテーマではダーク固定色（白文字・淡い蛍光色）が見えないので、
+            // 凡例 (.net-leg-rx/.net-leg-tx) と同じ配色に切り替える。
+            const light = document.body.classList.contains('theme-light');
             if (netHistory.length < 2){
-                ctx.fillStyle = 'rgba(255,255,255,0.35)';
+                ctx.fillStyle = light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)';
                 ctx.font = '10px Segoe UI';
                 ctx.fillText('計測中...', 6, cssH/2);
                 return;
@@ -532,8 +573,12 @@
                 });
                 ctx.stroke();
             }
-            drawSeries(p => p.rx, 'rgba(127,255,170,0.25)', '#7fffaa');
-            drawSeries(p => p.tx, 'rgba(255,163,255,0.22)', '#ffa3ff');
+            drawSeries(p => p.rx,
+                light ? 'rgba(26,168,107,0.20)' : 'rgba(127,255,170,0.25)',
+                light ? '#1aa86b' : '#7fffaa');
+            drawSeries(p => p.tx,
+                light ? 'rgba(183,77,166,0.18)' : 'rgba(255,163,255,0.22)',
+                light ? '#b74da6' : '#ffa3ff');
         }
 
         // ============ 設定モーダルと初期化 ============

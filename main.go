@@ -1187,7 +1187,10 @@ func getWindowDpiScale() float64 {
 	return float64(dpi) / 96.0
 }
 
-func resizeWindow(width, height int32) {
+// resizeWindow はウィンドウを width×height（論理px）にリサイズする。
+// anchorTop=false は下端固定（コンパクト化・幾何復元で下端に揃える既定）、
+// anchorTop=true は上端固定（下端エッジを掴んだ手動リサイズで下方向に伸ばす）。
+func resizeWindow(width, height int32, anchorTop bool) {
 	if windowHandle.Load() == 0 {
 		return
 	}
@@ -1216,11 +1219,13 @@ func resizeWindow(width, height int32) {
 	scaledW := int32(math.Round(float64(width) * scale))
 	scaledH := int32(math.Round(float64(height) * scale))
 
-	// 下端を固定してリサイズする (コンパクト化時に下に揃える)
 	var rect RECT
 	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	newLeft := rect.Left
-	newTop := rect.Bottom - scaledH
+	newTop := rect.Bottom - scaledH // 既定: 下端固定
+	if anchorTop {
+		newTop = rect.Top // 上端固定（下端エッジのドラッグ時）
+	}
 	procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
 }
 
@@ -1397,7 +1402,7 @@ func startServer(ln net.Listener, token string) {
 		hVal, _ := strconv.Atoi(q.Get("h"))
 
 		if wVal > 0 && hVal > 0 {
-			resizeWindow(int32(wVal), int32(hVal))
+			resizeWindow(int32(wVal), int32(hVal), false)
 		}
 		if xErr == nil && yErr == nil {
 			scale := getWindowDpiScale()
@@ -1552,7 +1557,8 @@ func startServer(ln net.Listener, token string) {
 		hStr := r.URL.Query().Get("h")
 		wVal, _ := strconv.Atoi(wStr)
 		h, _ := strconv.Atoi(hStr)
-		resizeWindow(int32(wVal), int32(h))
+		anchorTop := r.URL.Query().Get("anchor") == "top"
+		resizeWindow(int32(wVal), int32(h), anchorTop)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -1591,7 +1597,7 @@ func restoreWindowGeometry() bool {
 	if !c.Window.Saved || c.Window.Width <= 0 || c.Window.Height <= 0 {
 		return false
 	}
-	resizeWindow(c.Window.Width, c.Window.Height)
+	resizeWindow(c.Window.Width, c.Window.Height, false)
 
 	scale := getWindowDpiScale()
 	if scale <= 0 {
