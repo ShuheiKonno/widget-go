@@ -132,7 +132,7 @@ widget-go/
 
 ## 変更履歴
 
-### Unreleased
+### 1.6.0 (2026-07-11)
 
 - **セキュリティ強化** — ローカル HTTP API に CSRF 防御を追加。起動毎のトークンを UI に埋め込み、全 `/api` 呼び出しをカスタムヘッダで検証。`Host` ヘッダ検証 (DNS rebinding 対策) と CSP を付与
 - **不具合修正** — Explorer 再起動でトレイアイコンが消える問題 (`TaskbarCreated` 未対応) を修正。設定保存の競合 (lost update)、`windowHandle` のデータ競合、トレイメッセージループの `GetMessageW` 戻り値判定を修正
