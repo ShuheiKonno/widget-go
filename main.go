@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -10,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -1218,12 +1223,54 @@ func resizeWindow(width, height int32) {
 	procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
 }
 
-func startServer(port int) {
+// generateToken は起動毎のランダムなセッショントークンを生成する。
+// フロントに埋め込み、全 /api 呼び出しのカスタムヘッダ検証に使う（CSRF 対策）。
+func generateToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// 生成失敗はほぼ起こらないが、起きた場合は fail-closed（安全側）で停止する。
+		log.Fatalf("セキュリティトークンの生成に失敗: %v", err)
+	}
+	return hex.EncodeToString(b)
+}
+
+// securityMiddleware はローカル HTTP API をブラウザ由来の攻撃から守る多層防御を適用する。
+//   - Host 検証: 127.0.0.1:<port> 以外を 403（DNS rebinding 対策）
+//   - "/"（UI）: トークン不要。CSP と nosniff を付与してここでトークンを配布する
+//   - "/api/*": X-Widget-Token カスタムヘッダを検証（クロスサイトの単純リクエストは
+//     カスタムヘッダを付けられず、付ければ preflight が発生して失敗するため CSRF を防ぐ）
+func securityMiddleware(next http.Handler, token string, port int) http.Handler {
+	expectedHost := fmt.Sprintf("127.0.0.1:%d", port)
+	scriptCSP := "default-src 'none'; " +
+		"script-src 'nonce-" + token + "'; " +
+		"style-src 'unsafe-inline'; " +
+		"connect-src 'self'; " +
+		"img-src 'self' data:"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != expectedHost {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Security-Policy", scriptCSP)
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			next.ServeHTTP(w, r)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Widget-Token")), []byte(token)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func startServer(ln net.Listener, token string) {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(getHTML()))
+		w.Write([]byte(getHTML(token)))
 	})
 
 	mux.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
@@ -1514,17 +1561,22 @@ func startServer(port int) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), mux)
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := http.Serve(ln, securityMiddleware(mux, token, port)); err != nil {
+		// http.Serve は正常時は戻らない。戻った＝致命的（リスナー閉塞など）。
+		log.Fatalf("HTTP サーバーが停止しました: %v", err)
+	}
 }
 
-func getAvailablePort() int {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+// listenLocal は 127.0.0.1 の空きポートでリスナーを確保して返す。
+// 旧 getAvailablePort のように一度 Close して再 Listen すると、その隙間に別プロセスへ
+// ポートを奪われる TOCTOU があった。確保したリスナーをそのまま Serve に渡すことで回避する。
+func listenLocal() (net.Listener, int) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return 18080
+		log.Fatalf("ローカルポートの確保に失敗: %v", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	return port
+	return ln, ln.Addr().(*net.TCPAddr).Port
 }
 
 // restoreWindowGeometry は永続化された位置・サイズを現在のウィンドウに適用する。
@@ -1734,9 +1786,10 @@ func main() {
 	}
 	trayDisplayMu.Unlock()
 
-	port := getAvailablePort()
+	apiToken := generateToken()
+	ln, port := listenLocal()
 	startCollector()
-	go startServer(port)
+	go startServer(ln, apiToken)
 
 	// IME Composition Window の左上吸い込み現象を WinEvent Hook で監視・自動復旧する。
 	// 内部で goroutine + runtime.LockOSThread + GetMessageW ループを起動するので、
@@ -1796,8 +1849,11 @@ func main() {
 	w.Run()
 }
 
-func getHTML() string {
-	return `<!DOCTYPE html>
+func getHTML(token string) string {
+	// __WIDGET_TOKEN__ を起動毎のトークンに差し替える。
+	//   - <script nonce="..."> : CSP script-src の nonce
+	//   - const WIDGET_TOKEN    : 全 /api 呼び出しに付与する X-Widget-Token の値
+	html := `<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -2013,7 +2069,17 @@ func getHTML() string {
             </div>
         </div>
     </div>
-    <script>
+    <script nonce="__WIDGET_TOKEN__">
+        // 全 /api 呼び出しに付与する CSRF トークン（Go 側が起動毎に生成し埋め込む）。
+        const WIDGET_TOKEN = '__WIDGET_TOKEN__';
+        // fetch のラッパー。X-Widget-Token カスタムヘッダを必ず付与する。
+        // サーバー側 securityMiddleware がこのヘッダを検証し、外部ページからの
+        // CSRF リクエスト（カスタムヘッダを付けられない単純リクエスト）を弾く。
+        function apiFetch(url, opts){
+            opts = opts || {};
+            opts.headers = Object.assign({}, opts.headers, { 'X-Widget-Token': WIDGET_TOKEN });
+            return fetch(url, opts);
+        }
         const wifiStandards = { '802.11a':'802.11a','802.11b':'802.11b','802.11g':'802.11g','802.11n':'802.11n (Wi-Fi 4)','802.11ac':'802.11ac (Wi-Fi 5)','802.11ax':'802.11ax (Wi-Fi 6)','802.11be':'802.11be (Wi-Fi 7)' };
         function formatBytes(b){return (b/(1024*1024*1024)).toFixed(1)+' GB';}
         // Ethernet 標準速度 (10/100/1000/2500/5000/10000 Mbps) から ±2% 以内ならスナップ。
@@ -2051,14 +2117,14 @@ func getHTML() string {
         document.getElementById('closeBtn').addEventListener('click', function(e) {
             e.stopPropagation();
             // トレイ格納前に現在の位置・サイズを保存
-            fetch('/api/persistwindow').finally(() => fetch('/api/entertray').catch(()=>{}));
+            apiFetch('/api/persistwindow').finally(() => apiFetch('/api/entertray').catch(()=>{}));
         });
 
         // Pin button (always-on-top)
         document.getElementById('pinBtn').addEventListener('click', async function(e) {
             e.stopPropagation();
             try {
-                const res = await fetch('/api/toggletopmost');
+                const res = await apiFetch('/api/toggletopmost');
                 const data = await res.json();
                 this.classList.toggle('active', data.topmost);
                 settings.topmost = !!data.topmost;
@@ -2084,18 +2150,18 @@ func getHTML() string {
             if (currentViewMode === 0) {
                 currentViewMode = 1;
                 document.getElementById('dragArea').classList.add('compact');
-                fetch('/api/setviewmode?mode=1').catch(()=>{});
+                apiFetch('/api/setviewmode?mode=1').catch(()=>{});
                 setTimeout(adjustWindowHeight, 50);
             } else if (currentViewMode === 1) {
                 currentViewMode = 0;
                 document.getElementById('dragArea').classList.remove('compact');
-                fetch('/api/setviewmode?mode=0').catch(()=>{});
+                apiFetch('/api/setviewmode?mode=0').catch(()=>{});
                 setTimeout(adjustWindowHeight, 50);
             }
             settings.viewMode = currentViewMode;
             applyCompactBtn();
             // 高さ確定後にウィンドウ位置・サイズを config に永続化
-            setTimeout(() => fetch('/api/persistwindow').catch(()=>{}), 300);
+            setTimeout(() => apiFetch('/api/persistwindow').catch(()=>{}), 300);
         });
 
         // ネットワーク部 peak 表示: クリックで B/s ⇔ bps トグル
@@ -2104,7 +2170,7 @@ func getHTML() string {
             e.stopPropagation();
             netUnit = (netUnit === 'byte') ? 'bit' : 'byte';
             settings.netUnit = netUnit;
-            fetch('/api/setoption?key=netUnit&value=' + netUnit).catch(()=>{});
+            apiFetch('/api/setoption?key=netUnit&value=' + netUnit).catch(()=>{});
             refreshNetLegend();
             drawNetGraph();
         });
@@ -2171,7 +2237,7 @@ func getHTML() string {
                 startCursorX = e.screenX;
                 startCursorY = e.screenY;
                 try {
-                    const res = await fetch('/api/windowsize');
+                    const res = await apiFetch('/api/windowsize');
                     const data = await res.json();
                     startWinW = data.width;
                     startWinH = data.height;
@@ -2184,7 +2250,7 @@ func getHTML() string {
             }
             isDragging = true;
             dragArea.classList.add('dragging');
-            fetch('/api/dragstart').catch(()=>{ isDragging = false; dragArea.classList.remove('dragging'); });
+            apiFetch('/api/dragstart').catch(()=>{ isDragging = false; dragArea.classList.remove('dragging'); });
         });
 
         document.addEventListener('mousemove', function(e) {
@@ -2204,11 +2270,11 @@ func getHTML() string {
                 if (resizeDir.indexOf('b') !== -1) {
                     newH = startWinH + dy;
                 }
-                fetch('/api/resize?w=' + Math.round(newW) + '&h=' + Math.round(newH)).catch(()=>{});
+                apiFetch('/api/resize?w=' + Math.round(newW) + '&h=' + Math.round(newH)).catch(()=>{});
                 return;
             }
             if (!isDragging) return;
-            fetch('/api/dragmove').catch(()=>{});
+            apiFetch('/api/dragmove').catch(()=>{});
         });
 
         document.addEventListener('mouseup', function() {
@@ -2221,7 +2287,7 @@ func getHTML() string {
             isDragging = false;
             dragArea.classList.remove('dragging');
             if (wasDragging || wasResizing) {
-                fetch('/api/persistwindow').catch(()=>{});
+                apiFetch('/api/persistwindow').catch(()=>{});
             }
         });
 
@@ -2234,7 +2300,7 @@ func getHTML() string {
             el.style.height = 'auto'; bd.style.height = 'auto'; ct.style.height = 'auto';
             const h = ct.scrollHeight;
             el.style.height = '100%'; bd.style.height = '100%'; ct.style.height = '100%';
-            fetch('/api/resize?h=' + h).catch(()=>{});
+            apiFetch('/api/resize?h=' + h).catch(()=>{});
         }
 
         // ネットワーク履歴（直近 N サンプル分のスループット）
@@ -2363,12 +2429,12 @@ func getHTML() string {
                 refreshModalUI();
                 if (key === 'theme') {
                     applyTheme();
-                    fetch('/api/setoption?key=theme&value=' + val).catch(()=>{});
+                    apiFetch('/api/setoption?key=theme&value=' + val).catch(()=>{});
                 } else if (key === 'coreBase') {
                     applyCoreBase();
-                    fetch('/api/setoption?key=coreBase&value=' + val).catch(()=>{});
+                    apiFetch('/api/setoption?key=coreBase&value=' + val).catch(()=>{});
                 } else if (key === 'trayDisplay') {
-                    fetch('/api/traydisplay?mode=' + val).catch(()=>{});
+                    apiFetch('/api/traydisplay?mode=' + val).catch(()=>{});
                 }
             });
         });
@@ -2376,7 +2442,7 @@ func getHTML() string {
         document.getElementById('optTransparent').addEventListener('change', function(e){
             e.stopPropagation();
             settings.transparent = this.checked;
-            fetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
+            apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
         });
 
         const settingsModal = document.getElementById('settingsModal');
@@ -2398,7 +2464,7 @@ func getHTML() string {
         // Go 側の永続設定を起動時に取得して UI に反映する。
         // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
         // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
-        fetch('/api/settings').then(r => r.json()).then(s => {
+        apiFetch('/api/settings').then(r => r.json()).then(s => {
             if (!s) return;
             if (s.theme) settings.theme = s.theme;
             if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
@@ -2419,7 +2485,7 @@ func getHTML() string {
         }).catch(()=>{ applyTheme(); });
 
         async function updateData(){
-            try{ const res=await fetch('/api/system'); const data=await res.json();
+            try{ const res=await apiFetch('/api/system'); const data=await res.json();
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
@@ -2477,4 +2543,5 @@ func getHTML() string {
     </script>
 </body>
 </html>`
+	return strings.ReplaceAll(html, "__WIDGET_TOKEN__", token)
 }
