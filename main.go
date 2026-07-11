@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -32,13 +33,13 @@ var (
 	procGetDpiForWindow = user32.NewProc("GetDpiForWindow")
 	procShowWindow      = user32.NewProc("ShowWindow")
 	procRegisterClassEx = user32.NewProc("RegisterClassExW")
+	procRegisterWindowMessage = user32.NewProc("RegisterWindowMessageW")
 	procCreateWindowEx  = user32.NewProc("CreateWindowExW")
 	procDefWindowProc   = user32.NewProc("DefWindowProcW")
 	procGetMessage      = user32.NewProc("GetMessageW")
 	procTranslateMessage = user32.NewProc("TranslateMessage")
 	procDispatchMessage  = user32.NewProc("DispatchMessageW")
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
-	procDestroyWindow    = user32.NewProc("DestroyWindow")
 	procLoadIcon         = user32.NewProc("LoadIconW")
 	procLoadImageW       = user32.NewProc("LoadImageW")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
@@ -98,6 +99,7 @@ const (
 
 	WM_APP       = 0x8000
 	WM_TRAYICON  = WM_APP + 1
+	WM_CLOSE     = 0x0010
 	WM_LBUTTONUP = 0x0202
 	WM_RBUTTONUP = 0x0205
 	WM_COMMAND   = 0x0111
@@ -140,7 +142,10 @@ const (
 	windowHeight = 400
 )
 
-var windowHandle uintptr
+// windowHandle は WebView2 のメインウィンドウ HWND。
+// startServer の HTTP ハンドラ goroutine 群と main の初期化から並行アクセスされるため
+// atomic で保護する（-race 検出を含むデータ競合の回避）。
+var windowHandle atomic.Uintptr
 
 // Config はプロセスをまたいで永続化される設定。
 // WebView2 の localStorage は os.Exit(0) で flush されずに失われる可能性があるため、
@@ -211,9 +216,10 @@ func loadConfig() {
 	config = tmp
 }
 
-func saveConfig() {
-	configMu.Lock()
-	defer configMu.Unlock()
+// writeConfigLocked は config を JSON でアトミック（tmp+rename）に書き出す。
+// configMu を保持した状態で呼ぶこと。マーシャルと書き込みをロック内で一体化することで、
+// 並行 mutateConfig 呼び出しによる lost update（古いスナップショットの後勝ち）を防ぐ。
+func writeConfigLocked() {
 	if configPath == "" {
 		return
 	}
@@ -229,21 +235,18 @@ func saveConfig() {
 	_ = os.Rename(tmp, configPath)
 }
 
-// mutateConfig は config をロックしたうえで変更関数を適用し、ディスクに保存する。
+func saveConfig() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	writeConfigLocked()
+}
+
+// mutateConfig は config をロックしたうえで変更関数を適用し、ロックを保持したまま保存する。
 func mutateConfig(f func(c *Config)) {
 	configMu.Lock()
+	defer configMu.Unlock()
 	f(&config)
-	data, err := json.MarshalIndent(&config, "", "  ")
-	configMu.Unlock()
-	if err != nil || configPath == "" {
-		return
-	}
-	_ = os.MkdirAll(filepath.Dir(configPath), 0755)
-	tmp := configPath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return
-	}
-	_ = os.Rename(tmp, configPath)
+	writeConfigLocked()
 }
 
 func snapshotConfig() Config {
@@ -388,27 +391,32 @@ var (
 
 	trayDisplayMu   sync.RWMutex
 	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%
+
+	// wmTaskbarCreated は Explorer が起動/再起動時にブロードキャストする
+	// "TaskbarCreated" メッセージの ID。initTrayWindow で登録する。
+	// Explorer クラッシュ→再起動でトレイアイコンが消えるため、これを受けて再登録する。
+	wmTaskbarCreated uint32
 )
 
 func setTransparent(enabled bool) {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return
 	}
 	gwlExStyle := int32(GWL_EXSTYLE)
-	exStyle, _, _ := procGetWindowLong.Call(windowHandle, uintptr(gwlExStyle))
+	exStyle, _, _ := procGetWindowLong.Call(windowHandle.Load(), uintptr(gwlExStyle))
 	newStyle := exStyle | WS_EX_LAYERED
 	if newStyle != exStyle {
-		procSetWindowLong.Call(windowHandle, uintptr(gwlExStyle), newStyle)
+		procSetWindowLong.Call(windowHandle.Load(), uintptr(gwlExStyle), newStyle)
 	}
 	var alpha uintptr = ALPHA_OPAQUE
 	if enabled {
 		alpha = ALPHA_TRANSPARENT
 	}
-	procSetLayeredWindowAttributes.Call(windowHandle, 0, alpha, LWA_ALPHA)
+	procSetLayeredWindowAttributes.Call(windowHandle.Load(), 0, alpha, LWA_ALPHA)
 }
 
 func setTopmost(topmost bool) {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return
 	}
 	var insertAfter uintptr
@@ -417,7 +425,7 @@ func setTopmost(topmost bool) {
 	} else {
 		insertAfter = ^uintptr(1) // HWND_NOTOPMOST (-2)
 	}
-	procSetWindowPos.Call(windowHandle, insertAfter, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
+	procSetWindowPos.Call(windowHandle.Load(), insertAfter, 0, 0, 0, 0, SWP_NOMOVE|SWP_NOSIZE)
 }
 
 // --- システムトレイ機能 ---
@@ -672,7 +680,33 @@ func showTrayMenu(hwnd uintptr) {
 	procPostMessageW.Call(hwnd, 0, 0, 0)
 }
 
+// addTrayIcon は現在のツールチップと指定アイコンでトレイアイコンを NIM_ADD する。
+// enterTray の初回登録と TaskbarCreated による再登録で共有する。
+func addTrayIcon(hwnd, icon uintptr) {
+	var nid NOTIFYICONDATAW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	nid.UFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+	nid.UCallbackMessage = WM_TRAYICON
+	nid.HIcon = icon
+	setTipText(&nid, formatTrayTooltip())
+	procShellNotifyIcon.Call(NIM_ADD, uintptr(unsafe.Pointer(&nid)))
+}
+
 func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
+	// Explorer 再起動時にブロードキャストされる。トレイアイコン登録が失われるので
+	// 静的アイコンで再登録する（CPU% モードなら次の ticker で再描画される）。
+	if wmTaskbarCreated != 0 && msg == uintptr(wmTaskbarCreated) {
+		trayMu.Lock()
+		active := trayActive
+		icon := trayIcon
+		trayMu.Unlock()
+		if active {
+			addTrayIcon(hwnd, icon)
+		}
+		return 0
+	}
 	switch msg {
 	case WM_TRAYICON:
 		event := lParam & 0xFFFF
@@ -713,6 +747,14 @@ func initTrayWindow() uintptr {
 
 	procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wcx)))
 
+	// TaskbarCreated メッセージ ID を登録（セッション内で安定）。Explorer 再起動時の
+	// トレイアイコン再登録に使う。返値 0 は失敗（その場合は再登録機能のみ無効）。
+	if wmTaskbarCreated == 0 {
+		msgName, _ := syscall.UTF16PtrFromString("TaskbarCreated")
+		id, _, _ := procRegisterWindowMessage.Call(uintptr(unsafe.Pointer(msgName)))
+		wmTaskbarCreated = uint32(id)
+	}
+
 	windowName, _ := syscall.UTF16PtrFromString("SystemWidgetTrayWindow")
 	hwnd, _, _ := procCreateWindowEx.Call(
 		0,
@@ -732,10 +774,10 @@ func enterTray() {
 	// ウィンドウハンドル未取得でトレイ化に入ると、本体が隠れないまま
 	// trayActive=true が残り続けて二度と ✕ に反応しなくなる。
 	// ここで一度リカバリを試み、それでも取れないならトレイ化を諦める。
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		setupMainWindow("システムモニター")
 	}
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return
 	}
 
@@ -752,7 +794,7 @@ func enterTray() {
 	viewMode = 2
 	viewModeMu.Unlock()
 
-	procShowWindow.Call(windowHandle, SW_HIDE)
+	procShowWindow.Call(windowHandle.Load(), SW_HIDE)
 
 	// トレイには icon.ico から作られた埋め込みアイコンを表示する
 	icon := loadTrayIcon()
@@ -793,8 +835,8 @@ func enterTray() {
 			viewModeMu.Lock()
 			viewMode = 0
 			viewModeMu.Unlock()
-			if windowHandle != 0 {
-				procShowWindow.Call(windowHandle, SW_SHOW)
+			if windowHandle.Load() != 0 {
+				procShowWindow.Call(windowHandle.Load(), SW_SHOW)
 			}
 			return
 		}
@@ -802,15 +844,7 @@ func enterTray() {
 		trayHwnd = hwnd
 		trayMu.Unlock()
 
-		var nid NOTIFYICONDATAW
-		nid.CbSize = uint32(unsafe.Sizeof(nid))
-		nid.HWnd = hwnd
-		nid.UID = 1
-		nid.UFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
-		nid.UCallbackMessage = WM_TRAYICON
-		nid.HIcon = startIcon
-		setTipText(&nid, formatTrayTooltip())
-		procShellNotifyIcon.Call(NIM_ADD, uintptr(unsafe.Pointer(&nid)))
+		addTrayIcon(hwnd, startIcon)
 
 		// トレイ定期更新: ツールチップと (CPU% モード時の) アイコンを差し替える。
 		// currentCpuIcon は手動生成した HICON 所有権を追跡する。
@@ -895,7 +929,10 @@ func enterTray() {
 				uintptr(unsafe.Pointer(&m)),
 				0, 0, 0,
 			)
-			if ret == 0 || ret == ^uintptr(0) {
+			// GetMessageW は WM_QUIT で 0、エラー時に -1 を返す。Win64 では BOOL(-1)
+			// が下位32bitのみ 1 埋め (0x00000000FFFFFFFF) になり ^uintptr(0) と一致しない。
+			// int32 にキャストして符号付きで判定する（ime/watcher.go と同方式）。
+			if int32(ret) <= 0 {
 				break
 			}
 			procTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
@@ -927,8 +964,8 @@ func restoreFromTray() {
 	viewModeMu.Unlock()
 
 	// ウィンドウ復元
-	if windowHandle != 0 {
-		procShowWindow.Call(windowHandle, SW_SHOW)
+	if windowHandle.Load() != 0 {
+		procShowWindow.Call(windowHandle.Load(), SW_SHOW)
 		alwaysOnTopMu.Lock()
 		top := alwaysOnTop
 		alwaysOnTopMu.Unlock()
@@ -937,8 +974,13 @@ func restoreFromTray() {
 		}
 	}
 
-	// メッセージループ終了のため非表示ウィンドウを破棄
-	procDestroyWindow.Call(hwnd)
+	// メッセージループ終了のため非表示ウィンドウを破棄する。
+	// DestroyWindow は作成スレッド以外から呼ぶと失敗するため、直接呼ばず
+	// WM_CLOSE を Post して作成スレッド（トレイのメッセージループ）側で
+	// DefWindowProc→DestroyWindow→WM_DESTROY→PostQuitMessage を走らせる。
+	if hwnd != 0 {
+		procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+	}
 
 	trayMu.Lock()
 	trayHwnd = 0
@@ -971,8 +1013,10 @@ func cleanupTray() {
 		nid.UID = 1
 		procShellNotifyIcon.Call(NIM_DELETE, uintptr(unsafe.Pointer(&nid)))
 
-		// メッセージループを終了させる
-		procDestroyWindow.Call(hwnd)
+		// メッセージループを終了させる。cleanupTray は os.Exit 直前に別 goroutine から
+		// 呼ばれるためトレイ作成スレッドではない。DestroyWindow は失敗するので WM_CLOSE を
+		// Post する（プロセスは直後に終了するのでベストエフォート。アイコン削除は上の NIM_DELETE で完了済み）。
+		procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
 	}
 
 	trayMu.Lock()
@@ -1104,24 +1148,24 @@ func getCursorPos() (int32, int32) {
 
 func getWindowPos() (int32, int32) {
 	var rect RECT
-	if windowHandle != 0 {
-		procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	if windowHandle.Load() != 0 {
+		procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	}
 	return rect.Left, rect.Top
 }
 
 func moveWindow(x, y int32) {
-	if windowHandle != 0 {
-		procSetWindowPos.Call(windowHandle, 0, uintptr(x), uintptr(y), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
+	if windowHandle.Load() != 0 {
+		procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(x), uintptr(y), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
 	}
 }
 
 func getWindowSize() (int32, int32) {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return windowWidth, windowHeight
 	}
 	var rect RECT
-	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	width := rect.Right - rect.Left
 	height := rect.Bottom - rect.Top
 	scale := getWindowDpiScale()
@@ -1140,10 +1184,10 @@ func getWindowSize() (int32, int32) {
 }
 
 func getWindowDpiScale() float64 {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return 1.0
 	}
-	dpi, _, _ := procGetDpiForWindow.Call(windowHandle)
+	dpi, _, _ := procGetDpiForWindow.Call(windowHandle.Load())
 	if dpi == 0 {
 		return 1.0
 	}
@@ -1151,7 +1195,7 @@ func getWindowDpiScale() float64 {
 }
 
 func resizeWindow(width, height int32) {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return
 	}
 	if width <= 0 || height <= 0 {
@@ -1181,10 +1225,10 @@ func resizeWindow(width, height int32) {
 
 	// 下端を固定してリサイズする (コンパクト化時に下に揃える)
 	var rect RECT
-	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	newLeft := rect.Left
 	newTop := rect.Bottom - scaledH
-	procSetWindowPos.Call(windowHandle, 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
+	procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
 }
 
 func startServer(port int) {
@@ -1285,9 +1329,9 @@ func startServer(port int) {
 	// ウィンドウ位置とサイズ (論理ピクセル) をまとめて返す
 	mux.HandleFunc("/api/windowgeometry", func(w http.ResponseWriter, r *http.Request) {
 		var x, y int32
-		if windowHandle != 0 {
+		if windowHandle.Load() != 0 {
 			var rect RECT
-			procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+			procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 			scale := getWindowDpiScale()
 			if scale <= 0 {
 				scale = 1.0
@@ -1307,7 +1351,7 @@ func startServer(port int) {
 
 	// ウィンドウ位置とサイズを明示的に設定する (論理ピクセル)
 	mux.HandleFunc("/api/setwindow", func(w http.ResponseWriter, r *http.Request) {
-		if windowHandle == 0 {
+		if windowHandle.Load() == 0 {
 			http.Error(w, "window not ready", http.StatusServiceUnavailable)
 			return
 		}
@@ -1326,13 +1370,13 @@ func startServer(port int) {
 				scale = 1.0
 			}
 			// 画面外に完全に出ないよう、アクティブモニタの作業領域でクランプする
-			hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+			hmon, _, _ := procMonitorFromWindow.Call(windowHandle.Load(), MONITOR_DEFAULTTONEAREST)
 			if hmon != 0 {
 				var mi MONITORINFO
 				mi.CbSize = uint32(unsafe.Sizeof(mi))
 				if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
 					var rect RECT
-					procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+					procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 					ww := rect.Right - rect.Left
 					hh := rect.Bottom - rect.Top
 					physX := int32(math.Round(float64(xVal) * scale))
@@ -1500,7 +1544,7 @@ func getAvailablePort() int {
 // 保存値が無い場合や windowHandle 未取得時は false を返し、呼び出し元はフォールバックを選ぶ。
 // 論理ピクセル値で保存されているので DPI スケール補正を行う。
 func restoreWindowGeometry() bool {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return false
 	}
 	c := snapshotConfig()
@@ -1517,13 +1561,13 @@ func restoreWindowGeometry() bool {
 	physY := int32(math.Round(float64(c.Window.Y) * scale))
 
 	// 画面外に出ないように作業領域でクランプする
-	hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+	hmon, _, _ := procMonitorFromWindow.Call(windowHandle.Load(), MONITOR_DEFAULTTONEAREST)
 	if hmon != 0 {
 		var mi MONITORINFO
 		mi.CbSize = uint32(unsafe.Sizeof(mi))
 		if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
 			var rect RECT
-			procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+			procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 			ww := rect.Right - rect.Left
 			hh := rect.Bottom - rect.Top
 			if physX < mi.RcWork.Left {
@@ -1546,11 +1590,11 @@ func restoreWindowGeometry() bool {
 
 // persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
 func persistCurrentWindowGeometry() {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return
 	}
 	var rect RECT
-	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&rect)))
+	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	scale := getWindowDpiScale()
 	if scale <= 0 {
 		scale = 1.0
@@ -1574,10 +1618,10 @@ func persistCurrentWindowGeometry() {
 // 作業領域は MonitorFromWindow で実際にウィンドウが乗っているモニタの値を使う
 // (SPI_GETWORKAREA だとプライマリ固定で、マルチモニタ環境でズレる)。
 func moveToBottomRight() {
-	if windowHandle == 0 {
+	if windowHandle.Load() == 0 {
 		return
 	}
-	hmon, _, _ := procMonitorFromWindow.Call(windowHandle, MONITOR_DEFAULTTONEAREST)
+	hmon, _, _ := procMonitorFromWindow.Call(windowHandle.Load(), MONITOR_DEFAULTTONEAREST)
 	if hmon == 0 {
 		return
 	}
@@ -1588,7 +1632,7 @@ func moveToBottomRight() {
 		return
 	}
 	var winRect RECT
-	procGetWindowRect.Call(windowHandle, uintptr(unsafe.Pointer(&winRect)))
+	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&winRect)))
 	w := winRect.Right - winRect.Left
 	h := winRect.Bottom - winRect.Top
 	// 画面端にぴったり貼るとタスクバーや他アプリとの境界が見えにくいので、
@@ -1600,7 +1644,7 @@ func moveToBottomRight() {
 	margin := int32(math.Round(8 * scale))
 	newX := mi.RcWork.Right - w - margin
 	newY := mi.RcWork.Bottom - h - margin
-	procSetWindowPos.Call(windowHandle, 0, uintptr(newX), uintptr(newY), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
+	procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(newX), uintptr(newY), 0, 0, SWP_NOSIZE|SWP_NOZORDER)
 }
 
 // findMainWindow は WebView2 ウィンドウのハンドルを FindWindow で取得する。
@@ -1612,15 +1656,9 @@ func findMainWindow(title string) uintptr {
 	return hwnd
 }
 
-// setupMainWindow はウィンドウを見つけ、フレームを外して windowHandle にセットする。
-// 成功時に true、ウィンドウ未発見時に false を返す。
-func setupMainWindow(title string) bool {
-	hwnd := findMainWindow(title)
-	if hwnd == 0 {
-		return false
-	}
-	windowHandle = hwnd
-
+// removeWindowFrame はタイトルバー・枠を除去し、透過設定を（保持されていれば）再適用する。
+// hwnd 取得後に一度だけ呼ぶ。
+func removeWindowFrame(hwnd uintptr) {
 	gwlStyle := int32(-16)
 	style, _, _ := procGetWindowLong.Call(hwnd, uintptr(gwlStyle))
 	newStyle := style &^ (WS_CAPTION | WS_THICKFRAME | WS_SYSMENU)
@@ -1635,6 +1673,18 @@ func setupMainWindow(title string) bool {
 	if tr {
 		setTransparent(true)
 	}
+}
+
+// setupMainWindow はウィンドウを FindWindow で見つけ、フレームを外して windowHandle にセットする。
+// 主経路では main が w.Window() で直接ハンドルを取得するため、これは enterTray の
+// フォールバック（ハンドル未取得時の復旧）専用。成功時 true。
+func setupMainWindow(title string) bool {
+	hwnd := findMainWindow(title)
+	if hwnd == 0 {
+		return false
+	}
+	windowHandle.Store(hwnd)
+	removeWindowFrame(hwnd)
 	return true
 }
 
@@ -1729,36 +1779,29 @@ func main() {
 	}
 	defer w.Destroy()
 
-	// WebView2 のウィンドウが立ち上がるタイミングは環境依存で 200ms では間に合わないことがある。
-	// FindWindow を成功するまでポーリングしないと windowHandle=0 のまま固まり、
-	// ✕ クリック時にウィンドウを隠せずトレイ遷移が破綻する。
-	go func() {
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			time.Sleep(50 * time.Millisecond)
-			if setupMainWindow(windowTitle) {
-				restored := restoreWindowGeometry()
-				if !restored {
-					moveToBottomRight()
-				}
-				// go-webview2 の SetSize(HintFixed) が後段で位置をリセットすることがあるため、
-				// 初期化が落ち着いたあとに再適用する。
-				time.AfterFunc(500*time.Millisecond, func() {
-					if !restoreWindowGeometry() {
-						moveToBottomRight()
-					}
-				})
-				// 常に前面表示の復元
-				alwaysOnTopMu.Lock()
-				top := alwaysOnTop
-				alwaysOnTopMu.Unlock()
-				if top {
-					setTopmost(true)
-				}
-				return
-			}
+	// go-webview2 は CreateWindowExW を NewWithOptions 内で同期的に実行済みなので、
+	// w.Window() でメインウィンドウの HWND を即座に取得できる。旧実装の FindWindow
+	// ポーリング（タイトル文字列依存・最大5秒待ち）は不要。ここでハンドルを確定させ、
+	// フレーム除去・位置復元・前面表示を適用する。
+	windowHandle.Store(uintptr(w.Window()))
+	removeWindowFrame(windowHandle.Load())
+	if !restoreWindowGeometry() {
+		moveToBottomRight()
+	}
+	// go-webview2 の SetSize(HintFixed) が後段で位置をリセットすることがあるため、
+	// 初期化が落ち着いたあとに再適用する。
+	time.AfterFunc(500*time.Millisecond, func() {
+		if !restoreWindowGeometry() {
+			moveToBottomRight()
 		}
-	}()
+	})
+	// 常に前面表示の復元
+	alwaysOnTopMu.Lock()
+	top := alwaysOnTop
+	alwaysOnTopMu.Unlock()
+	if top {
+		setTopmost(true)
+	}
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
 	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))

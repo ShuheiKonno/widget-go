@@ -9,6 +9,8 @@ AGENTS.md
 **/AGENTS.md
 
 # Helper script outputs
+_findgo.bat
+_findgo.ps1
 _findgo_result.txt
 _fix_location*.log
 _fix_location*.ps1
