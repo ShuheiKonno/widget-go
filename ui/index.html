@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>システムモニター</title>
+    <style>
+        :root {
+            --bg-grad: linear-gradient(135deg, #0d0d12 0%, #16161e 100%);
+            --container-bg: rgba(16,16,22,0.97);
+            --text-color: #f0f0f5;
+            --muted-color: #a8a8b8;
+            --section-bg: rgba(255,255,255,0.05);
+            --section-border: rgba(255,255,255,0.10);
+            --section-title: #d8d8e8;
+            --section-value: #7bffe0;
+            --bar-track: rgba(255,255,255,0.12);
+            --core-track: rgba(255,255,255,0.10);
+            --net-canvas-bg: rgba(0,0,0,0.35);
+            --btn-bg: rgba(255,255,255,0.12);
+            --btn-bg-hover: rgba(255,255,255,0.22);
+            --btn-color: #bbb;
+            --modal-bg: rgba(20,20,28,0.98);
+            --modal-border: rgba(255,255,255,0.12);
+            --input-bg: rgba(255,255,255,0.05);
+            --input-border: rgba(255,255,255,0.14);
+        }
+        body.theme-light {
+            --bg-grad: linear-gradient(135deg, #e6e9f5 0%, #cdd6ec 100%);
+            --container-bg: rgba(245,246,252,0.96);
+            --text-color: #24263a;
+            --muted-color: #606078;
+            --section-bg: rgba(0,0,0,0.04);
+            --section-border: rgba(0,0,0,0.1);
+            --section-title: #3b3b5a;
+            --section-value: #0a7f68;
+            --bar-track: rgba(0,0,0,0.1);
+            --core-track: rgba(0,0,0,0.08);
+            --net-canvas-bg: rgba(0,0,0,0.06);
+            --btn-bg: rgba(0,0,0,0.08);
+            --btn-bg-hover: rgba(0,0,0,0.16);
+            --btn-color: #444;
+            --modal-bg: rgba(250,250,255,0.99);
+            --modal-border: rgba(0,0,0,0.1);
+            --input-bg: rgba(0,0,0,0.04);
+            --input-border: rgba(0,0,0,0.15);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        body { font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; background: var(--bg-grad); color: var(--text-color); font-size: 13px; user-select: none; }
+        .container { width: 100%; height: 100%; background: var(--container-bg); padding: 30px 10px 10px 10px; position: relative; cursor: grab; }
+        .container.dragging { cursor: grabbing; }
+        .top-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
+        .top-btn { width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: all 0.2s; }
+        .tray-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 14px; line-height: 1; padding: 0 0 5px 0; font-weight: 700; }
+        .tray-btn:hover { background: var(--btn-bg-hover); }
+        .pin-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 9px; }
+        .pin-btn:hover { background: var(--btn-bg-hover); }
+        .pin-btn.active { background: #4CAF50; color: #fff; }
+        .settings-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
+        .settings-btn:hover { background: var(--btn-bg-hover); }
+        .compact-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
+        .compact-btn:hover { background: var(--btn-bg-hover); }
+        /* コンパクト状態時はフル表示に戻す意図が伝わるよう強調色にする */
+        .compact-btn.expanded { background: #5aa0ff; color: #fff; font-size: 11px; }
+        .compact-btn.expanded:hover { background: #4a90ef; }
+        .compact .section { padding: 5px 10px; margin-bottom: 4px; }
+        .compact .wifi-section { padding: 0; }
+        /* wifi-section の中身は flip-face で描画されるので、flip-face 自体も縮める */
+        .compact .flip-card > .flip-face { padding: 5px 10px; }
+        .compact .section-header { margin-bottom: 0; }
+        .compact .cores-container { display: none; }
+        .compact .cpu-progress { display: none; }
+        .compact .mem-progress { display: none; }
+        .compact .memory-details { display: none; }
+        .compact .wifi-info { display: none; }
+        .compact .wifi-compact-value { display: inline; }
+        .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
+        .section:last-child { margin-bottom: 0; }
+        .section-header { display: flex; align-items: center; margin-bottom: 6px; }
+        .section-icon { font-size: 14px; margin-right: 6px; }
+        .section-title { font-size: 12px; font-weight: 600; flex-grow: 1; color: var(--section-title); }
+        .section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; }
+        .progress-bar { height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+        .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+        .cpu-fill { background: linear-gradient(90deg, #8a9cff, #b07cff); }
+        .memory-fill { background: linear-gradient(90deg, #ffa3ff, #ff7a8a); }
+        .cores-container { display: grid; grid-template-columns: repeat(4,1fr); gap: 3px; margin-top: 5px; }
+        .core-item { text-align: center; }
+        .core-label { color: var(--muted-color); font-size:8px; display:block; margin-bottom:2px; }
+        .core-bar-container { height:24px; background: var(--core-track); border-radius:3px; position:relative; overflow:hidden; }
+        .core-bar { position:absolute; bottom:0; width:100%; background:linear-gradient(180deg,#8a9cff,#b07cff); border-radius:3px; transition:height 0.3s ease; }
+        .core-value { display:block; text-align:center; color:#fff; font-size:9px; font-weight:600; line-height:24px; height:24px; margin-top:-24px; position:relative; text-shadow:0 1px 2px rgba(0,0,0,0.6); pointer-events:none; }
+        body.theme-light .core-value { color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.35); }
+        .memory-details { text-align:right; font-size:11px; color: var(--muted-color); font-family:'Consolas', monospace; }
+        .memory-details .used { color:#e85ad0; font-weight:600; }
+        body:not(.theme-light) .memory-details .used { color:#ffa3ff; }
+        .wifi-info { display:flex; flex-direction:column; gap:4px; }
+        .wifi-row { display:flex; justify-content:space-between; align-items:center; }
+        .wifi-label { color: var(--muted-color); font-size:11px; }
+        .wifi-value { color: var(--text-color); font-size:11px; font-weight:600; font-family:'Consolas', monospace; }
+        .wifi-connected { color:#1aa86b; }
+        body:not(.theme-light) .wifi-connected { color:#7fffaa; }
+        .wifi-disconnected { color:#d33; }
+        body:not(.theme-light) .wifi-disconnected { color:#ff8a8a; }
+        .wifi-compact-value { display:none; }
+        .wifi-section { background:transparent; border:none; padding:0; perspective:800px; }
+        .flip-card { display:grid; transform-style:preserve-3d; transition:transform 0.55s; }
+        .flip-card > .flip-face { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; background: var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:8px 10px; cursor:pointer; }
+        .flip-card > .flip-back { transform:rotateY(180deg); display:flex; flex-direction:column; }
+        .wifi-section.flipped .flip-card { transform:rotateY(180deg); }
+        .wifi-section.ethernet-mode .wifi-wireless-only { display:none; }
+        .wifi-ethernet-only { display:none; }
+        .wifi-section.ethernet-mode .wifi-ethernet-only { display:flex; }
+        .net-peak-toggle { cursor:pointer; padding:1px 4px; border-radius:4px; transition:background 0.15s; }
+        .net-peak-toggle:hover { background: var(--btn-bg-hover); }
+        .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background: var(--net-canvas-bg); border-radius:4px; }
+        /* コンパクト時はグラフも rx/tx 数値も非表示にし、CPU/メモリと同じヘッダのみのサイズに揃える */
+        .compact .net-canvas { display:none; }
+        .net-legend { display:flex; justify-content:space-between; margin-top:4px; font-size:11px; font-family:'Consolas', monospace; }
+        .net-leg-rx { color:#1aa86b; }
+        body:not(.theme-light) .net-leg-rx { color:#7fffaa; }
+        .net-leg-tx { color:#b74da6; }
+        body:not(.theme-light) .net-leg-tx { color:#ffa3ff; }
+        .compact .net-legend { display:none; }
+
+        /* 設定モーダル */
+        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:200; cursor:default; }
+        .modal-overlay.show { display:flex; }
+        .modal { background: var(--modal-bg); border:1px solid var(--modal-border); border-radius:10px; padding:14px 14px 10px 14px; width:92%; max-width:260px; max-height:92vh; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
+        .modal h2 { font-size:13px; font-weight:600; margin-bottom:10px; color: var(--section-title); display:flex; align-items:center; justify-content:space-between; }
+        .modal h2 .modal-close { background:none; border:none; color: var(--muted-color); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px; }
+        .modal h2 .modal-close:hover { color: var(--text-color); }
+        .modal-field { margin-bottom:10px; }
+        .modal-field:last-child { margin-bottom:4px; }
+        .modal-label { font-size:11px; color: var(--muted-color); display:block; margin-bottom:4px; }
+        .modal-options { display:flex; gap:4px; flex-wrap:wrap; }
+        .modal-opt { flex:1 1 auto; min-width:46px; text-align:center; padding:5px 6px; font-size:11px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; color: var(--text-color); transition:all 0.15s; }
+        .modal-opt:hover { background: var(--btn-bg-hover); }
+        .modal-opt.active { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
+        .modal-toggle { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; font-size:11px; }
+        .modal-toggle input { margin:0; cursor:pointer; }
+    </style>
+</head>
+<body>
+    <div class="container" id="dragArea">
+        <div class="top-btns">
+            <button class="top-btn pin-btn" id="pinBtn" title="常に前面に表示">📌</button>
+            <button class="top-btn settings-btn" id="settingsBtn" title="表示オプション">⚙</button>
+            <button class="top-btn compact-btn" id="compactBtn" title="コンパクト表示">▬</button>
+            <button class="top-btn tray-btn" id="closeBtn" title="タスクバーに格納">_</button>
+        </div>
+        <div class="modal-overlay" id="settingsModal">
+            <div class="modal">
+                <h2>表示オプション<button class="modal-close" id="modalCloseBtn" title="閉じる">✕</button></h2>
+                <div class="modal-field">
+                    <span class="modal-label">テーマ</span>
+                    <div class="modal-options" data-group="theme">
+                        <button class="modal-opt" data-value="dark">ダーク</button>
+                        <button class="modal-opt" data-value="light">ライト</button>
+                        <button class="modal-opt" data-value="system">システム</button>
+                    </div>
+                </div>
+                <div class="modal-field">
+                    <span class="modal-label">透過モード</span>
+                    <label class="modal-toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
+                </div>
+                <div class="modal-field">
+                    <span class="modal-label">CPU Core 番号</span>
+                    <div class="modal-options" data-group="coreBase">
+                        <button class="modal-opt" data-value="0">0 から</button>
+                        <button class="modal-opt" data-value="1">1 から</button>
+                    </div>
+                </div>
+                <div class="modal-field">
+                    <span class="modal-label">タスクバー (最小化時)</span>
+                    <div class="modal-options" data-group="trayDisplay">
+                        <button class="modal-opt" data-value="icon">アイコンのみ</button>
+                        <button class="modal-opt" data-value="cpu">CPU 使用率</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="section">
+            <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span></div>
+            <div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
+            <div class="cores-container" id="cores-container"></div>
+        </div>
+        <div class="section">
+            <div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value" id="memory-percent">0%</span></div>
+            <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
+            <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
+        </div>
+        <div class="section wifi-section" id="wifiSection">
+            <div class="flip-card">
+                <div class="flip-face flip-front">
+                    <div class="section-header"><span class="section-icon" id="conn-icon">📶</span><span class="section-title" id="conn-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span></div>
+                    <div class="wifi-info">
+                        <div class="wifi-row wifi-detail"><span class="wifi-label" id="wifi-ssid-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
+                        <div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value" id="wifi-band">---</span></div>
+                        <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">規格</span><span class="wifi-value" id="wifi-type">---</span></div>
+                        <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">信号強度</span><span class="wifi-value" id="wifi-signal">---</span></div>
+                        <div class="wifi-row wifi-ethernet-only"><span class="wifi-label">速度</span><span class="wifi-value" id="eth-speed">---</span></div>
+                    </div>
+                </div>
+                <div class="flip-face flip-back">
+                    <div class="section-header"><span class="section-icon">📊</span><span class="section-title">ネットワーク</span><span class="section-value net-peak-toggle" id="net-peak" title="クリックで単位切替 (B ⇔ bit)">---</span></div>
+                    <canvas class="net-canvas" id="netCanvas"></canvas>
+                    <div class="net-legend">
+                        <span class="net-leg-rx">↓ <span id="net-rx-val">0 B/s</span></span>
+                        <span class="net-leg-tx">↑ <span id="net-tx-val">0 B/s</span></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script nonce="__WIDGET_TOKEN__">
+        // 全 /api 呼び出しに付与する CSRF トークン（Go 側が起動毎に生成し埋め込む）。
+        const WIDGET_TOKEN = '__WIDGET_TOKEN__';
+        // fetch のラッパー。X-Widget-Token カスタムヘッダを必ず付与する。
+        // サーバー側 securityMiddleware がこのヘッダを検証し、外部ページからの
+        // CSRF リクエスト（カスタムヘッダを付けられない単純リクエスト）を弾く。
+        function apiFetch(url, opts){
+            opts = opts || {};
+            opts.headers = Object.assign({}, opts.headers, { 'X-Widget-Token': WIDGET_TOKEN });
+            return fetch(url, opts);
+        }
+        const wifiStandards = { '802.11a':'802.11a','802.11b':'802.11b','802.11g':'802.11g','802.11n':'802.11n (Wi-Fi 4)','802.11ac':'802.11ac (Wi-Fi 5)','802.11ax':'802.11ax (Wi-Fi 6)','802.11be':'802.11be (Wi-Fi 7)' };
+        function formatBytes(b){return (b/(1024*1024*1024)).toFixed(1)+' GB';}
+        // Ethernet 標準速度 (10/100/1000/2500/5000/10000 Mbps) から ±2% 以内ならスナップ。
+        // ドライバが 1Gbps リンクを 995Mbps と報告するようなケースへの対策。
+        function snapEthernetLinkSpeedMbps(mbps){
+            const standards = [10, 100, 1000, 2500, 5000, 10000];
+            for (const s of standards){
+                if (Math.abs(mbps - s) / s <= 0.02) return s;
+            }
+            return mbps;
+        }
+        function formatLinkSpeed(bps){
+            if(!bps || bps <= 0) return '---';
+            const mbps = snapEthernetLinkSpeedMbps(bps / 1000000);
+            if (mbps >= 1000){
+                const gbps = mbps / 1000;
+                return (gbps % 1 === 0 ? gbps.toFixed(0) : gbps.toFixed(1)) + ' Gbps';
+            }
+            return Math.round(mbps) + ' Mbps';
+        }
+
+        // 設定は Go 側の config.json に永続化される。フロント側は API 経由で読み書きする。
+        // ここで保持する settings オブジェクトは UI 反映のためのキャッシュ。
+        const settings = {
+            theme: 'system',
+            transparent: false,
+            coreBase: 0,
+            trayDisplay: 'icon',
+            topmost: false,
+            viewMode: 0,
+            netUnit: 'byte'
+        };
+
+        // Close button (✕): タスクトレイに格納する
+        document.getElementById('closeBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            // トレイ格納前に現在の位置・サイズを保存
+            apiFetch('/api/persistwindow').finally(() => apiFetch('/api/entertray').catch(()=>{}));
+        });
+
+        // Pin button (always-on-top)
+        document.getElementById('pinBtn').addEventListener('click', async function(e) {
+            e.stopPropagation();
+            try {
+                const res = await apiFetch('/api/toggletopmost');
+                const data = await res.json();
+                this.classList.toggle('active', data.topmost);
+                settings.topmost = !!data.topmost;
+            } catch(err) {}
+        });
+
+        // Normal ⇔ Compact のトグル
+        let currentViewMode = 0;
+        function applyCompactBtn(){
+            const btn = document.getElementById('compactBtn');
+            if (currentViewMode === 1) {
+                btn.textContent = '▢';
+                btn.title = 'フル表示';
+                btn.classList.add('expanded');
+            } else {
+                btn.textContent = '▬';
+                btn.title = 'コンパクト表示';
+                btn.classList.remove('expanded');
+            }
+        }
+        document.getElementById('compactBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (currentViewMode === 0) {
+                currentViewMode = 1;
+                document.getElementById('dragArea').classList.add('compact');
+                apiFetch('/api/setviewmode?mode=1').catch(()=>{});
+                setTimeout(adjustWindowHeight, 50);
+            } else if (currentViewMode === 1) {
+                currentViewMode = 0;
+                document.getElementById('dragArea').classList.remove('compact');
+                apiFetch('/api/setviewmode?mode=0').catch(()=>{});
+                setTimeout(adjustWindowHeight, 50);
+            }
+            settings.viewMode = currentViewMode;
+            applyCompactBtn();
+            // 高さ確定後にウィンドウ位置・サイズを config に永続化
+            setTimeout(() => apiFetch('/api/persistwindow').catch(()=>{}), 300);
+        });
+
+        // ネットワーク部 peak 表示: クリックで B/s ⇔ bps トグル
+        // wifi-section のクリック(フリップ)より先に捕まえる必要があるので stopPropagation
+        document.getElementById('net-peak').addEventListener('click', function(e){
+            e.stopPropagation();
+            netUnit = (netUnit === 'byte') ? 'bit' : 'byte';
+            settings.netUnit = netUnit;
+            apiFetch('/api/setoption?key=netUnit&value=' + netUnit).catch(()=>{});
+            refreshNetLegend();
+            drawNetGraph();
+        });
+
+        // Wi-Fi ⇔ ネットワークグラフ の反転トグル
+        // ドラッグとクリックを区別するため、mousedown からの移動量で判定する
+        let mouseDownX = 0, mouseDownY = 0, movedSinceDown = false;
+        const wifiSection = document.getElementById('wifiSection');
+        wifiSection.addEventListener('click', function(e) {
+            if (movedSinceDown) return;
+            e.stopPropagation();
+            wifiSection.classList.toggle('flipped');
+            if (wifiSection.classList.contains('flipped')) {
+                // フリップ直後はキャンバスの clientWidth が 0 のことがあるので
+                // アニメーション完了後も含めて二度描画しておく
+                setTimeout(drawNetGraph, 30);
+                setTimeout(drawNetGraph, 600);
+            }
+        });
+
+        // Drag functionality
+        let isDragging = false;
+        let isResizing = false;
+        let resizeDir = '';
+        let startCursorX, startCursorY;
+        let startWinW = 0, startWinH = 0;
+        const dragArea = document.getElementById('dragArea');
+        const resizeMargin = 6;
+
+        dragArea.addEventListener('mousemove', function(e) {
+            if (isDragging || isResizing) return;
+            const rect = dragArea.getBoundingClientRect();
+            const onRight = (rect.right - e.clientX) <= resizeMargin;
+            const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
+            if (onRight && onBottom) {
+                dragArea.style.cursor = 'nwse-resize';
+            } else if (onRight) {
+                dragArea.style.cursor = 'ew-resize';
+            } else if (onBottom) {
+                dragArea.style.cursor = 'ns-resize';
+            } else {
+                dragArea.style.cursor = 'grab';
+            }
+        });
+
+        dragArea.addEventListener('mouseleave', function() {
+            if (!isDragging && !isResizing) {
+                dragArea.style.cursor = 'grab';
+            }
+        });
+
+        dragArea.addEventListener('mousedown', async function(e) {
+            mouseDownX = e.screenX;
+            mouseDownY = e.screenY;
+            movedSinceDown = false;
+            if (e.target.id === 'closeBtn') return;
+            const rect = dragArea.getBoundingClientRect();
+            const onRight = (rect.right - e.clientX) <= resizeMargin;
+            const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
+            if (onRight || onBottom) {
+                isResizing = true;
+                resizeDir = (onRight ? 'r' : '') + (onBottom ? 'b' : '');
+                dragArea.classList.add('resizing');
+                startCursorX = e.screenX;
+                startCursorY = e.screenY;
+                try {
+                    const res = await apiFetch('/api/windowsize');
+                    const data = await res.json();
+                    startWinW = data.width;
+                    startWinH = data.height;
+                } catch(err) {
+                    isResizing = false;
+                    dragArea.classList.remove('resizing');
+                }
+                e.preventDefault();
+                return;
+            }
+            isDragging = true;
+            dragArea.classList.add('dragging');
+            apiFetch('/api/dragstart').catch(()=>{ isDragging = false; dragArea.classList.remove('dragging'); });
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!movedSinceDown) {
+                const dx = Math.abs(e.screenX - mouseDownX);
+                const dy = Math.abs(e.screenY - mouseDownY);
+                if (dx > 3 || dy > 3) movedSinceDown = true;
+            }
+            if (isResizing) {
+                const dx = e.screenX - startCursorX;
+                const dy = e.screenY - startCursorY;
+                let newW = startWinW;
+                let newH = startWinH;
+                if (resizeDir.indexOf('r') !== -1) {
+                    newW = startWinW + dx;
+                }
+                if (resizeDir.indexOf('b') !== -1) {
+                    newH = startWinH + dy;
+                }
+                apiFetch('/api/resize?w=' + Math.round(newW) + '&h=' + Math.round(newH)).catch(()=>{});
+                return;
+            }
+            if (!isDragging) return;
+            apiFetch('/api/dragmove').catch(()=>{});
+        });
+
+        document.addEventListener('mouseup', function() {
+            const wasDragging = isDragging;
+            const wasResizing = isResizing;
+            if (isResizing) {
+                isResizing = false;
+                dragArea.classList.remove('resizing');
+            }
+            isDragging = false;
+            dragArea.classList.remove('dragging');
+            if (wasDragging || wasResizing) {
+                apiFetch('/api/persistwindow').catch(()=>{});
+            }
+        });
+
+        function adjustWindowHeight() {
+            // height:100% / overflow:hidden の影響を避けるため
+            // 一時的に auto にしてコンテンツの自然な高さを測定する
+            const el = document.documentElement;
+            const bd = document.body;
+            const ct = document.getElementById('dragArea');
+            el.style.height = 'auto'; bd.style.height = 'auto'; ct.style.height = 'auto';
+            const h = ct.scrollHeight;
+            el.style.height = '100%'; bd.style.height = '100%'; ct.style.height = '100%';
+            apiFetch('/api/resize?h=' + h).catch(()=>{});
+        }
+
+        // ネットワーク履歴（直近 N サンプル分のスループット）
+        const netHistory = [];
+        const netMaxSamples = 60;
+        // 単位モード: 'byte' は B/s・KB/s・MB/s (1024 基準)、'bit' は bps・Kbps・Mbps (1000 基準)
+        // 初期値は 'byte'。/api/settings 取得後に Go 側の値で上書きされる。
+        let netUnit = 'byte';
+        function formatRate(bytesPerSec){
+            // 単位は固定: byte モードは常に KB/s、bit モードは常に Mbps。
+            // 値域に応じて小数桁数だけ調整する。
+            function withDecimals(v){
+                if (v >= 100) return v.toFixed(0);
+                if (v >= 10)  return v.toFixed(1);
+                return v.toFixed(2);
+            }
+            if (netUnit === 'bit'){
+                const mbps = bytesPerSec * 8 / 1000000;
+                return withDecimals(mbps) + ' Mbps';
+            }
+            const kbs = bytesPerSec / 1024;
+            return withDecimals(kbs) + ' KB/s';
+        }
+        function refreshNetLegend(){
+            if (netHistory.length === 0) return;
+            const last = netHistory[netHistory.length - 1];
+            document.getElementById('net-rx-val').textContent = formatRate(last.rx);
+            document.getElementById('net-tx-val').textContent = formatRate(last.tx);
+        }
+        function drawNetGraph(){
+            // ピーク値の計算と net-peak 表示はキャンバス非表示 (コンパクト時) でも行う
+            let peak = 0;
+            for (const p of netHistory){
+                if (p.rx > peak) peak = p.rx;
+                if (p.tx > peak) peak = p.tx;
+            }
+            if (netHistory.length >= 2) {
+                document.getElementById('net-peak').textContent = formatRate(peak);
+            }
+            const canvas = document.getElementById('netCanvas');
+            if (!canvas) return;
+            // 内部解像度を CSS サイズに合わせる（DPI スケール込み）
+            const dpr = window.devicePixelRatio || 1;
+            const cssW = canvas.clientWidth;
+            const cssH = canvas.clientHeight;
+            if (cssW === 0 || cssH === 0) return;
+            if (canvas.width !== Math.round(cssW*dpr) || canvas.height !== Math.round(cssH*dpr)){
+                canvas.width = Math.round(cssW*dpr);
+                canvas.height = Math.round(cssH*dpr);
+            }
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, cssW, cssH);
+            if (netHistory.length < 2){
+                ctx.fillStyle = 'rgba(255,255,255,0.35)';
+                ctx.font = '10px Segoe UI';
+                ctx.fillText('計測中...', 6, cssH/2);
+                return;
+            }
+            // peak は関数冒頭で計算済み。キャンバスへの描画スケール用に再利用する。
+            // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
+            const scale = Math.max(peak, 8*1024);
+            const step = cssW / (netMaxSamples - 1);
+            const offset = netMaxSamples - netHistory.length;
+            function drawSeries(getVal, fill, stroke){
+                ctx.fillStyle = fill;
+                ctx.beginPath();
+                ctx.moveTo((offset) * step, cssH);
+                netHistory.forEach((p, i) => {
+                    const x = (offset + i) * step;
+                    const y = cssH - (getVal(p) / scale) * cssH;
+                    ctx.lineTo(x, y);
+                });
+                ctx.lineTo((offset + netHistory.length - 1) * step, cssH);
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = 1.2;
+                ctx.beginPath();
+                netHistory.forEach((p, i) => {
+                    const x = (offset + i) * step;
+                    const y = cssH - (getVal(p) / scale) * cssH;
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+            drawSeries(p => p.rx, 'rgba(127,255,170,0.25)', '#7fffaa');
+            drawSeries(p => p.tx, 'rgba(255,163,255,0.22)', '#ffa3ff');
+        }
+
+        // ============ 設定モーダルと初期化 ============
+        const systemThemeMql = window.matchMedia('(prefers-color-scheme: light)');
+        function applyTheme(){
+            let effective = settings.theme;
+            if (effective === 'system') effective = systemThemeMql.matches ? 'light' : 'dark';
+            document.body.classList.toggle('theme-light', effective === 'light');
+        }
+        systemThemeMql.addEventListener('change', () => { if (settings.theme === 'system') applyTheme(); });
+
+        function applyCoreBase(){
+            document.querySelectorAll('.core-label[data-core-index]').forEach(el => {
+                const i = Number(el.dataset.coreIndex);
+                el.textContent = 'Core ' + (i + settings.coreBase);
+            });
+        }
+
+        function refreshModalUI(){
+            document.querySelectorAll('.modal-options').forEach(group => {
+                const key = group.dataset.group;
+                group.querySelectorAll('.modal-opt').forEach(btn => {
+                    btn.classList.toggle('active', String(settings[key]) === btn.dataset.value);
+                });
+            });
+            document.getElementById('optTransparent').checked = !!settings.transparent;
+        }
+
+        // モーダル選択肢: Go 側 API に保存してから UI 反映
+        document.querySelectorAll('.modal-options').forEach(group => {
+            const key = group.dataset.group;
+            group.addEventListener('click', (e) => {
+                const btn = e.target.closest('.modal-opt');
+                if (!btn) return;
+                e.stopPropagation();
+                const val = btn.dataset.value;
+                settings[key] = (key === 'coreBase') ? Number(val) : val;
+                refreshModalUI();
+                if (key === 'theme') {
+                    applyTheme();
+                    apiFetch('/api/setoption?key=theme&value=' + val).catch(()=>{});
+                } else if (key === 'coreBase') {
+                    applyCoreBase();
+                    apiFetch('/api/setoption?key=coreBase&value=' + val).catch(()=>{});
+                } else if (key === 'trayDisplay') {
+                    apiFetch('/api/traydisplay?mode=' + val).catch(()=>{});
+                }
+            });
+        });
+
+        document.getElementById('optTransparent').addEventListener('change', function(e){
+            e.stopPropagation();
+            settings.transparent = this.checked;
+            apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
+        });
+
+        const settingsModal = document.getElementById('settingsModal');
+        document.getElementById('settingsBtn').addEventListener('click', function(e){
+            e.stopPropagation();
+            refreshModalUI();
+            settingsModal.classList.add('show');
+        });
+        document.getElementById('modalCloseBtn').addEventListener('click', function(e){
+            e.stopPropagation();
+            settingsModal.classList.remove('show');
+        });
+        settingsModal.addEventListener('click', function(e){
+            if (e.target === settingsModal) settingsModal.classList.remove('show');
+        });
+        // モーダル内の mousedown がドラッグ判定に回らないよう抑止
+        settingsModal.addEventListener('mousedown', (e) => e.stopPropagation());
+
+        // Go 側の永続設定を起動時に取得して UI に反映する。
+        // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
+        // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
+        apiFetch('/api/settings').then(r => r.json()).then(s => {
+            if (!s) return;
+            if (s.theme) settings.theme = s.theme;
+            if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
+            if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
+            if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
+            if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
+            if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
+            if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
+
+            applyTheme();
+            applyCoreBase();
+            if (settings.topmost) document.getElementById('pinBtn').classList.add('active');
+            if (settings.viewMode === 1) {
+                currentViewMode = 1;
+                document.getElementById('dragArea').classList.add('compact');
+            }
+            applyCompactBtn();
+        }).catch(()=>{ applyTheme(); });
+
+        async function updateData(){
+            try{ const res=await apiFetch('/api/system'); const data=await res.json();
+                if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
+                    if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
+                if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
+                if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
+                const ssid=document.getElementById('wifi-ssid');
+                const connIcon=document.getElementById('conn-icon');
+                const connTitle=document.getElementById('conn-title');
+                const ssidLabel=document.getElementById('wifi-ssid-label');
+                const connSection=document.getElementById('wifiSection');
+                if(data.WiFi && data.WiFi.SSID){
+                    connSection.classList.remove('ethernet-mode');
+                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; ssidLabel.textContent='SSID';
+                    ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected';
+                    let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; }
+                    document.getElementById('wifi-band').textContent=band;
+                    document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type;
+                    document.getElementById('wifi-signal').textContent=data.WiFi.Signal+'%';
+                    let compact=data.WiFi.Band; if(data.WiFi.Channel>0){ compact+='('+data.WiFi.Channel+'ch)'; }
+                    document.getElementById('wifi-compact').textContent=compact;
+                } else if(data.Ethernet && data.Ethernet.Connected){
+                    connSection.classList.add('ethernet-mode');
+                    connIcon.textContent='🔌'; connTitle.textContent='Ethernet'; ssidLabel.textContent='アダプタ';
+                    ssid.textContent=data.Ethernet.Name; ssid.className='wifi-value wifi-connected';
+                    const spdStr=formatLinkSpeed(data.Ethernet.LinkSpeedBps);
+                    document.getElementById('eth-speed').textContent=spdStr;
+                    document.getElementById('wifi-compact').textContent=(spdStr==='---')?'Ethernet':spdStr;
+                } else {
+                    connSection.classList.remove('ethernet-mode');
+                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; ssidLabel.textContent='SSID';
+                    ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected';
+                    document.getElementById('wifi-band').textContent='---';
+                    document.getElementById('wifi-type').textContent='---';
+                    document.getElementById('wifi-signal').textContent='---';
+                    document.getElementById('wifi-compact').textContent='未接続';
+                }
+                // サーバーとの viewMode 同期
+                if (data.ViewMode !== undefined && data.ViewMode !== currentViewMode) {
+                    currentViewMode = data.ViewMode;
+                    if (currentViewMode === 0) {
+                        document.getElementById('dragArea').classList.remove('compact');
+                        setTimeout(adjustWindowHeight, 50);
+                    } else if (currentViewMode === 1) {
+                        document.getElementById('dragArea').classList.add('compact');
+                        setTimeout(adjustWindowHeight, 50);
+                    }
+                }
+            }catch(e){ console.error('Update error:',e); }
+        }
+        let heightAdjusted = false;
+        updateData().then(()=>{ adjustWindowHeight(); setTimeout(adjustWindowHeight, 300); heightAdjusted = true; });
+        setInterval(updateData,2000);
+        window.addEventListener('load', function() {
+            if(!heightAdjusted){ setTimeout(adjustWindowHeight, 350); setTimeout(adjustWindowHeight, 1000); }
+        });
+    </script>
+</body>
+</html>
