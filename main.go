@@ -52,7 +52,6 @@ var (
 	procCreateMutexW    = kernel32.NewProc("CreateMutexW")
 
 	procSetForegroundWindow = user32.NewProc("SetForegroundWindow")
-	procSystemParametersInfo = user32.NewProc("SystemParametersInfoW")
 	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
 	procMonitorFromWindow = user32.NewProc("MonitorFromWindow")
 	procGetMonitorInfoW   = user32.NewProc("GetMonitorInfoW")
@@ -60,15 +59,9 @@ var (
 	gdi32                = syscall.NewLazyDLL("gdi32.dll")
 	procCreateCompatibleDC = gdi32.NewProc("CreateCompatibleDC")
 	procCreateDIBSection   = gdi32.NewProc("CreateDIBSection")
-	procSelectObject       = gdi32.NewProc("SelectObject")
-	procCreateFontW        = gdi32.NewProc("CreateFontW")
-	procSetTextColor       = gdi32.NewProc("SetTextColor")
-	procSetBkMode          = gdi32.NewProc("SetBkMode")
-	procTextOutW           = gdi32.NewProc("TextOutW")
 	procDeleteDC           = gdi32.NewProc("DeleteDC")
 	procDeleteObject       = gdi32.NewProc("DeleteObject")
 	procCreateBitmap       = gdi32.NewProc("CreateBitmap")
-	procGetTextExtentPoint32 = gdi32.NewProc("GetTextExtentPoint32W")
 
 	procCreateIconIndirect = user32.NewProc("CreateIconIndirect")
 	procDestroyIcon        = user32.NewProc("DestroyIcon")
@@ -233,12 +226,6 @@ func writeConfigLocked() {
 		return
 	}
 	_ = os.Rename(tmp, configPath)
-}
-
-func saveConfig() {
-	configMu.Lock()
-	defer configMu.Unlock()
-	writeConfigLocked()
 }
 
 // mutateConfig は config をロックしたうえで変更関数を適用し、ロックを保持したまま保存する。
@@ -709,10 +696,10 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	}
 	switch msg {
 	case WM_TRAYICON:
-		event := lParam & 0xFFFF
-		if event == WM_LBUTTONUP {
+		switch lParam & 0xFFFF {
+		case WM_LBUTTONUP:
 			restoreFromTray()
-		} else if event == WM_RBUTTONUP {
+		case WM_RBUTTONUP:
 			showTrayMenu(hwnd)
 		}
 		return 0

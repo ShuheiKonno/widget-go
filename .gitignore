@@ -17,4 +17,6 @@ _fix_location*.ps1
 _wifitest*.go
 
 # Build artifacts — exe は GitHub Releases で配布する
+# (~ 付きは実行中プロセスがロック中に go build が生成する一時ファイル)
 /system-widget.exe
+/system-widget.exe~
