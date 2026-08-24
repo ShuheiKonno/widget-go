@@ -81,10 +81,22 @@
         .section-icon { font-size: 14px; margin-right: 6px; }
         .section-title { font-size: 12px; font-weight: 600; flex-grow: 1; color: var(--section-title); }
         .section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; }
-        .progress-bar { height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+        .progress-bar { position: relative; height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
         .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
         .cpu-fill { background: linear-gradient(90deg, #8a9cff, #b07cff); }
         .memory-fill { background: linear-gradient(90deg, #ffa3ff, #ff7a8a); }
+        /* CPU クロック行（現在クロック + ベースクロックに対する位置バー） */
+        .clock-row { display:flex; align-items:baseline; justify-content:space-between; gap:4px; margin-bottom:4px; }
+        .clock-label { color: var(--muted-color); font-size:11px; white-space:nowrap; }
+        .clock-value { color: var(--section-value); font-size:12px; font-weight:700; font-family:'Consolas', monospace; white-space:nowrap; }
+        .clock-base { color: var(--muted-color); font-size:10px; font-family:'Consolas', monospace; white-space:nowrap; }
+        .clock-fill { background: linear-gradient(90deg,#5ad0ff,#8a9cff); }
+        /* ベースクロックを超えた領域（ターボ）は橙で区別する */
+        .clock-fill.turbo { background: linear-gradient(90deg,#ffc46a,#ff7a3c); }
+        .clock-base-marker { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,0.55); }
+        body.theme-light .clock-base-marker { background:rgba(0,0,0,0.35); }
+        .compact .clock-row { display:none; }
+        .compact .clock-progress { display:none; }
         .cores-container { display: grid; grid-template-columns: repeat(4,1fr); gap: 3px; margin-top: 5px; }
         .core-item { text-align: center; }
         .core-label { color: var(--muted-color); font-size:8px; display:block; margin-bottom:2px; }
@@ -184,6 +196,8 @@
         <div class="section">
             <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span></div>
             <div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
+            <div class="clock-row"><span class="clock-label">クロック</span><span class="clock-value" id="cpu-clock">--- GHz</span><span class="clock-base" id="cpu-clock-base">base ---</span></div>
+            <div class="progress-bar clock-progress"><div class="progress-fill clock-fill" id="clock-bar" style="width:0%"></div><div class="clock-base-marker" id="clock-base-marker" style="left:50%"></div></div>
             <div class="cores-container" id="cores-container"></div>
         </div>
         <div class="section">
@@ -244,6 +258,40 @@
                 return (gbps % 1 === 0 ? gbps.toFixed(0) : gbps.toFixed(1)) + ' Gbps';
             }
             return Math.round(mbps) + ' Mbps';
+        }
+
+        // CPU クロック表示。
+        // 現在クロックは PDH の "% Processor Performance" × ベースクロックで算出された値
+        // （タスクマネージャーの「速度」と同じ）。ターボ時はベースを超える。
+        // バーのスケール上限は「ベース×2」を基準にし、観測した最大がそれを超えた場合のみ追随する。
+        let clockObservedMaxMHz = 0;
+        function formatClock(mhz){
+            if(!mhz || mhz <= 0) return '--- GHz';
+            if(mhz >= 1000) return (mhz/1000).toFixed(2) + ' GHz';
+            return Math.round(mhz) + ' MHz';
+        }
+        function updateClock(f){
+            const valueEl = document.getElementById('cpu-clock');
+            const baseEl = document.getElementById('cpu-clock-base');
+            const bar = document.getElementById('clock-bar');
+            const marker = document.getElementById('clock-base-marker');
+            if(!f || !f.BaseMHz){
+                valueEl.textContent = '--- GHz';
+                baseEl.textContent = 'base ---';
+                bar.style.width = '0%';
+                return;
+            }
+            const cur = f.CurrentMHz || 0;
+            const base = f.BaseMHz;
+            valueEl.textContent = formatClock(cur);
+            // 幅を節約するため base 表記だけ数値と単位を詰める
+            baseEl.textContent = 'base ' + formatClock(base).replace(' ', '');
+            if(cur > clockObservedMaxMHz) clockObservedMaxMHz = cur;
+            const scaleMax = Math.max(base * 2, clockObservedMaxMHz * 1.05);
+            bar.style.width = Math.min(100, cur / scaleMax * 100).toFixed(1) + '%';
+            marker.style.left = (base / scaleMax * 100).toFixed(1) + '%';
+            // ベース超え（ターボ動作中）は橙で示す
+            bar.classList.toggle('turbo', cur > base * 1.02);
         }
 
         // 設定は Go 側の config.json に永続化される。フロント側は API 経由で読み書きする。
@@ -674,10 +722,14 @@
             applyCompactBtn();
         }).catch(()=>{ applyTheme(); });
 
+        // 接続種別（Wi-Fi / Ethernet / 未接続）で情報行数が変わり、必要な高さも変わる。
+        // 起動直後は未確定のまま高さを測ってしまうので、種別が変わったら測り直す。
+        let lastConnMode = '';
         async function updateData(){
             try{ const res=await apiFetch('/api/system'); const data=await res.json();
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
+                updateClock(data.CPUFreq);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');
@@ -711,6 +763,13 @@
                     document.getElementById('wifi-signal').textContent='---';
                     document.getElementById('wifi-compact').textContent='未接続';
                 }
+                const connMode = connSection.classList.contains('ethernet-mode') ? 'eth'
+                    : (ssid.classList.contains('wifi-connected') ? 'wifi' : 'none');
+                if (connMode !== lastConnMode) {
+                    const first = lastConnMode === '';
+                    lastConnMode = connMode;
+                    if (!first) setTimeout(adjustWindowHeight, 50);
+                }
                 // サーバーとの viewMode 同期
                 if (data.ViewMode !== undefined && data.ViewMode !== currentViewMode) {
                     currentViewMode = data.ViewMode;
@@ -724,8 +783,27 @@
                 }
             }catch(e){ console.error('Update error:',e); }
         }
+        // クロック行が収まる最小幅。旧バージョンの config.json には幅 210 が保存されている
+        // ため、初回だけ実測して狭ければ広げる（ユーザーがこれより広くしている場合は触らない）。
+        const minContentWidth = 230;
+        async function ensureMinWidth(){
+            try{
+                const res = await apiFetch('/api/windowsize');
+                const d = await res.json();
+                if(d.width && d.width < minContentWidth){
+                    await apiFetch('/api/resize?w=' + minContentWidth);
+                }
+            }catch(e){}
+        }
         let heightAdjusted = false;
-        updateData().then(()=>{ adjustWindowHeight(); setTimeout(adjustWindowHeight, 300); heightAdjusted = true; });
+        updateData().then(async ()=>{
+            await ensureMinWidth();
+            // コア別バーは初回データ受信時に生成されるので、ここで初めて自然高さが確定する
+            adjustWindowHeight();
+            setTimeout(adjustWindowHeight, 300);
+            setTimeout(()=>apiFetch('/api/persistwindow').catch(()=>{}), 500);
+            heightAdjusted = true;
+        });
         setInterval(updateData,2000);
         window.addEventListener('load', function() {
             if(!heightAdjusted){ setTimeout(adjustWindowHeight, 350); setTimeout(adjustWindowHeight, 1000); }
