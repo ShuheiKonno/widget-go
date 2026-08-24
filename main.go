@@ -128,8 +128,8 @@ const (
 	BI_RGB         = 0
 	DIB_RGB_COLORS = 0
 
-	windowWidth  = 210
-	windowHeight = 400
+	windowWidth  = 230
+	windowHeight = 426
 )
 
 // windowHandle は WebView2 のメインウィンドウ HWND。
@@ -222,6 +222,7 @@ type MSG struct {
 
 type SystemData struct {
 	CPU      *sysinfo.CPUInfo      `json:"CPU"`
+	CPUFreq  *sysinfo.CPUFreqInfo  `json:"CPUFreq"`
 	Memory   *sysinfo.MemoryInfo   `json:"Memory"`
 	WiFi     *sysinfo.WiFiInfo     `json:"WiFi"`
 	Ethernet *sysinfo.EthernetInfo `json:"Ethernet"`
@@ -234,6 +235,7 @@ type SystemData struct {
 var (
 	cacheMu        sync.RWMutex
 	cachedCPU      *sysinfo.CPUInfo
+	cachedCPUFreq  *sysinfo.CPUFreqInfo
 	cachedMem      *sysinfo.MemoryInfo
 	cachedWiFi     *sysinfo.WiFiInfo
 	cachedEthernet *sysinfo.EthernetInfo
@@ -318,6 +320,7 @@ func getSystemData() SystemData {
 	viewModeMu.RUnlock()
 	return SystemData{
 		CPU:      cachedCPU,
+		CPUFreq:  cachedCPUFreq,
 		Memory:   cachedMem,
 		WiFi:     cachedWiFi,
 		Ethernet: cachedEthernet,
@@ -339,10 +342,15 @@ func refreshNetwork() {
 func refreshCPUAndMem() {
 	cpuInfo, cpuErr := sysinfo.GetCPUInfo()
 	memInfo, memErr := sysinfo.GetMemoryInfo()
+	// 取得できない環境（PDH 初期化失敗など）では nil のまま。UI 側は「---」を表示する。
+	freqInfo := sysinfo.GetCPUFreq()
 
 	cacheMu.Lock()
 	if cpuErr == nil {
 		cachedCPU = cpuInfo
+	}
+	if freqInfo != nil {
+		cachedCPUFreq = freqInfo
 	}
 	if memErr == nil {
 		cachedMem = memInfo
@@ -400,6 +408,7 @@ func refreshWiFi() {
 //	防ぐため、Wi-Fi の検出間隔は短めに保つ。netsh は 100ms 程度で完了する）。
 func startCollector() {
 	sysinfo.PrimeCPU()
+	sysinfo.InitCPUFreq()
 	refreshCPUAndMem()
 	refreshWiFi()
 	refreshEthernet()
@@ -525,6 +534,17 @@ func resizeWindow(width, height int32, anchorTop bool) {
 // 保存値が無い場合や windowHandle 未取得時は false を返し、呼び出し元はフォールバックを選ぶ。
 // 論理ピクセル値で保存されているので DPI スケール補正を行う。
 func restoreWindowGeometry() bool {
+	return restoreWindow(true)
+}
+
+// restoreWindowPosition は保存された位置だけを再適用し、サイズには触れない。
+// 起動直後の遅延再適用に使う。フロント側が内容の実寸に合わせてリサイズした直後に
+// これがサイズまで復元すると、旧バージョンの保存値でウィンドウが縮んで内容が切れるため。
+func restoreWindowPosition() bool {
+	return restoreWindow(false)
+}
+
+func restoreWindow(applySize bool) bool {
 	if windowHandle.Load() == 0 {
 		return false
 	}
@@ -532,7 +552,9 @@ func restoreWindowGeometry() bool {
 	if !c.Window.Saved || c.Window.Width <= 0 || c.Window.Height <= 0 {
 		return false
 	}
-	resizeWindow(c.Window.Width, c.Window.Height, false)
+	if applySize {
+		resizeWindow(c.Window.Width, c.Window.Height, false)
+	}
 
 	scale := getWindowDpiScale()
 	if scale <= 0 {
@@ -773,7 +795,7 @@ func main() {
 	// go-webview2 の SetSize(HintFixed) が後段で位置をリセットすることがあるため、
 	// 初期化が落ち着いたあとに再適用する。
 	time.AfterFunc(500*time.Millisecond, func() {
-		if !restoreWindowGeometry() {
+		if !restoreWindowPosition() {
 			moveToBottomRight()
 		}
 	})
