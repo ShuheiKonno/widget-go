@@ -5,9 +5,12 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
+
+	"widget-go/sysinfo"
 )
 
 // --- システムトレイ機能 ---
@@ -113,10 +116,57 @@ func drawDigits(pixels []uint32, w, h int, value int) {
 	}
 }
 
+// premulARGB は α とストレート RGB からプリマルチプライド ARGB (32bpp) を組み立てる。
+// CreateDIBSection で作った 32bpp ビットマップを CreateIconIndirect に渡す場合、
+// カラー値は α で乗算済みでなければ縁にハローが出る。
+func premulARGB(a, r, g, b uint8) uint32 {
+	pr := uint32(r) * uint32(a) / 255
+	pg := uint32(g) * uint32(a) / 255
+	pb := uint32(b) * uint32(a) / 255
+	return uint32(a)<<24 | pr<<16 | pg<<8 | pb
+}
+
+// トレイアイコン背景: 半透明ダーク (α=200, RGB=(20,22,40))。
+var iconBgColor = premulARGB(200, 20, 22, 40)
+
+// アクセント色は ui/index.html の .clock-fill / .clock-fill.turbo に対応させる。
+// CSS 側は 2 色のグラデーションだが 16px のアイコンでは表現できないため、
+// それぞれの中間色を代表色として使う。
+//
+//	通常  : #5ad0ff → #8a9cff の中点 = #72b6ff  (ui/index.html:93)
+//	ターボ: #ffc46a → #ff7a3c の中点 = #ff9f53  (ui/index.html:95)
+var (
+	clockAccentNormal = premulARGB(255, 0x72, 0xb6, 0xff)
+	clockAccentTurbo  = premulARGB(255, 0xff, 0x9f, 0x53)
+)
+
+// clockTurboRatio はターボ動作とみなすベースクロック比。
+// ui/index.html:293 の `cur > base * 1.02` と必ず同じ値にすること。
+// ここがずれるとトレイアイコンとクロックグラフの色が境界で食い違う。
+const clockTurboRatio = 1.02
+
+// clockAccentColor は現在のクロック情報からアクセント色を決める。
+// 取得できていない場合 (PDH 初期化失敗など) は ok=false を返し、
+// 呼び出し側は従来どおりアクセント無しで描画する。
+func clockAccentColor(f *sysinfo.CPUFreqInfo) (uint32, bool) {
+	if f == nil || f.BaseMHz <= 0 {
+		return 0, false
+	}
+	if f.CurrentMHz > f.BaseMHz*clockTurboRatio {
+		return clockAccentTurbo, true
+	}
+	return clockAccentNormal, true
+}
+
+// accentStripHeight はアイコン下端に敷くアクセント帯の高さ (px)。
+const accentStripHeight = 2
+
 // buildCpuIcon は CPU 使用率 (0-100) を示すトレイアイコンを GDI で生成する。
-// 背景は半透明の角丸ダーク矩形、文字は白。
+// 背景は半透明の角丸ダーク矩形、文字は白。hasAccent が真なら下端に accent 色の帯を敷く
+// (クロック周波数グラフと同じ配色)。背景を染めずに帯にするのは、16px で白文字の
+// コントラストを落とさないため。
 // 返値が 0 でない場合、呼び出し側は不要になったら procDestroyIcon.Call(hIcon) で解放する必要がある。
-func buildCpuIcon(percent int) uintptr {
+func buildCpuIcon(percent int, accent uint32, hasAccent bool) uintptr {
 	cx, _, _ := procGetSystemMetrics.Call(SM_CXSMICON)
 	cy, _, _ := procGetSystemMetrics.Call(SM_CYSMICON)
 	if cx == 0 {
@@ -152,14 +202,24 @@ func buildCpuIcon(percent int) uintptr {
 	pixels := unsafe.Slice((*uint32)(bitsPtr), int(w)*int(h))
 
 	// 背景: 半透明ダーク (プリマルチプライド ARGB)
-	// α=200, RGB=(20,22,40) → premul RGB=(15,17,31)
-	const bgColor = uint32(200)<<24 | uint32(15)<<16 | uint32(17)<<8 | uint32(31)
 	for i := range pixels {
-		pixels[i] = bgColor
+		pixels[i] = iconBgColor
 	}
-	// 角落とし (1px)
+
 	iw := int(w)
 	ih := int(h)
+
+	// アクセント帯を下端に敷く。角落としより先に塗ること
+	// (帯が下段の両端ピクセルを上書きするため、順序を逆にすると丸角が消える)。
+	if hasAccent && ih > accentStripHeight {
+		for y := ih - accentStripHeight; y < ih; y++ {
+			for x := 0; x < iw; x++ {
+				pixels[y*iw+x] = accent
+			}
+		}
+	}
+
+	// 角落とし (1px)
 	pixels[0] = 0
 	pixels[iw-1] = 0
 	pixels[(ih-1)*iw] = 0
@@ -242,12 +302,88 @@ func setTipText(nid *NOTIFYICONDATAW, text string) {
 	copy(nid.SzTip[:], tip)
 }
 
+// vsFixedFileInfo は VerQueryValueW("\\") が返す VS_FIXEDFILEINFO の先頭部分。
+// 後続フィールド (FileFlags 以降) は使わないので宣言していない。
+type vsFixedFileInfo struct {
+	Signature        uint32
+	StrucVersion     uint32
+	FileVersionMS    uint32
+	FileVersionLS    uint32
+	ProductVersionMS uint32
+	ProductVersionLS uint32
+}
+
+// vsFixedFileInfoSignature は VS_FIXEDFILEINFO の dwSignature 固定値。
+const vsFixedFileInfoSignature = 0xFEEF04BD
+
+// formatFileVersion は VS_FIXEDFILEINFO の dwFileVersionMS/LS を "vX.Y.Z" 形式にする。
+// winres.json のバージョンは 4 桁 (例: 1.8.0.0) だが、git タグや README は 3 桁表記なので
+// 末尾のビルド番号 (LOWORD(LS)) は落として揃える。
+func formatFileVersion(ms, ls uint32) string {
+	return fmt.Sprintf("v%d.%d.%d", ms>>16, ms&0xFFFF, ls>>16)
+}
+
+// appVersion は実行ファイルに埋め込まれた RT_VERSION からバージョン文字列を読む。
+// winres.json の bump だけでメニュー表示も追従させるため、Go 側に定数を持たない。
+// 文字列テーブル (StringFileInfo) は winres.json で 0411 (日本語) にのみ定義されており
+// 言語 ID 依存になるため、言語非依存な固定情報 (VS_FIXEDFILEINFO) から取得する。
+// 取得できない場合は空文字を返し、呼び出し側はバージョン行を出さない。
+var appVersion = sync.OnceValue(func() string {
+	buf := make([]uint16, syscall.MAX_PATH)
+	n, _, _ := procGetModuleFileName.Call(0, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+	if n == 0 || int(n) >= len(buf) {
+		return ""
+	}
+	pathPtr := uintptr(unsafe.Pointer(&buf[0]))
+
+	size, _, _ := procGetFileVersionInfoSizeW.Call(pathPtr, 0)
+	if size == 0 {
+		return ""
+	}
+	data := make([]byte, size)
+	if r, _, _ := procGetFileVersionInfoW.Call(pathPtr, 0, size, uintptr(unsafe.Pointer(&data[0]))); r == 0 {
+		return ""
+	}
+
+	subBlock, err := syscall.UTF16PtrFromString(`\`)
+	if err != nil {
+		return ""
+	}
+	var info unsafe.Pointer
+	var infoLen uint32
+	r, _, _ := procVerQueryValueW.Call(
+		uintptr(unsafe.Pointer(&data[0])),
+		uintptr(unsafe.Pointer(subBlock)),
+		uintptr(unsafe.Pointer(&info)),
+		uintptr(unsafe.Pointer(&infoLen)),
+	)
+	if r == 0 || info == nil || uintptr(infoLen) < unsafe.Sizeof(vsFixedFileInfo{}) {
+		return ""
+	}
+	ffi := (*vsFixedFileInfo)(info)
+	if ffi.Signature != vsFixedFileInfoSignature {
+		return ""
+	}
+	v := formatFileVersion(ffi.FileVersionMS, ffi.FileVersionLS)
+	// info は data の内部を指すので、読み終わるまで data を生かしておく
+	runtime.KeepAlive(data)
+	return v
+})
+
 func showTrayMenu(hwnd uintptr) {
 	menu, _, _ := procCreatePopupMenu.Call()
 	if menu == 0 {
 		return
 	}
 	defer procDestroyMenu.Call(menu)
+
+	// バージョン行は選択不可 (MF_GRAYED) かつ ID 0 なので WM_COMMAND は発生しない。
+	// 読み取りに失敗したときは誤った値を出さずに行ごと省く。
+	if v := appVersion(); v != "" {
+		verText, _ := syscall.UTF16PtrFromString("システムモニター " + v)
+		procAppendMenuW.Call(menu, MF_STRING|MF_GRAYED, 0, uintptr(unsafe.Pointer(verText)))
+		procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
+	}
 
 	exitText, _ := syscall.UTF16PtrFromString("終了")
 	procAppendMenuW.Call(menu, MF_STRING, ID_TRAY_EXIT, uintptr(unsafe.Pointer(exitText)))
@@ -263,7 +399,7 @@ func showTrayMenu(hwnd uintptr) {
 }
 
 // addTrayIcon は現在のツールチップと指定アイコンでトレイアイコンを NIM_ADD する。
-// enterTray の初回登録と TaskbarCreated による再登録で共有する。
+// startTray の初回登録と TaskbarCreated による再登録で共有する。
 func addTrayIcon(hwnd, icon uintptr) {
 	var nid NOTIFYICONDATAW
 	nid.CbSize = uint32(unsafe.Sizeof(nid))
@@ -293,7 +429,7 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_TRAYICON:
 		switch lParam & 0xFFFF {
 		case WM_LBUTTONUP:
-			restoreFromTray()
+			showWindowFromTray()
 		case WM_RBUTTONUP:
 			showTrayMenu(hwnd)
 		}
@@ -352,17 +488,10 @@ func initTrayWindow() uintptr {
 	return hwnd
 }
 
-func enterTray() {
-	// ウィンドウハンドル未取得でトレイ化に入ると、本体が隠れないまま
-	// trayActive=true が残り続けて二度と ✕ に反応しなくなる。
-	// ここで一度リカバリを試み、それでも取れないならトレイ化を諦める。
-	if windowHandle.Load() == 0 {
-		setupMainWindow("システムモニター")
-	}
-	if windowHandle.Load() == 0 {
-		return
-	}
-
+// startTray はトレイアイコンを常駐登録する。プロセス起動時に一度だけ呼ぶ。
+// ウィンドウの表示/非表示とは独立したライフサイクルで、アイコンはプロセスが
+// 終了するまで通知領域に残り続ける（アイコン削除は cleanupTray のみが行う）。
+func startTray() {
 	trayMu.Lock()
 	if trayActive {
 		trayMu.Unlock()
@@ -370,13 +499,8 @@ func enterTray() {
 	}
 	trayActive = true
 	trayStop = make(chan struct{})
+	stopCh := trayStop
 	trayMu.Unlock()
-
-	viewModeMu.Lock()
-	viewMode = 2
-	viewModeMu.Unlock()
-
-	procShowWindow.Call(windowHandle.Load(), SW_HIDE)
 
 	// トレイには icon.ico から作られた埋め込みアイコンを表示する
 	icon := loadTrayIcon()
@@ -385,6 +509,8 @@ func enterTray() {
 	trayMu.Unlock()
 
 	// トレイが CPU% モードなら、初期アイコンとして現在値で合成したアイコンを使う。
+	// 起動直後は startCollector がまだ値を埋めていないことがあり、その場合は
+	// アクセント無しの 0% アイコンになる（2 秒後の ticker が正しい値に差し替える）。
 	// 初期合成で失敗したら fallback で icon.ico 側を表示する。
 	trayDisplayMu.RLock()
 	tm := trayDisplayMode
@@ -397,8 +523,9 @@ func enterTray() {
 		if cachedCPU != nil {
 			p = int(math.Round(cachedCPU.Overall))
 		}
+		accent, hasAccent := clockAccentColor(cachedCPUFreq)
 		cacheMu.RUnlock()
-		if h := buildCpuIcon(p); h != 0 {
+		if h := buildCpuIcon(p, accent, hasAccent); h != 0 {
 			initialCpuIcon = h
 			startIcon = h
 		}
@@ -410,15 +537,13 @@ func enterTray() {
 
 		hwnd := initTrayWindow()
 		if hwnd == 0 {
-			// ウィンドウ作成失敗時はトレイモードを解除して復帰
+			// メッセージウィンドウを作れないとアイコン登録もできない。
+			// 常駐を諦めるだけで、本体ウィンドウの表示には影響させない。
 			trayMu.Lock()
 			trayActive = false
 			trayMu.Unlock()
-			viewModeMu.Lock()
-			viewMode = 0
-			viewModeMu.Unlock()
-			if windowHandle.Load() != 0 {
-				procShowWindow.Call(windowHandle.Load(), SW_SHOW)
+			if initialCpuIcon != 0 {
+				procDestroyIcon.Call(initialCpuIcon)
 			}
 			return
 		}
@@ -427,82 +552,7 @@ func enterTray() {
 		trayMu.Unlock()
 
 		addTrayIcon(hwnd, startIcon)
-
-		// トレイ定期更新: ツールチップと (CPU% モード時の) アイコンを差し替える。
-		// currentCpuIcon は手動生成した HICON 所有権を追跡する。
-		// LR_SHARED な icon.ico は絶対に DestroyIcon しない。
-		stopCh := trayStop
-		currentCpuIcon := initialCpuIcon
-		go func() {
-			runtime.LockOSThread()
-			defer runtime.UnlockOSThread()
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-stopCh:
-					if currentCpuIcon != 0 {
-						procDestroyIcon.Call(currentCpuIcon)
-						currentCpuIcon = 0
-					}
-					return
-				case <-ticker.C:
-					trayMu.Lock()
-					if !trayActive {
-						trayMu.Unlock()
-						if currentCpuIcon != 0 {
-							procDestroyIcon.Call(currentCpuIcon)
-							currentCpuIcon = 0
-						}
-						return
-					}
-					h := trayHwnd
-					staticIcon := trayIcon
-					trayMu.Unlock()
-
-					trayDisplayMu.RLock()
-					mode := trayDisplayMode
-					trayDisplayMu.RUnlock()
-
-					var upd NOTIFYICONDATAW
-					upd.CbSize = uint32(unsafe.Sizeof(upd))
-					upd.HWnd = h
-					upd.UID = 1
-					upd.UFlags = NIF_TIP
-					setTipText(&upd, formatTrayTooltip())
-
-					if mode == TRAY_DISPLAY_CPU {
-						cacheMu.RLock()
-						p := 0
-						if cachedCPU != nil {
-							p = int(math.Round(cachedCPU.Overall))
-						}
-						cacheMu.RUnlock()
-						if newIcon := buildCpuIcon(p); newIcon != 0 {
-							upd.UFlags |= NIF_ICON
-							upd.HIcon = newIcon
-							procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
-							if currentCpuIcon != 0 {
-								procDestroyIcon.Call(currentCpuIcon)
-							}
-							currentCpuIcon = newIcon
-							continue
-						}
-					}
-
-					// アイコン表示モード (または CPU 合成失敗時) — LR_SHARED のアイコンに戻す
-					if currentCpuIcon != 0 {
-						upd.UFlags |= NIF_ICON
-						upd.HIcon = staticIcon
-					}
-					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
-					if currentCpuIcon != 0 && (upd.UFlags&NIF_ICON) != 0 {
-						procDestroyIcon.Call(currentCpuIcon)
-						currentCpuIcon = 0
-					}
-				}
-			}
-		}()
+		go runTrayTicker(stopCh, initialCpuIcon)
 
 		// メッセージループ
 		var m MSG
@@ -523,52 +573,134 @@ func enterTray() {
 	}()
 }
 
-func restoreFromTray() {
-	trayMu.Lock()
-	if !trayActive {
-		trayMu.Unlock()
-		return
-	}
-	trayActive = false
-	hwnd := trayHwnd
-	close(trayStop)
-	trayMu.Unlock()
+// runTrayTicker はトレイのツールチップと (CPU% モード時の) アイコンを定期的に差し替える。
+// currentCpuIcon は手動生成した HICON の所有権を追跡する。
+// LR_SHARED な icon.ico は絶対に DestroyIcon しない。
+func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			if currentCpuIcon != 0 {
+				procDestroyIcon.Call(currentCpuIcon)
+			}
+			return
+		case <-ticker.C:
+			trayMu.Lock()
+			if !trayActive {
+				trayMu.Unlock()
+				if currentCpuIcon != 0 {
+					procDestroyIcon.Call(currentCpuIcon)
+				}
+				return
+			}
+			h := trayHwnd
+			staticIcon := trayIcon
+			trayMu.Unlock()
 
-	// トレイアイコン削除
-	var nid NOTIFYICONDATAW
-	nid.CbSize = uint32(unsafe.Sizeof(nid))
-	nid.HWnd = hwnd
-	nid.UID = 1
-	procShellNotifyIcon.Call(NIM_DELETE, uintptr(unsafe.Pointer(&nid)))
+			trayDisplayMu.RLock()
+			mode := trayDisplayMode
+			trayDisplayMu.RUnlock()
 
-	viewModeMu.Lock()
-	viewMode = 0
-	viewModeMu.Unlock()
+			var upd NOTIFYICONDATAW
+			upd.CbSize = uint32(unsafe.Sizeof(upd))
+			upd.HWnd = h
+			upd.UID = 1
+			upd.UFlags = NIF_TIP
+			setTipText(&upd, formatTrayTooltip())
 
-	// ウィンドウ復元
-	if windowHandle.Load() != 0 {
-		procShowWindow.Call(windowHandle.Load(), SW_SHOW)
-		alwaysOnTopMu.Lock()
-		top := alwaysOnTop
-		alwaysOnTopMu.Unlock()
-		if top {
-			setTopmost(true)
+			if mode == TRAY_DISPLAY_CPU {
+				cacheMu.RLock()
+				p := 0
+				if cachedCPU != nil {
+					p = int(math.Round(cachedCPU.Overall))
+				}
+				accent, hasAccent := clockAccentColor(cachedCPUFreq)
+				cacheMu.RUnlock()
+				if newIcon := buildCpuIcon(p, accent, hasAccent); newIcon != 0 {
+					upd.UFlags |= NIF_ICON
+					upd.HIcon = newIcon
+					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+					if currentCpuIcon != 0 {
+						procDestroyIcon.Call(currentCpuIcon)
+					}
+					currentCpuIcon = newIcon
+					continue
+				}
+			}
+
+			// アイコン表示モード (または CPU 合成失敗時) — LR_SHARED のアイコンに戻す
+			if currentCpuIcon != 0 {
+				upd.UFlags |= NIF_ICON
+				upd.HIcon = staticIcon
+			}
+			procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+			if currentCpuIcon != 0 && (upd.UFlags&NIF_ICON) != 0 {
+				procDestroyIcon.Call(currentCpuIcon)
+				currentCpuIcon = 0
+			}
 		}
 	}
+}
 
-	// メッセージループ終了のため非表示ウィンドウを破棄する。
-	// DestroyWindow は作成スレッド以外から呼ぶと失敗するため、直接呼ばず
-	// WM_CLOSE を Post して作成スレッド（トレイのメッセージループ）側で
-	// DefWindowProc→DestroyWindow→WM_DESTROY→PostQuitMessage を走らせる。
-	if hwnd != 0 {
-		procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+// hideWindowToTray は本体ウィンドウを隠す。トレイアイコンは常駐しているので
+// ここでは登録も削除も行わない。
+func hideWindowToTray() {
+	// トレイアイコンの登録に失敗している場合は隠さない。本体ウィンドウは枠なし
+	// (WS_SYSMENU 除去済み) でタスクバーボタンも出ないため、隠すと復帰手段が
+	// 完全に無くなる。
+	trayMu.Lock()
+	active := trayActive
+	trayMu.Unlock()
+	if !active {
+		return
 	}
 
-	trayMu.Lock()
-	trayHwnd = 0
-	// trayIcon は LR_SHARED でロードされた共有ハンドルなので破棄しない
-	trayIcon = 0
-	trayMu.Unlock()
+	// ウィンドウハンドル未取得のまま隠すと、本体が隠れないまま viewMode だけ
+	// 2 になって ✕ に反応しなくなる。ここで一度リカバリを試みる。
+	if windowHandle.Load() == 0 {
+		setupMainWindow("システムモニター")
+	}
+	if windowHandle.Load() == 0 {
+		return
+	}
+
+	viewModeMu.Lock()
+	viewMode = 2
+	viewModeMu.Unlock()
+
+	procShowWindow.Call(windowHandle.Load(), SW_HIDE)
+}
+
+// showWindowFromTray は本体ウィンドウを表示して前面に出す。
+// 既に表示されている場合は前面化のみ（トグルで隠すと、前面に無いだけの
+// ウィンドウがクリックで消えて誤動作に見えるため）。
+func showWindowFromTray() {
+	if windowHandle.Load() == 0 {
+		setupMainWindow("システムモニター")
+	}
+	hwnd := windowHandle.Load()
+	if hwnd == 0 {
+		return
+	}
+
+	viewModeMu.Lock()
+	if viewMode == 2 {
+		viewMode = 0
+	}
+	viewModeMu.Unlock()
+
+	procShowWindow.Call(hwnd, SW_SHOW)
+	alwaysOnTopMu.Lock()
+	top := alwaysOnTop
+	alwaysOnTopMu.Unlock()
+	if top {
+		setTopmost(true)
+	}
+	procSetForegroundWindow.Call(hwnd)
 }
 
 func cleanupTray() {
@@ -577,6 +709,13 @@ func cleanupTray() {
 	hwnd := trayHwnd
 	stopCh := trayStop
 	trayActive = false
+	// 二重 close を防ぐため、閉じる責務を持つのはここだけにし、
+	// 取り出したチャネルは即座に手放す（/api/close とトレイの「終了」の
+	// 両方からこの関数に到達しうる）。
+	trayStop = nil
+	trayHwnd = 0
+	// trayIcon は LR_SHARED でロードされた共有ハンドルなので破棄しない
+	trayIcon = 0
 	trayMu.Unlock()
 
 	if !active {
@@ -600,10 +739,4 @@ func cleanupTray() {
 		// Post する（プロセスは直後に終了するのでベストエフォート。アイコン削除は上の NIM_DELETE で完了済み）。
 		procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
 	}
-
-	trayMu.Lock()
-	trayHwnd = 0
-	trayIcon = 0
-
-	trayMu.Unlock()
 }

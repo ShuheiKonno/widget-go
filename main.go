@@ -44,9 +44,15 @@ var (
 	shell32             = syscall.NewLazyDLL("shell32.dll")
 	procShellNotifyIcon = shell32.NewProc("Shell_NotifyIconW")
 
-	kernel32            = syscall.NewLazyDLL("kernel32.dll")
-	procGetModuleHandle = kernel32.NewProc("GetModuleHandleW")
-	procCreateMutexW    = kernel32.NewProc("CreateMutexW")
+	kernel32              = syscall.NewLazyDLL("kernel32.dll")
+	procGetModuleHandle   = kernel32.NewProc("GetModuleHandleW")
+	procCreateMutexW      = kernel32.NewProc("CreateMutexW")
+	procGetModuleFileName = kernel32.NewProc("GetModuleFileNameW")
+
+	versionDLL                  = syscall.NewLazyDLL("version.dll")
+	procGetFileVersionInfoSizeW = versionDLL.NewProc("GetFileVersionInfoSizeW")
+	procGetFileVersionInfoW     = versionDLL.NewProc("GetFileVersionInfoW")
+	procVerQueryValueW          = versionDLL.NewProc("VerQueryValueW")
 
 	procSetForegroundWindow        = user32.NewProc("SetForegroundWindow")
 	procSetLayeredWindowAttributes = user32.NewProc("SetLayeredWindowAttributes")
@@ -96,6 +102,8 @@ const (
 	WM_DESTROY   = 0x0002
 
 	MF_STRING       = 0x00000000
+	MF_GRAYED       = 0x00000001
+	MF_SEPARATOR    = 0x00000800
 	TPM_RIGHTBUTTON = 0x0002
 	TPM_RETURNCMD   = 0x0100
 
@@ -679,8 +687,8 @@ func removeWindowFrame(hwnd uintptr) {
 }
 
 // setupMainWindow はウィンドウを FindWindow で見つけ、フレームを外して windowHandle にセットする。
-// 主経路では main が w.Window() で直接ハンドルを取得するため、これは enterTray の
-// フォールバック（ハンドル未取得時の復旧）専用。成功時 true。
+// 主経路では main が w.Window() で直接ハンドルを取得するため、これは
+// hideWindowToTray / showWindowFromTray のフォールバック（ハンドル未取得時の復旧）専用。成功時 true。
 func setupMainWindow(title string) bool {
 	hwnd := findMainWindow(title)
 	if hwnd == 0 {
@@ -806,6 +814,13 @@ func main() {
 	if top {
 		setTopmost(true)
 	}
+
+	// トレイアイコンは起動時から常駐させる（ウィンドウの表示/非表示とは独立）。
+	// windowHandle 確定後・w.Run() の前に呼ぶ必要がある。startTray は
+	// メッセージウィンドウ用の goroutine を起動して即座に戻るのでブロックしない。
+	startTray()
+	// Alt+F4 などで w.Run() を抜けた場合に通知領域へアイコンを残さない。
+	defer cleanupTray()
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
 	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))

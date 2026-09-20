@@ -1,0 +1,77 @@
+package main
+
+import (
+	"testing"
+
+	"widget-go/sysinfo"
+)
+
+// 既存の背景定数 (α=200, RGB=(20,22,40) → premul(15,17,31)) を再現できることで
+// premulARGB の実装をピン留めする。
+func TestPremulARGBMatchesLegacyBackground(t *testing.T) {
+	const want = uint32(200)<<24 | uint32(15)<<16 | uint32(17)<<8 | uint32(31)
+	if got := premulARGB(200, 20, 22, 40); got != want {
+		t.Errorf("premulARGB(200,20,22,40) = %#08x, want %#08x", got, want)
+	}
+	if iconBgColor != want {
+		t.Errorf("iconBgColor = %#08x, want %#08x", iconBgColor, want)
+	}
+}
+
+func TestPremulARGBOpaqueIsPassThrough(t *testing.T) {
+	const want = uint32(0xFF72B6FF)
+	if got := premulARGB(255, 0x72, 0xb6, 0xff); got != want {
+		t.Errorf("premulARGB(255,0x72,0xb6,0xff) = %#08x, want %#08x", got, want)
+	}
+}
+
+func TestClockAccentColor(t *testing.T) {
+	tests := []struct {
+		name      string
+		freq      *sysinfo.CPUFreqInfo
+		wantColor uint32
+		wantOK    bool
+	}{
+		{"nil (PDH 初期化失敗)", nil, 0, false},
+		{"BaseMHz が 0", &sysinfo.CPUFreqInfo{CurrentMHz: 3000, BaseMHz: 0}, 0, false},
+		{"通常域", &sysinfo.CPUFreqInfo{CurrentMHz: 1200, BaseMHz: 2400}, clockAccentNormal, true},
+		{"ベース同値", &sysinfo.CPUFreqInfo{CurrentMHz: 2400, BaseMHz: 2400}, clockAccentNormal, true},
+		// しきい値ちょうどは「超えていない」= 通常色 (ui/index.html の cur > base*1.02 と同じ)
+		{"しきい値ちょうど", &sysinfo.CPUFreqInfo{CurrentMHz: 2400 * clockTurboRatio, BaseMHz: 2400}, clockAccentNormal, true},
+		{"ターボ", &sysinfo.CPUFreqInfo{CurrentMHz: 3600, BaseMHz: 2400}, clockAccentTurbo, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color, ok := clockAccentColor(tt.freq)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if color != tt.wantColor {
+				t.Errorf("color = %#08x, want %#08x", color, tt.wantColor)
+			}
+		})
+	}
+}
+
+// winres.json の 4 桁 file_version が VS_FIXEDFILEINFO でどう表現されるかを再現し、
+// メニュー表示が 3 桁 (git タグ・README と同じ表記) になることを確かめる。
+func TestFormatFileVersion(t *testing.T) {
+	tests := []struct {
+		name string
+		ms   uint32
+		ls   uint32
+		want string
+	}{
+		{"1.8.0.0 (現行 winres.json)", 1<<16 | 8, 0, "v1.8.0"},
+		{"ビルド番号は落とす", 1<<16 | 7, 2<<16 | 345, "v1.7.2"},
+		{"2桁以上の数値", 10<<16 | 20, 30<<16 | 40, "v10.20.30"},
+		{"すべて 0", 0, 0, "v0.0.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatFileVersion(tt.ms, tt.ls); got != tt.want {
+				t.Errorf("formatFileVersion(%#x, %#x) = %q, want %q", tt.ms, tt.ls, got, tt.want)
+			}
+		})
+	}
+}
