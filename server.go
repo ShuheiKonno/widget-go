@@ -81,7 +81,7 @@ func startServer(ln net.Listener, token string) {
 	})
 
 	mux.HandleFunc("/api/entertray", func(w http.ResponseWriter, r *http.Request) {
-		enterTray()
+		hideWindowToTray()
 		w.WriteHeader(http.StatusOK)
 	})
 
