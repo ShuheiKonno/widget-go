@@ -17,6 +17,10 @@ type Config struct {
 		Width  int32 `json:"width"`
 		Height int32 `json:"height"`
 		Saved  bool  `json:"saved"`
+		// NormalWidth はコンパクト表示に切り替える直前のフル表示時の幅。
+		// コンパクト中は Width が専用幅（compactWindowWidth）で上書きされるため、
+		// 戻すときの幅をここに退避しておく。
+		NormalWidth int32 `json:"normalWidth"`
 	} `json:"window"`
 	Topmost     bool      `json:"topmost"`
 	ViewMode    int       `json:"viewMode"`

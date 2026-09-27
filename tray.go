@@ -715,7 +715,10 @@ func hideWindowToTray() {
 	}
 
 	viewModeMu.Lock()
-	viewMode = 2
+	if viewMode != viewModeTray {
+		viewModeBeforeTray = viewMode
+	}
+	viewMode = viewModeTray
 	viewModeMu.Unlock()
 
 	procShowWindow.Call(windowHandle.Load(), SW_HIDE)
@@ -733,9 +736,11 @@ func showWindowFromTray() {
 		return
 	}
 
+	// 格納前がコンパクト表示ならそのまま戻す。ウィンドウ幅は格納中も変えて
+	// いないので、モードを戻すだけでレイアウトと幅が一致する。
 	viewModeMu.Lock()
-	if viewMode == 2 {
-		viewMode = 0
+	if viewMode == viewModeTray {
+		viewMode = viewModeBeforeTray
 	}
 	viewModeMu.Unlock()
 
