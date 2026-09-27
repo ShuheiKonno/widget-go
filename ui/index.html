@@ -96,7 +96,12 @@
            コンパクト表示 (130px) で「ネットワーク」のような長いタイトルが
            数値を押し出すのを防ぐ。 */
         .section-title { font-size: 12px; font-weight: 600; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--section-title); }
-        .section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; flex-shrink: 0; }
+        /* margin-left:auto で、タイトルが伸びない場合でも必ず右端に付ける */
+        .section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; flex-shrink: 0; margin-left: auto; }
+        /* コンパクト時は幅が足りないので短縮ラベル (data-compact) に差し替える。
+           textContent は残るのでフル表示の文言と JS の書き換えには影響しない。 */
+        .compact .section-title[data-compact] { font-size: 0; }
+        .compact .section-title[data-compact]::before { content: attr(data-compact); font-size: 11px; font-weight: 600; }
         /* CPU / GPU / NPU のモデル名。長い名前は省略し、全文は title 属性で出す */
         .model-name { font-size: 10px; line-height: 1.3; color: var(--muted-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .cpu-model { margin-bottom: 2px; }
@@ -155,6 +160,9 @@
         .wifi-ethernet-only { display:none; }
         .wifi-section.ethernet-mode .wifi-ethernet-only { display:flex; }
         .net-peak-toggle { cursor:pointer; padding:1px 4px; border-radius:4px; transition:background 0.15s; }
+        /* クリック領域を保ったまま、右 4px のパディング分だけ外側へ逃がして
+           数値の右端を CPU/メモリ/GPU の行と揃える */
+        .compact .net-peak-toggle { margin-right:-4px; }
         .net-peak-toggle:hover { background: var(--btn-bg-hover); }
         .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background: var(--net-canvas-bg); border-radius:4px; }
         /* コンパクト時はグラフも rx/tx 数値も非表示にし、CPU/メモリと同じヘッダのみのサイズに揃える */
@@ -268,7 +276,7 @@
                     </div>
                 </div>
                 <div class="flip-face flip-back">
-                    <div class="section-header"><span class="section-icon">📊</span><span class="section-title">ネットワーク</span><span class="section-value net-peak-toggle" id="net-peak" title="クリックで単位切替 (B ⇔ bit)">---</span></div>
+                    <div class="section-header"><span class="section-icon">📊</span><span class="section-title" data-compact="Net">Network</span><span class="section-value net-peak-toggle" id="net-peak" title="クリックで単位切替 (B ⇔ bit)">---</span></div>
                     <canvas class="net-canvas" id="netCanvas"></canvas>
                     <div class="net-legend">
                         <span class="net-leg-rx">↓ <span id="net-rx-val">0 B/s</span></span>
@@ -888,7 +896,7 @@
                 const connSection=document.getElementById('wifiSection');
                 if(data.WiFi && data.WiFi.SSID){
                     connSection.classList.remove('ethernet-mode');
-                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; ssidLabel.textContent='SSID';
+                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; connTitle.dataset.compact='Wi-Fi'; ssidLabel.textContent='SSID';
                     ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected';
                     let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; }
                     document.getElementById('wifi-band').textContent=band;
@@ -898,14 +906,14 @@
                     document.getElementById('wifi-compact').textContent=compact;
                 } else if(data.Ethernet && data.Ethernet.Connected){
                     connSection.classList.add('ethernet-mode');
-                    connIcon.textContent='🔌'; connTitle.textContent='Ethernet'; ssidLabel.textContent='アダプタ';
+                    connIcon.textContent='🔌'; connTitle.textContent='Ethernet'; connTitle.dataset.compact='LAN'; ssidLabel.textContent='アダプタ';
                     ssid.textContent=data.Ethernet.Name; ssid.className='wifi-value wifi-connected';
                     const spdStr=formatLinkSpeed(data.Ethernet.LinkSpeedBps);
                     document.getElementById('eth-speed').textContent=spdStr;
                     document.getElementById('wifi-compact').textContent=(spdStr==='---')?'Ethernet':spdStr;
                 } else {
                     connSection.classList.remove('ethernet-mode');
-                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; ssidLabel.textContent='SSID';
+                    connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; connTitle.dataset.compact='Wi-Fi'; ssidLabel.textContent='SSID';
                     ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected';
                     document.getElementById('wifi-band').textContent='---';
                     document.getElementById('wifi-type').textContent='---';
