@@ -49,6 +49,9 @@ var (
 	procCreateMutexW      = kernel32.NewProc("CreateMutexW")
 	procGetModuleFileName = kernel32.NewProc("GetModuleFileNameW")
 
+	dwmapi                    = syscall.NewLazyDLL("dwmapi.dll")
+	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
+
 	versionDLL                  = syscall.NewLazyDLL("version.dll")
 	procGetFileVersionInfoSizeW = versionDLL.NewProc("GetFileVersionInfoSizeW")
 	procGetFileVersionInfoW     = versionDLL.NewProc("GetFileVersionInfoW")
@@ -151,6 +154,11 @@ const (
 	viewModeNormal  = 0
 	viewModeCompact = 1
 	viewModeTray    = 2
+
+	// DWM の角丸設定（Windows 11 22000 以降）。それ以前の OS では
+	// DwmSetWindowAttribute が E_INVALIDARG を返すだけで、直角のまま動作する。
+	DWMWA_WINDOW_CORNER_PREFERENCE = 33
+	DWMWCP_ROUNDSMALL              = 3
 )
 
 // windowHandle は WebView2 のメインウィンドウ HWND。
@@ -805,6 +813,22 @@ func removeWindowFrame(hwnd uintptr) {
 	if tr {
 		setTransparent(true)
 	}
+
+	setRoundedCorners(hwnd)
+}
+
+// setRoundedCorners はウィンドウの角を丸める。枠なしウィンドウなので HTML 側の
+// border-radius では角の外側にコンテナの背景が残ってしまう。DWM にクリップさせると
+// アンチエイリアスが効き、リサイズにも自動で追従する。
+// 角丸の指定は SetWindowLong によるスタイル変更で解除されるため、フレームを
+// 外したあとに呼ぶこと。
+func setRoundedCorners(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	pref := int32(DWMWCP_ROUNDSMALL)
+	procDwmSetWindowAttribute.Call(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+		uintptr(unsafe.Pointer(&pref)), unsafe.Sizeof(pref))
 }
 
 // setupMainWindow はウィンドウを FindWindow で見つけ、フレームを外して windowHandle にセットする。

@@ -152,6 +152,7 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` �
 - **コンパクト表示でトラフィックの数値が右端に揃っていなかったのを修正** — 単位切替のクリック領域として `.net-peak-toggle` に付けた左右 4px のパディングの分だけ、CPU/メモリ/GPU の数値より内側で終わっていた。クリック領域は保ったまま負のマージンで逃がして揃えた
 - **リサイズ下限をモード別に変更** — フル表示は従来どおり 200px、コンパクト表示は 120px。トレイ格納中 (`viewMode==2`) はモードが潰れるため、格納前のモード (`viewModeBeforeTray`) で判定する
 - **トレイ格納→復帰でコンパクト表示が解除される問題を修正** — 格納時に `viewMode` を 2 で上書きし、復帰時に必ず 0 に戻していたため、コンパクト表示が失われていた。格納前のモードを控えて復元する
+- **ウィンドウの角を丸くした** — 枠なしウィンドウ (`WS_POPUP`) のため HTML の `border-radius` では角の外側にコンテナの背景が残ってしまう。`DwmSetWindowAttribute(DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUNDSMALL)` で DWM にクリップさせ、アンチエイリアスを効かせつつリサイズにも自動追従させる。角丸の指定は `SetWindowLong` によるスタイル変更で解除されるため、フレーム除去の後に適用している。Windows 10 以前はこの属性が未対応で、直角のまま動作する
 - **CPU / GPU / NPU のモデル名を表示** — フル表示時のみ、CPU セクションのクロックバーの下、GPU セクションの専用メモリ行の上、NPU セクションのバーの下に表示。`(R)` `(TM)` `@ 3.60GHz` などの冗長な部分を落として 1 行に収め、入り切らない場合は末尾を省略して全文をツールチップで出す
 - **CPU 名の取得方式** — レジストリ `HKLM\HARDWARE\DESCRIPTION\System\CentralProcessor\0` の `ProcessorNameString` を起動時に 1 回だけ読んでキャッシュする。WMI (`Win32_Processor`) は同じ値を返すが初回クエリに数百 ms かかり COM の初期化状態にも依存するため使わない。起動後に変わらない静的な情報なので、2 秒周期の `/api/system` ではなく `/api/settings` に載せている
 
