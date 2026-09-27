@@ -714,7 +714,6 @@ func moveToRememberedPosition(mode int) bool {
 	return true
 }
 
-
 // applyStartupGeometry は起動時のジオメトリを適用する。
 // 起動は前回のモードや位置を引き継がず、常に「フル表示・画面右下」から始める。
 // 幅だけは前回ユーザーがリサイズした値を尊重する（コンパクト中に終了した場合の
