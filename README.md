@@ -144,7 +144,7 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` �
 
 ## 変更履歴
 
-### 1.9.0 (予定)
+### 1.9.0 (2026-09-27)
 
 - **GPU/NPU の表示を追加** — GPU の使用率・専用/共有メモリと、NPU の使用率を表示。表示する GPU は専用容量 512 MiB 以上を優先して自動選択し、表示オプションで GPU/NPU の収集ごと ON/OFF を切替
 - **実機検証の範囲** — Intel (Arc 140V + AI Boost) でのみ実機確認。AMD / NVIDIA / Qualcomm および Arm64 は実機未検証
