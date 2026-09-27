@@ -126,6 +126,8 @@
   - 比較は 2 秒平均どうしで行う。負荷は WebGPU / DirectML のサンプルと OpenVINO の NPU サンプルでかける。
   - 5 分間の平均プロセス CPU% と、PDH の収集・整形・解析それぞれの所要時間を計測し、レポートに記載する。
 
+> 2026-09-27 決定: T1 の Task Manager との数値比較は未検証のまま、T3 に移す。T3 でウィジェットの表示と Task Manager を並べ、ユーザーが目視で確認する。
+
 **T2 収集モジュール**（T1 に依存）
 - 対象ファイル: `sysinfo/gpu.go`、`sysinfo/gpu_test.go`、`sysinfo/cpufreq.go`（PDH の proc 共有部分だけ）
 - 作業内容: §2 と §3 を実装する。インスタンス名のパーサ、集計、engtype の判定、GPU の自動選択は純粋関数にする。
