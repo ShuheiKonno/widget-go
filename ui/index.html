@@ -66,7 +66,7 @@
         .compact-btn.expanded:hover { background: #4a90ef; }
         /* コンパクト時は Windows ガジェット相当の幅 (130px) に収めるため、
            フォント・アイコン・余白を一段階小さくする。幅の切替自体は Go 側
-           (applyViewModeWidth) が行う。 */
+           (applyViewModeGeometry) が行う。 */
         .container.compact { padding: 23px 4px 4px 4px; }
         .compact .top-btns { top: 5px; right: 5px; gap: 3px; }
         .compact .top-btn { width: 16px; height: 16px; font-size: 9px; }
@@ -410,7 +410,8 @@
             }
             settings.viewMode = currentViewMode;
             applyCompactBtn();
-            // 幅の切替は Go 側 (applyViewModeWidth) が行う。幅が変わるとセクションの
+            updateNetValue();
+            // 幅と位置の切替は Go 側 (applyViewModeGeometry) が行う。幅が変わるとセクションの
             // 折り返しが変わるので、完了を待ってから自然高さを測り直す。
             await apiFetch('/api/setviewmode?mode=' + currentViewMode).catch(()=>{});
             setTimeout(adjustWindowHeight, 60);
@@ -426,6 +427,7 @@
             settings.netUnit = netUnit;
             apiFetch('/api/setoption?key=netUnit&value=' + netUnit).catch(()=>{});
             refreshNetLegend();
+            updateNetValue();
             drawNetGraph();
         });
 
@@ -622,16 +624,31 @@
             document.getElementById('net-rx-val').textContent = formatRate(last.rx);
             document.getElementById('net-tx-val').textContent = formatRate(last.tx);
         }
-        function drawNetGraph(){
-            // ピーク値の計算と net-peak 表示はキャンバス非表示 (コンパクト時) でも行う
+        // net-peak の中身はモードで変える。
+        // フル表示: グラフの縦軸スケールとしての直近 60 サンプルのピーク。現在値は
+        //           グラフ下の凡例 (↓rx ↑tx) が出す。
+        // コンパクト表示: グラフも凡例も隠れるので、現在の合計スループット (rx+tx)。
+        // 表示中のレイアウトと必ず一致させるため、判定は class を直接見る。
+        function updateNetValue(){
+            if (netHistory.length === 0) return;
+            const el = document.getElementById('net-peak');
+            const unitHint = ' / クリックで単位切替 (B ⇔ bit)';
+            if (document.getElementById('dragArea').classList.contains('compact')){
+                const last = netHistory[netHistory.length - 1];
+                el.textContent = formatRate(last.rx + last.tx);
+                el.title = '現在の合計スループット (↓+↑)' + unitHint;
+                return;
+            }
+            if (netHistory.length < 2) return;
             let peak = 0;
             for (const p of netHistory){
                 if (p.rx > peak) peak = p.rx;
                 if (p.tx > peak) peak = p.tx;
             }
-            if (netHistory.length >= 2) {
-                document.getElementById('net-peak').textContent = formatRate(peak);
-            }
+            el.textContent = formatRate(peak);
+            el.title = 'グラフのピーク (直近 2 分)' + unitHint;
+        }
+        function drawNetGraph(){
             const canvas = document.getElementById('netCanvas');
             if (!canvas) return;
             // 内部解像度を CSS サイズに合わせる（DPI スケール込み）
@@ -888,7 +905,7 @@
                 updateClock(data.CPUFreq);
                 applyAccelData(data.GPU, data.NPU);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
-                if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
+                if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); updateNetValue(); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');
                 const connIcon=document.getElementById('conn-icon');
                 const connTitle=document.getElementById('conn-title');
@@ -937,6 +954,8 @@
                         document.getElementById('dragArea').classList.add('compact');
                         setTimeout(adjustWindowHeight, 50);
                     }
+                    // net-peak の中身はモードで変わるので、次の周期を待たずに付け替える
+                    updateNetValue();
                 }
             }catch(e){ console.error('Update error:',e); }
         }

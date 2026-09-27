@@ -644,61 +644,116 @@ func layoutIsCompact() bool {
 	return viewMode == viewModeCompact
 }
 
-// applyViewModeWidth はビューモードの切替に合わせてウィンドウ幅を変える。
-// フル表示 → コンパクトのときだけ直前の幅を Window.NormalWidth に退避し、
+// applyViewModeGeometry はビューモードの切替に合わせてウィンドウの幅と位置を変える。
+//
+// 幅: フル表示 → コンパクトのときだけ直前の幅を Window.NormalWidth に退避し、
 // 戻すときはそれを復元する（prev==mode の再適用では退避しない。起動時に
 // 保存済みのコンパクト状態を適用し直すケースで退避値を壊さないため）。
 // 高さは adjustWindowHeight がフロント側の実測値で別途合わせるので 0 を渡す。
-func applyViewModeWidth(mode, prev int) {
+//
+// 位置: 出ていくモードの位置を控えてから、入るモードに記憶があればそこへ移動する。
+// 記憶が無い初回はリサイズ時の右端固定の結果をそのまま使う。
+func applyViewModeGeometry(mode, prev int) {
 	if windowHandle.Load() == 0 {
 		return
 	}
+	if prev != mode {
+		rememberModePosition(prev)
+	}
+
 	if mode == viewModeCompact {
 		if curW, _ := getWindowSize(); prev != viewModeCompact && curW > compactWindowWidth {
 			mutateConfig(func(c *Config) { c.Window.NormalWidth = curW })
 		}
 		resizeWindowAnchored(compactWindowWidth, 0, false, true)
+	} else {
+		width := snapshotConfig().Window.NormalWidth
+		if width <= 0 {
+			width = windowWidth
+		}
+		resizeWindowAnchored(width, 0, false, true)
+	}
+
+	// 移動はリサイズの後に行う。先に動かすと右端固定のリサイズで位置がずれる。
+	moveToRememberedPosition(mode)
+}
+
+// rememberModePosition は現在のウィンドウの右下を指定モードのスロットに保存する。
+// トレイ (viewModeTray) など対象外のモードでは何もしない。
+func rememberModePosition(mode int) {
+	if mode != viewModeNormal && mode != viewModeCompact {
 		return
 	}
-	width := snapshotConfig().Window.NormalWidth
+	_, _, right, bottom := getWindowLogicalRect()
+	compact := mode == viewModeCompact
+	mutateConfig(func(c *Config) { setModePosition(c, compact, right, bottom) })
+}
+
+// moveToRememberedPosition は指定モードの記憶された位置へウィンドウを移動する。
+// 記憶している右下に現在のサイズを合わせる形で左上を逆算する。移動したら true。
+// 記憶が無ければ何もせず false を返す（呼び出し元のリサイズ結果をそのまま残す）。
+func moveToRememberedPosition(mode int) bool {
+	c := snapshotConfig()
+	var right, bottom int32
+	switch mode {
+	case viewModeCompact:
+		if !c.Window.CompactPosSaved {
+			return false
+		}
+		right, bottom = c.Window.CompactRight, c.Window.CompactBottom
+	case viewModeNormal:
+		if !c.Window.NormalPosSaved {
+			return false
+		}
+		right, bottom = c.Window.NormalRight, c.Window.NormalBottom
+	default:
+		return false
+	}
+	wid, hei := getWindowSize()
+	moveWindowLogicalClamped(right-wid, bottom-hei)
+	return true
+}
+
+// applyStartupGeometry は起動時のジオメトリを適用する。
+// 起動は前回のモードや位置を引き継がず、常に「フル表示・画面右下」から始める。
+// 幅だけは前回ユーザーがリサイズした値を尊重する（コンパクト中に終了した場合の
+// Width は専用幅なので、フル表示の幅を持つ NormalWidth を優先して見る）。
+//
+// applyHeight=false のときは高さに触れない。起動直後の遅延再適用では、フロントが
+// 内容の実寸に合わせて詰めた高さを上書きしないようにするため。
+func applyStartupGeometry(applyHeight bool) {
+	if windowHandle.Load() == 0 {
+		return
+	}
+	c := snapshotConfig()
+	width := c.Window.NormalWidth
+	if width <= 0 {
+		width = c.Window.Width
+	}
 	if width <= 0 {
 		width = windowWidth
 	}
-	resizeWindowAnchored(width, 0, false, true)
+	var height int32 // 0 は「現在の高さを維持」
+	if applyHeight {
+		height = windowHeight
+	}
+	resizeWindow(width, height, false)
+	moveToBottomRight()
 }
 
-// restoreWindowGeometry は永続化された位置・サイズを現在のウィンドウに適用する。
-// 保存値が無い場合や windowHandle 未取得時は false を返し、呼び出し元はフォールバックを選ぶ。
-// 論理ピクセル値で保存されているので DPI スケール補正を行う。
-func restoreWindowGeometry() bool {
-	return restoreWindow(true)
-}
-
-// restoreWindowPosition は保存された位置だけを再適用し、サイズには触れない。
-// 起動直後の遅延再適用に使う。フロント側が内容の実寸に合わせてリサイズした直後に
-// これがサイズまで復元すると、旧バージョンの保存値でウィンドウが縮んで内容が切れるため。
-func restoreWindowPosition() bool {
-	return restoreWindow(false)
-}
-
-func restoreWindow(applySize bool) bool {
+// moveWindowLogicalClamped は論理ピクセル座標でウィンドウを移動する。
+// DPI スケール補正をしたうえで、ウィンドウが乗っているモニタの作業領域から
+// はみ出さないようにクランプする。
+func moveWindowLogicalClamped(logicalX, logicalY int32) {
 	if windowHandle.Load() == 0 {
-		return false
+		return
 	}
-	c := snapshotConfig()
-	if !c.Window.Saved || c.Window.Width <= 0 || c.Window.Height <= 0 {
-		return false
-	}
-	if applySize {
-		resizeWindow(c.Window.Width, c.Window.Height, false)
-	}
-
 	scale := getWindowDpiScale()
 	if scale <= 0 {
 		scale = 1.0
 	}
-	physX := int32(math.Round(float64(c.Window.X) * scale))
-	physY := int32(math.Round(float64(c.Window.Y) * scale))
+	physX := int32(math.Round(float64(logicalX) * scale))
+	physY := int32(math.Round(float64(logicalY) * scale))
 
 	// 画面外に出ないように作業領域でクランプする
 	hmon, _, _ := procMonitorFromWindow.Call(windowHandle.Load(), MONITOR_DEFAULTTONEAREST)
@@ -725,7 +780,18 @@ func restoreWindow(applySize bool) bool {
 		}
 	}
 	moveWindow(physX, physY)
-	return true
+}
+
+// getWindowLogicalRect は現在のウィンドウの四辺を論理ピクセルで返す。
+func getWindowLogicalRect() (left, top, right, bottom int32) {
+	var rect RECT
+	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
+	scale := getWindowDpiScale()
+	if scale <= 0 {
+		scale = 1.0
+	}
+	toLogical := func(v int32) int32 { return int32(math.Round(float64(v) / scale)) }
+	return toLogical(rect.Left), toLogical(rect.Top), toLogical(rect.Right), toLogical(rect.Bottom)
 }
 
 // persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
@@ -733,22 +799,29 @@ func persistCurrentWindowGeometry() {
 	if windowHandle.Load() == 0 {
 		return
 	}
-	var rect RECT
-	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
-	scale := getWindowDpiScale()
-	if scale <= 0 {
-		scale = 1.0
-	}
-	logicalX := int32(math.Round(float64(rect.Left) / scale))
-	logicalY := int32(math.Round(float64(rect.Top) / scale))
+	logicalX, logicalY, right, bottom := getWindowLogicalRect()
 	wid, hei := getWindowSize()
+	// ドラッグで動かした位置を現在のモードのスロットにも反映する。
+	// configMu の内側で viewModeMu を取らないよう、先に読んでおく。
+	compact := layoutIsCompact()
 	mutateConfig(func(c *Config) {
 		c.Window.X = logicalX
 		c.Window.Y = logicalY
 		c.Window.Width = wid
 		c.Window.Height = hei
 		c.Window.Saved = true
+		setModePosition(c, compact, right, bottom)
 	})
+}
+
+// setModePosition は右下の論理座標をコンパクト / フルいずれかのスロットへ書き込む。
+// mutateConfig の中から呼ぶこと。
+func setModePosition(c *Config, compact bool, right, bottom int32) {
+	if compact {
+		c.Window.CompactRight, c.Window.CompactBottom, c.Window.CompactPosSaved = right, bottom, true
+		return
+	}
+	c.Window.NormalRight, c.Window.NormalBottom, c.Window.NormalPosSaved = right, bottom, true
 }
 
 // 作業領域 (タスクバーを除いた画面領域) の右下にウィンドウを移動する。
@@ -890,12 +963,14 @@ func main() {
 	alwaysOnTopMu.Lock()
 	alwaysOnTop = c.Topmost
 	alwaysOnTopMu.Unlock()
+	// 起動は常にフル表示から始める（前回のモードは引き継がない）。
+	// コンパクト表示の位置だけは Window.Compact* に残っており、次にコンパクト化
+	// したときにそこへ戻る。
 	viewModeMu.Lock()
-	if c.ViewMode == viewModeNormal || c.ViewMode == viewModeCompact {
-		viewMode = c.ViewMode
-	}
-	viewModeBeforeTray = viewMode
+	viewMode = viewModeNormal
+	viewModeBeforeTray = viewModeNormal
 	viewModeMu.Unlock()
+	mutateConfig(func(c *Config) { c.ViewMode = viewModeNormal })
 	trayDisplayMu.Lock()
 	if c.TrayDisplay == "cpu" {
 		trayDisplayMode = TRAY_DISPLAY_CPU
@@ -944,15 +1019,12 @@ func main() {
 	// フレーム除去・位置復元・前面表示を適用する。
 	windowHandle.Store(uintptr(w.Window()))
 	removeWindowFrame(windowHandle.Load())
-	if !restoreWindowGeometry() {
-		moveToBottomRight()
-	}
-	// go-webview2 の SetSize(HintFixed) が後段で位置をリセットすることがあるため、
-	// 初期化が落ち着いたあとに再適用する。
+	applyStartupGeometry(true)
+	// go-webview2 の SetSize(HintFixed) が後段で幅と位置をリセットするため、
+	// 初期化が落ち着いたあとに再適用する。このときフロント側は既に実測値で
+	// 高さを詰めているので、高さには触れない。
 	time.AfterFunc(500*time.Millisecond, func() {
-		if !restoreWindowPosition() {
-			moveToBottomRight()
-		}
+		applyStartupGeometry(false)
 	})
 	// 常に前面表示の復元
 	alwaysOnTopMu.Lock()

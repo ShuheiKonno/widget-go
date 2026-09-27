@@ -21,6 +21,21 @@ type Config struct {
 		// コンパクト中は Width が専用幅（compactWindowWidth）で上書きされるため、
 		// 戻すときの幅をここに退避しておく。
 		NormalWidth int32 `json:"normalWidth"`
+		// モードごとの最後の位置。切替時に出ていく側を保存し、入る側に記憶が
+		// あればそこへ移動する。
+		//
+		// 左上ではなく「右下」で覚える。幅の切替は右端固定、高さの自動調整は
+		// 下端固定で行うため、右下はそれらのリサイズを通して不変。左上基準だと
+		// 位置を戻したあとの高さ調整で上端がずれ、切替のたびにドリフトする。
+		//
+		// 原点 (0,0) も有効な位置なので、記憶の有無は座標ではなくフラグで判断する。
+		NormalRight    int32 `json:"normalRight"`
+		NormalBottom   int32 `json:"normalBottom"`
+		NormalPosSaved bool  `json:"normalPosSaved"`
+
+		CompactRight    int32 `json:"compactRight"`
+		CompactBottom   int32 `json:"compactBottom"`
+		CompactPosSaved bool  `json:"compactPosSaved"`
 	} `json:"window"`
 	Topmost     bool      `json:"topmost"`
 	ViewMode    int       `json:"viewMode"`
