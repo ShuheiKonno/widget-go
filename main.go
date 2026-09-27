@@ -49,6 +49,9 @@ var (
 	procCreateMutexW      = kernel32.NewProc("CreateMutexW")
 	procGetModuleFileName = kernel32.NewProc("GetModuleFileNameW")
 
+	dwmapi                    = syscall.NewLazyDLL("dwmapi.dll")
+	procDwmSetWindowAttribute = dwmapi.NewProc("DwmSetWindowAttribute")
+
 	versionDLL                  = syscall.NewLazyDLL("version.dll")
 	procGetFileVersionInfoSizeW = versionDLL.NewProc("GetFileVersionInfoSizeW")
 	procGetFileVersionInfoW     = versionDLL.NewProc("GetFileVersionInfoW")
@@ -138,6 +141,24 @@ const (
 
 	windowWidth  = 230
 	windowHeight = 426
+
+	// compactWindowWidth はコンパクト表示時のウィンドウ幅。
+	// Windows サイドバーガジェットのドッキング時の幅に合わせてある。
+	compactWindowWidth = 130
+
+	// リサイズの下限幅。フル表示はクロック行が折り返さない幅を、
+	// コンパクト表示は compactWindowWidth を下回らない範囲を確保する。
+	minNormalWidth  = 200
+	minCompactWidth = 120
+
+	viewModeNormal  = 0
+	viewModeCompact = 1
+	viewModeTray    = 2
+
+	// DWM の角丸設定（Windows 11 22000 以降）。それ以前の OS では
+	// DwmSetWindowAttribute が E_INVALIDARG を返すだけで、直角のまま動作する。
+	DWMWA_WINDOW_CORNER_PREFERENCE = 33
+	DWMWCP_ROUNDSMALL              = 3
 )
 
 // windowHandle は WebView2 のメインウィンドウ HWND。
@@ -291,6 +312,10 @@ var (
 
 	viewModeMu sync.RWMutex
 	viewMode   int // 0=normal, 1=compact, 2=tray
+	// viewModeBeforeTray はトレイ格納前のモード。格納中は viewMode が 2 で
+	// 潰れてしまうので、復帰時にコンパクト表示へ戻せるよう控えておく。
+	// 格納中もウィンドウ幅の下限判定に使う（viewModeMu で保護）。
+	viewModeBeforeTray int
 
 	trayDisplayMu   sync.RWMutex
 	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%
@@ -553,6 +578,13 @@ func getWindowDpiScale() float64 {
 // anchorTop=false は下端固定（コンパクト化・幾何復元で下端に揃える既定）、
 // anchorTop=true は上端固定（下端エッジを掴んだ手動リサイズで下方向に伸ばす）。
 func resizeWindow(width, height int32, anchorTop bool) {
+	resizeWindowAnchored(width, height, anchorTop, false)
+}
+
+// resizeWindowAnchored は resizeWindow に横方向のアンカー指定を加えたもの。
+// anchorRight=true は右端固定。既定の配置が画面右下なので、コンパクト幅への
+// 切り替えで左端を固定すると右側に隙間ができてしまうのを避ける。
+func resizeWindowAnchored(width, height int32, anchorTop, anchorRight bool) {
 	if windowHandle.Load() == 0 {
 		return
 	}
@@ -565,8 +597,14 @@ func resizeWindow(width, height int32, anchorTop bool) {
 			height = curH
 		}
 	}
-	if width < 200 {
-		width = 200
+	// 下限はビューモードで変わる。コンパクト表示はガジェット相当まで縮められる
+	// 必要があり、フル表示は内容が崩れない幅を保つ。
+	minWidth := int32(minNormalWidth)
+	if layoutIsCompact() {
+		minWidth = minCompactWidth
+	}
+	if width < minWidth {
+		width = minWidth
 	}
 	if width > 600 {
 		width = 600
@@ -584,11 +622,49 @@ func resizeWindow(width, height int32, anchorTop bool) {
 	var rect RECT
 	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	newLeft := rect.Left
+	if anchorRight {
+		newLeft = rect.Right - scaledW // 右端固定（コンパクト幅への切替時）
+	}
 	newTop := rect.Bottom - scaledH // 既定: 下端固定
 	if anchorTop {
 		newTop = rect.Top // 上端固定（下端エッジのドラッグ時）
 	}
 	procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
+}
+
+// layoutIsCompact はコンパクト表示のレイアウトが当たっているかを返す。
+// トレイ格納中は viewMode が 2 になるため、格納前のモードで判断する
+// （格納中に走るリサイズでコンパクト幅がフル表示の下限まで広げられないように）。
+func layoutIsCompact() bool {
+	viewModeMu.RLock()
+	defer viewModeMu.RUnlock()
+	if viewMode == viewModeTray {
+		return viewModeBeforeTray == viewModeCompact
+	}
+	return viewMode == viewModeCompact
+}
+
+// applyViewModeWidth はビューモードの切替に合わせてウィンドウ幅を変える。
+// フル表示 → コンパクトのときだけ直前の幅を Window.NormalWidth に退避し、
+// 戻すときはそれを復元する（prev==mode の再適用では退避しない。起動時に
+// 保存済みのコンパクト状態を適用し直すケースで退避値を壊さないため）。
+// 高さは adjustWindowHeight がフロント側の実測値で別途合わせるので 0 を渡す。
+func applyViewModeWidth(mode, prev int) {
+	if windowHandle.Load() == 0 {
+		return
+	}
+	if mode == viewModeCompact {
+		if curW, _ := getWindowSize(); prev != viewModeCompact && curW > compactWindowWidth {
+			mutateConfig(func(c *Config) { c.Window.NormalWidth = curW })
+		}
+		resizeWindowAnchored(compactWindowWidth, 0, false, true)
+		return
+	}
+	width := snapshotConfig().Window.NormalWidth
+	if width <= 0 {
+		width = windowWidth
+	}
+	resizeWindowAnchored(width, 0, false, true)
 }
 
 // restoreWindowGeometry は永続化された位置・サイズを現在のウィンドウに適用する。
@@ -737,6 +813,22 @@ func removeWindowFrame(hwnd uintptr) {
 	if tr {
 		setTransparent(true)
 	}
+
+	setRoundedCorners(hwnd)
+}
+
+// setRoundedCorners はウィンドウの角を丸める。枠なしウィンドウなので HTML 側の
+// border-radius では角の外側にコンテナの背景が残ってしまう。DWM にクリップさせると
+// アンチエイリアスが効き、リサイズにも自動で追従する。
+// 角丸の指定は SetWindowLong によるスタイル変更で解除されるため、フレームを
+// 外したあとに呼ぶこと。
+func setRoundedCorners(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	pref := int32(DWMWCP_ROUNDSMALL)
+	procDwmSetWindowAttribute.Call(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+		uintptr(unsafe.Pointer(&pref)), unsafe.Sizeof(pref))
 }
 
 // setupMainWindow はウィンドウを FindWindow で見つけ、フレームを外して windowHandle にセットする。
@@ -799,9 +891,10 @@ func main() {
 	alwaysOnTop = c.Topmost
 	alwaysOnTopMu.Unlock()
 	viewModeMu.Lock()
-	if c.ViewMode == 0 || c.ViewMode == 1 {
+	if c.ViewMode == viewModeNormal || c.ViewMode == viewModeCompact {
 		viewMode = c.ViewMode
 	}
+	viewModeBeforeTray = viewMode
 	viewModeMu.Unlock()
 	trayDisplayMu.Lock()
 	if c.TrayDisplay == "cpu" {

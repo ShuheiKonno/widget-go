@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"unsafe"
+
+	"widget-go/sysinfo"
 )
 
 // generateToken は起動毎のランダムなセッショントークンを生成する。
@@ -93,9 +95,12 @@ func startServer(ln net.Listener, token string) {
 			return
 		}
 		viewModeMu.Lock()
+		prev := viewMode
 		viewMode = m
 		viewModeMu.Unlock()
 		mutateConfig(func(c *Config) { c.ViewMode = m })
+		// 幅の切替はここで行う。フロントは class の付け外しと高さ再測定だけを担当する。
+		applyViewModeWidth(m, prev)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -349,6 +354,9 @@ func startServer(ln net.Listener, token string) {
 			"netUnit":     c.NetUnit,
 			"showGPU":     showGPU.Load(),
 			"viewMode":    vm,
+			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
+			// 起動時 1 回の設定取得に載せる。
+			"cpuName": sysinfo.GetCPUName(),
 		})
 	})
 
