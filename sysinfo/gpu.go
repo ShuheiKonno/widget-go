@@ -93,7 +93,6 @@ var (
 	gpuCounters              [3]uintptr
 	gpuPrimed                bool
 	gpuMissing               int
-	gpuMalformed             int // diagnostic count of malformed engine names in the latest sample
 )
 
 const gpuMissingLimit = 5
@@ -340,7 +339,11 @@ func gpuOpenPDH() bool {
 	}
 	paths := []string{`\GPU Engine(*)\Utilization Percentage`, `\GPU Adapter Memory(*)\Dedicated Usage`, `\GPU Adapter Memory(*)\Shared Usage`}
 	for i, path := range paths {
-		p := syscall.StringToUTF16Ptr(path)
+		p, err := syscall.UTF16PtrFromString(path)
+		if err != nil {
+			gpuClosePDH()
+			return false
+		}
 		if gpuCall(procPdhAddEnglishCounter, gpuQueryHandle, uintptr(unsafe.Pointer(p)), 0, uintptr(unsafe.Pointer(&gpuCounters[i]))) != 0 {
 			gpuClosePDH()
 			return false
@@ -458,8 +461,7 @@ func GetGPUInfo() (*GPUInfo, *NPUInfo) {
 			return g, n
 		}
 	}
-	usage, bad := gpuAggregate(values[0])
-	gpuMalformed = bad
+	usage, _ := gpuAggregate(values[0])
 	ded := gpuMemory(values[1])
 	shared := gpuMemory(values[2])
 	unknown := false
