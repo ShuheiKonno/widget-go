@@ -99,8 +99,8 @@ func startServer(ln net.Listener, token string) {
 		viewMode = m
 		viewModeMu.Unlock()
 		mutateConfig(func(c *Config) { c.ViewMode = m })
-		// 幅の切替はここで行う。フロントは class の付け外しと高さ再測定だけを担当する。
-		applyViewModeWidth(m, prev)
+		// 幅と位置の切替はここで行う。フロントは class の付け外しと高さ再測定だけを担当する。
+		applyViewModeGeometry(m, prev)
 		w.WriteHeader(http.StatusOK)
 	})
 
