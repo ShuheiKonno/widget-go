@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"widget-go/sysinfo"
@@ -269,37 +270,82 @@ func formatLinkSpeedShort(bps uint64) string {
 func formatTrayTooltip() string {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
+	return buildTrayTooltip(cachedCPU, cachedMem, cachedWiFi, cachedEthernet, cachedGPU, cachedNPU, showGPU.Load())
+}
 
+// buildTrayTooltip はツールチップ文字列を組み立てる純粋関数。
+// GPU/NPU は showGPU が true かつデバイスがある場合だけ追記し、値が取れないときは「---」にする。
+func buildTrayTooltip(cpu *sysinfo.CPUInfo, mem *sysinfo.MemoryInfo, wifi *sysinfo.WiFiInfo, eth *sysinfo.EthernetInfo, gpu *sysinfo.GPUInfo, npu *sysinfo.NPUInfo, showGPU bool) string {
 	cpuStr := "---"
 	memStr := "---"
 	netStr := "未接続"
 
-	if cachedCPU != nil {
-		cpuStr = fmt.Sprintf("%d%%", int(math.Round(cachedCPU.Overall)))
+	if cpu != nil {
+		cpuStr = fmt.Sprintf("%d%%", int(math.Round(cpu.Overall)))
 	}
-	if cachedMem != nil {
-		memStr = fmt.Sprintf("%d%%", int(math.Round(cachedMem.UsedPercent)))
+	if mem != nil {
+		memStr = fmt.Sprintf("%d%%", int(math.Round(mem.UsedPercent)))
 	}
-	if cachedWiFi != nil && cachedWiFi.SSID != "" {
-		if cachedWiFi.Channel > 0 {
-			netStr = fmt.Sprintf("%s(%dch)", cachedWiFi.Band, cachedWiFi.Channel)
+	if wifi != nil && wifi.SSID != "" {
+		if wifi.Channel > 0 {
+			netStr = fmt.Sprintf("%s(%dch)", wifi.Band, wifi.Channel)
 		} else {
-			netStr = cachedWiFi.Band
+			netStr = wifi.Band
 		}
-	} else if cachedEthernet != nil && cachedEthernet.Connected {
-		if cachedEthernet.LinkSpeedBps > 0 {
-			netStr = "Ethernet " + formatLinkSpeedShort(cachedEthernet.LinkSpeedBps)
+	} else if eth != nil && eth.Connected {
+		if eth.LinkSpeedBps > 0 {
+			netStr = "Ethernet " + formatLinkSpeedShort(eth.LinkSpeedBps)
 		} else {
 			netStr = "Ethernet"
 		}
 	}
 
-	return fmt.Sprintf("CPU: %s | Mem: %s | %s", cpuStr, memStr, netStr)
+	tip := fmt.Sprintf("CPU: %s | Mem: %s | %s", cpuStr, memStr, netStr)
+	if showGPU {
+		if gpu != nil {
+			tip += " | GPU: " + formatTrayPercent(gpu.TotalPct)
+		}
+		if npu != nil {
+			tip += " | NPU: " + formatTrayPercent(npu.UsagePct)
+		}
+	}
+	return tip
+}
+
+// formatTrayPercent は使用率を 0〜100 にクランプした整数 % で返す。nil は「---」。
+// GPU エンジンの生値は 100 を超えることがあるので、表示段階でクランプする。
+func formatTrayPercent(p *float64) string {
+	if p == nil || math.IsNaN(*p) {
+		return "---"
+	}
+	v := math.Max(0, math.Min(100, *p))
+	return fmt.Sprintf("%d%%", int(math.Round(v)))
 }
 
 func setTipText(nid *NOTIFYICONDATAW, text string) {
-	tip, _ := syscall.UTF16FromString(text)
-	copy(nid.SzTip[:], tip)
+	nid.SzTip = tipUTF16(text)
+}
+
+// tipUTF16 は text を NOTIFYICONDATAW.szTip 用の NUL 終端 UTF-16 に変換する。
+// 127 単位を超える分は切り詰め、サロゲートペアの途中では切らない。残りはゼロで埋める。
+func tipUTF16(text string) [128]uint16 {
+	var out [128]uint16
+	u := utf16.Encode([]rune(text))
+	for i, c := range u {
+		if c == 0 { // 途中の NUL 以降は Win32 側から見えないので捨てる
+			u = u[:i]
+			break
+		}
+	}
+	n := len(u)
+	if n > len(out)-1 {
+		n = len(out) - 1
+		if utf16.IsSurrogate(rune(u[n-1])) && u[n-1] < 0xDC00 {
+			n-- // 上位サロゲートだけ残さない
+		}
+	}
+	copy(out[:n], u[:n])
+	return out
 }
 
 // vsFixedFileInfo は VerQueryValueW("\\") が返す VS_FIXEDFILEINFO の先頭部分。

@@ -289,7 +289,8 @@ func startServer(ln net.Listener, token string) {
 		json.NewEncoder(w).Encode(map[string]int{"trayDisplay": m})
 	})
 
-	// theme と coreBase など Go 側の挙動に影響しないフロント向け設定を保存する
+	// theme / coreBase / netUnit などフロント向け設定を保存する。
+	// showGPU だけは Go 側の GPU/NPU 収集の ON/OFF にも使う。
 	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
 		key := r.URL.Query().Get("key")
 		val := r.URL.Query().Get("value")
@@ -313,6 +314,18 @@ func startServer(ln net.Listener, token string) {
 				return
 			}
 			mutateConfig(func(c *Config) { c.NetUnit = val })
+		case "showGPU":
+			if val != "true" && val != "false" {
+				http.Error(w, "invalid showGPU", http.StatusBadRequest)
+				return
+			}
+			enable := val == "true"
+			showGPU.Store(enable)
+			if !enable {
+				// 次の /api/system が古い GPU/NPU を返して一瞬再表示されないよう即座に捨てる
+				clearGPUCache()
+			}
+			mutateConfig(func(c *Config) { c.ShowGPU = enable })
 		default:
 			http.Error(w, "unknown key", http.StatusBadRequest)
 			return
@@ -334,6 +347,7 @@ func startServer(ln net.Listener, token string) {
 			"theme":       c.Theme,
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
+			"showGPU":     showGPU.Load(),
 			"viewMode":    vm,
 		})
 	})

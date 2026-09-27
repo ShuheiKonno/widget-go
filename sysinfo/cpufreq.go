@@ -23,6 +23,8 @@ var (
 	procPdhAddEnglishCounter        = pdh.NewProc("PdhAddEnglishCounterW")
 	procPdhCollectQueryData         = pdh.NewProc("PdhCollectQueryData")
 	procPdhGetFormattedCounterValue = pdh.NewProc("PdhGetFormattedCounterValue")
+	procPdhGetFormattedCounterArray = pdh.NewProc("PdhGetFormattedCounterArrayW")
+	procPdhCloseQuery               = pdh.NewProc("PdhCloseQuery")
 )
 
 const (

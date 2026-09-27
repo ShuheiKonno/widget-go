@@ -28,6 +28,13 @@ jobs:
       - name: go test
         run: go test ./...
 
+      # GPU/NPU 収集 (sysinfo/gpu.go) と collector・HTTP ハンドラの並行アクセスを検査する。
+      # race 検出器は cgo 必須なので CGO_ENABLED=1 で実行する (ランナー同梱の MinGW gcc を使用)。
+      - name: go test -race
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./...
+
       - name: go build
         run: go build -ldflags "-H windowsgui" -o system-widget.exe .
 

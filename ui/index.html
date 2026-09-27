@@ -75,6 +75,7 @@
         .compact .memory-details { display: none; }
         .compact .wifi-info { display: none; }
         .compact .wifi-compact-value { display: inline; }
+        .compact .gpu-progress, .compact .npu-progress, .compact .accel-info { display: none; }
         .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
         .section:last-child { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
@@ -116,6 +117,14 @@
         .wifi-disconnected { color:#d33; }
         body:not(.theme-light) .wifi-disconnected { color:#ff8a8a; }
         .wifi-compact-value { display:none; }
+        /* GPU / NPU。ラベル・値は nowrap にし、幅 230px のコンパクト表示でも 1 行に収める */
+        .accel-section .section-title, .accel-section .section-value { white-space:nowrap; }
+        .gpu-fill { background: linear-gradient(90deg, #6ad7ff, #5a8cff); }
+        .npu-fill { background: linear-gradient(90deg, #ffd36a, #ff9f5a); }
+        .npu-progress { margin-bottom: 0; } /* NPU はバーで終わるので下余白を詰める */
+        .accel-info { display:flex; flex-direction:column; gap:3px; }
+        .accel-info .wifi-row { gap:6px; }
+        .accel-info .wifi-label, .accel-info .wifi-value { white-space:nowrap; }
         .wifi-section { background:transparent; border:none; padding:0; perspective:800px; }
         .flip-card { display:grid; transform-style:preserve-3d; transition:transform 0.55s; }
         .flip-card > .flip-face { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; background: var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:8px 10px; cursor:pointer; }
@@ -178,6 +187,10 @@
                     <label class="modal-toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
                 </div>
                 <div class="modal-field">
+                    <span class="modal-label">GPU / NPU</span>
+                    <label class="modal-toggle"><span>GPU/NPU を表示</span><input type="checkbox" id="optShowGPU"></label>
+                </div>
+                <div class="modal-field">
                     <span class="modal-label">CPU Core 番号</span>
                     <div class="modal-options" data-group="coreBase">
                         <button class="modal-opt" data-value="0">0 から</button>
@@ -204,6 +217,19 @@
             <div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value" id="memory-percent">0%</span></div>
             <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
             <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
+        </div>
+        <!-- GPU/NPU は wifi の前に置く（後ろに置くと非表示でも .section:last-child を奪い、下に余白が残る） -->
+        <div class="section accel-section" id="gpuSection" style="display:none">
+            <div class="section-header"><span class="section-icon">🎮</span><span class="section-title">GPU</span><span class="section-value" id="gpu-total">---</span></div>
+            <div class="progress-bar gpu-progress"><div class="progress-fill gpu-fill" id="gpu-bar" style="width:0%"></div></div>
+            <div class="accel-info">
+                <div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value" id="gpu-dedicated">---</span></div>
+                <div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value" id="gpu-shared">---</span></div>
+            </div>
+        </div>
+        <div class="section accel-section" id="npuSection" style="display:none">
+            <div class="section-header"><span class="section-icon">🧩</span><span class="section-title">NPU</span><span class="section-value" id="npu-usage">---</span></div>
+            <div class="progress-bar npu-progress"><div class="progress-fill npu-fill" id="npu-bar" style="width:0%"></div></div>
         </div>
         <div class="section wifi-section" id="wifiSection">
             <div class="flip-card">
@@ -303,7 +329,8 @@
             trayDisplay: 'icon',
             topmost: false,
             viewMode: 0,
-            netUnit: 'byte'
+            netUnit: 'byte',
+            showGPU: true
         };
 
         // Close button (✕): タスクトレイに格納する
@@ -653,6 +680,7 @@
                 });
             });
             document.getElementById('optTransparent').checked = !!settings.transparent;
+            document.getElementById('optShowGPU').checked = !!settings.showGPU;
         }
 
         // モーダル選択肢: Go 側 API に保存してから UI 反映
@@ -683,6 +711,14 @@
             apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
         });
 
+        document.getElementById('optShowGPU').addEventListener('change', function(e){
+            e.stopPropagation();
+            settings.showGPU = this.checked;
+            apiFetch('/api/setoption?key=showGPU&value=' + (settings.showGPU ? 'true' : 'false')).catch(()=>{});
+            // OFF はポーリングを待たずに即座に隠す。ON はサーバーの次回収集後に値が届いてから表示される
+            applyAccelData(lastGPU, lastNPU);
+        });
+
         const settingsModal = document.getElementById('settingsModal');
         document.getElementById('settingsBtn').addEventListener('click', function(e){
             e.stopPropagation();
@@ -711,6 +747,7 @@
             if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
             if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
             if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
+            if (typeof s.showGPU === 'boolean') { settings.showGPU = s.showGPU; applyAccelData(lastGPU, lastNPU); }
 
             applyTheme();
             applyCoreBase();
@@ -722,6 +759,58 @@
             applyCompactBtn();
         }).catch(()=>{ applyTheme(); });
 
+        // ============ GPU / NPU ============
+        // 表示用の % は 0〜100 にクランプする（Go 側は生値を保持している）。null は '---'。
+        function accelPct(v){
+            if (v === null || v === undefined || !isFinite(v)) return null;
+            return Math.min(100, Math.max(0, v));
+        }
+        function formatAccelPct(v){ const p = accelPct(v); return p === null ? '---' : Math.round(p) + '%'; }
+        // 容量が 1GB 以上なら GB（小数 1 桁）、未満なら MB で表す。分母 0 は比率を出さず使用量だけ。
+        function formatAccelMem(used, total){
+            used = Number(used) || 0; total = Number(total) || 0;
+            const GB = 1024*1024*1024, MB = 1024*1024;
+            const inGB = (total > 0 ? total : used) >= GB;
+            const fmt = v => inGB ? (v/GB).toFixed(1) : Math.round(v/MB).toString();
+            const unit = inGB ? ' GB' : ' MB';
+            return total > 0 ? fmt(used) + ' / ' + fmt(total) + unit : fmt(used) + unit;
+        }
+        let lastGPU = null, lastNPU = null;
+        // GPU・NPU セクションの可視性。lastConnMode と同じく、変化したら高さを測り直して保存する。
+        // 起動直後の初回は初期化処理（updateData().then）側で高さを合わせるので対象外。
+        let lastAccelMode = '';
+        function applyAccelData(gpu, npu){
+            lastGPU = gpu || null; lastNPU = npu || null;
+            const showG = !!(settings.showGPU && lastGPU);
+            const showN = !!(settings.showGPU && lastNPU);
+            document.getElementById('gpuSection').style.display = showG ? '' : 'none';
+            document.getElementById('npuSection').style.display = showN ? '' : 'none';
+            if (showG) {
+                const g = lastGPU;
+                const total = accelPct(g.TotalPct);
+                document.getElementById('gpu-total').textContent = formatAccelPct(g.TotalPct);
+                document.getElementById('gpu-bar').style.width = (total === null ? 0 : total).toFixed(1) + '%';
+                document.getElementById('gpu-dedicated').textContent = formatAccelMem(g.DedicatedUsed, g.DedicatedTotal);
+                document.getElementById('gpu-shared').textContent = formatAccelMem(g.SharedUsed, g.SharedTotal);
+            }
+            if (showN) {
+                const n = lastNPU;
+                const usage = accelPct(n.UsagePct);
+                document.getElementById('npu-usage').textContent = formatAccelPct(n.UsagePct);
+                document.getElementById('npu-bar').style.width = (usage === null ? 0 : usage).toFixed(1) + '%';
+            }
+            const mode = (showG ? 'G' : '-') + (showN ? 'N' : '-');
+            if (mode !== lastAccelMode) {
+                const first = lastAccelMode === '';
+                lastAccelMode = mode;
+                if (!first) {
+                    setTimeout(adjustWindowHeight, 50);
+                    // adjustWindowHeight の resize 完了後に保存する（直後だと変更前のサイズが残る）
+                    setTimeout(() => apiFetch('/api/persistwindow').catch(()=>{}), 300);
+                }
+            }
+        }
+
         // 接続種別（Wi-Fi / Ethernet / 未接続）で情報行数が変わり、必要な高さも変わる。
         // 起動直後は未確定のまま高さを測ってしまうので、種別が変わったら測り直す。
         let lastConnMode = '';
@@ -730,6 +819,7 @@
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
                 updateClock(data.CPUFreq);
+                applyAccelData(data.GPU, data.NPU);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');

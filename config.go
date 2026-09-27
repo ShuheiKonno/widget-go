@@ -25,6 +25,7 @@ type Config struct {
 	Theme       string    `json:"theme"`       // "dark" | "light" | "system"
 	CoreBase    int       `json:"coreBase"`    // 0 | 1
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
+	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
 	IME         IMEConfig `json:"ime"`
 }
 
@@ -48,6 +49,9 @@ func defaultConfig() Config {
 	c.Theme = "system"
 	c.CoreBase = 0
 	c.NetUnit = "byte"
+	// v1.8.0 以前の config.json にはキーが無い。既定値を先に入れておくと
+	// loadConfig の Unmarshal で上書きされず ON のまま残る。
+	c.ShowGPU = true
 	c.IME = IMEConfig{
 		Enabled:     true,
 		CooldownSec: 2,

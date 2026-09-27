@@ -235,6 +235,8 @@ type SystemData struct {
 	WiFi     *sysinfo.WiFiInfo     `json:"WiFi"`
 	Ethernet *sysinfo.EthernetInfo `json:"Ethernet"`
 	Network  *sysinfo.NetworkInfo  `json:"Network"`
+	GPU      *sysinfo.GPUInfo      `json:"GPU"`
+	NPU      *sysinfo.NPUInfo      `json:"NPU"`
 	ViewMode int                   `json:"ViewMode"`
 }
 
@@ -248,7 +250,16 @@ var (
 	cachedWiFi     *sysinfo.WiFiInfo
 	cachedEthernet *sysinfo.EthernetInfo
 	cachedNet      *sysinfo.NetworkInfo
+	cachedGPU      *sysinfo.GPUInfo
+	cachedNPU      *sysinfo.NPUInfo
 )
+
+// showGPU は「GPU/NPU を表示」設定の実行時状態。OFF の間は GPU/NPU の収集自体を止める。
+// HTTP ハンドラと collector goroutine から並行に読み書きされ、cacheMu の内外どちらからも
+// 読むのでロック順序の問題が起きない atomic で持つ。
+var showGPU atomic.Bool
+
+func init() { showGPU.Store(true) }
 
 // ドラッグ開始時の状態（物理ピクセル）。
 // ドラッグ中の差分計算をすべてサーバー側で行い、
@@ -333,6 +344,8 @@ func getSystemData() SystemData {
 		WiFi:     cachedWiFi,
 		Ethernet: cachedEthernet,
 		Network:  cachedNet,
+		GPU:      cachedGPU,
+		NPU:      cachedNPU,
 		ViewMode: vm,
 	}
 }
@@ -363,6 +376,43 @@ func refreshCPUAndMem() {
 	if memErr == nil {
 		cachedMem = memInfo
 	}
+	cacheMu.Unlock()
+}
+
+// gpuActive は直前の refreshGPU で収集が有効だったか。OFF→ON のたびに InitGPU で
+// 再列挙し、OFF 期間全体の平均が 1 周期だけ出るのを防ぐ。
+// refreshGPU 専用に使うので goroutine 1 本からしか触らない前提。
+var gpuActive bool
+
+// refreshGPU は GPU/NPU の使用率を取得してキャッシュに反映する。
+// ShowGPU が OFF の間は収集せずキャッシュを nil にする。
+// InitGPU は COM を扱う DXCore を使うため、main スレッド（go-webview2 が STA 初期化済み）
+// ではなく collector の goroutine から呼ぶこと。
+func refreshGPU() {
+	if !showGPU.Load() {
+		gpuActive = false
+		clearGPUCache()
+		return
+	}
+	if !gpuActive {
+		sysinfo.InitGPU()
+		gpuActive = true
+	}
+	gpuInfo, npuInfo := sysinfo.GetGPUInfo()
+
+	cacheMu.Lock()
+	// 取得中に OFF にされた場合は、ハンドラがクリアしたキャッシュを上書きしない
+	if showGPU.Load() {
+		cachedGPU = gpuInfo
+		cachedNPU = npuInfo
+	}
+	cacheMu.Unlock()
+}
+
+func clearGPUCache() {
+	cacheMu.Lock()
+	cachedGPU = nil
+	cachedNPU = nil
 	cacheMu.Unlock()
 }
 
@@ -410,7 +460,7 @@ func refreshWiFi() {
 }
 
 // startCollector はバックグラウンドで周期的にシステム情報を取得し、
-// キャッシュを更新する。CPU/メモリは 2 秒ごと、Wi-Fi は 3 秒ごと。
+// キャッシュを更新する。CPU/メモリ/GPU/NPU は 2 秒ごと、Wi-Fi は 3 秒ごと。
 // （フロア移動などで AP が切り替わったときに UI が「未接続」のまま固まるのを
 //
 //	防ぐため、Wi-Fi の検出間隔は短めに保つ。netsh は 100ms 程度で完了する）。
@@ -424,11 +474,14 @@ func startCollector() {
 	refreshNetwork()
 
 	go func() {
+		// GPU の初期化はこの goroutine で行う（main スレッドで COM に触れない）
+		refreshGPU()
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			refreshCPUAndMem()
 			refreshNetwork()
+			refreshGPU()
 		}
 	}()
 
@@ -757,6 +810,7 @@ func main() {
 		trayDisplayMode = TRAY_DISPLAY_ICON
 	}
 	trayDisplayMu.Unlock()
+	showGPU.Store(c.ShowGPU)
 
 	apiToken := generateToken()
 	ln, port := listenLocal()

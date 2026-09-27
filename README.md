@@ -10,6 +10,8 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 - **CPU モニタリング** — 全体使用率 + コアごとの使用率をバーグラフで表示
 - **CPU クロック周波数** — 現在の実効クロックを表示。ベースクロックに対する位置をバーで示し、ターボ動作中 (ベース超過) は橙色に変化
 - **メモリモニタリング** — 使用率・使用量 / 総容量を表示
+- **GPU モニタリング** — 使用率 (タスクマネージャーと同じ全エンジン最大値) と専用・共有メモリを別々に表示。専用容量 512 MiB 以上の GPU を優先し、複数ある場合は最大容量のものを、該当しない場合は iGPU を自動選択
+- **NPU モニタリング** — NPU がある場合に使用率を表示 (NPU 未搭載の PC ではセクションごと非表示)
 - **Wi-Fi 情報** — SSID・帯域 (2.4GHz/5GHz/6GHz)・規格 (Wi-Fi 4〜7)・信号強度・チャネル
 - **Ethernet 情報** — Wi-Fi 未接続時に有線 NIC を自動検出し、アダプタ名とリンク速度 (10Mbps / 100Mbps / 1Gbps / 2.5Gbps / 5Gbps / 10Gbps) を表示。ドライバが `995Mbps` のように報告する場合も標準値にスナップ
 - **ネットワークトラフィックグラフ** — Wi-Fi/Ethernet セクションをクリックすると 3D 反転で裏面に切替、送受信スループットを折れ線グラフで表示 (直近 2 分)。ヘッダのピーク値をクリックすると `KB/s` ⇔ `Mbps` の単位切替
@@ -20,6 +22,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
   - 透過モード
   - CPU コア番号の表示 (0 始まり / 1 始まり)
   - タスクバー表示 (アイコンのみ / CPU 使用率)
+  - GPU/NPU の表示 (既定 ON。OFF 時は収集も停止)
 - **システムトレイ (常時表示)** — 起動中は常にトレイアイコンを表示。`_` ボタンでウィンドウだけを格納でき、アイコンはそのまま残る。トレイ設定が「CPU 使用率」の場合はアイコンに使用率を描画し、下端の帯がクロック周波数グラフと同じ色 (通常 / ターボ) に変化する。ツールチップで概要確認
 - **常に前面表示 (ピン留め)** — ワンクリックで最前面に固定
 - **ウィンドウリサイズ** — 端をドラッグしてサイズ変更可能
@@ -29,7 +32,8 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 
 ## 必要環境
 
-- Windows 10 以降
+- Windows 10 以降 (GPU/NPU の表示には Windows 10 version 2004 以降が必要。`D3DKMTEnumAdapters3` を利用できない古い OS では GPU/NPU の表示のみ無効)
+- GPU の表示には WDDM 2.0 以上のドライバ、NPU の表示には MCDM 対応ドライバが必要 (NPU は DXCore の NPU 属性で判定)
 - [WebView2 Runtime](https://developer.microsoft.com/ja-jp/microsoft-edge/webview2/) (Windows 11 ではプリインストール済み)
 - Go 1.25 以降 (ビルドする場合)
 
@@ -71,6 +75,7 @@ go build -ldflags "-H windowsgui" -o system-widget.exe .
 | 透過モード | チェック | レイヤードウィンドウで背景を半透明化 |
 | CPU Core 番号 | 0 から / 1 から | コアラベルの起点番号を切替 |
 | タスクバー | アイコンのみ / CPU 使用率 | トレイアイコンを 5×7 ドットフォントで CPU % に差替。下端にクロック連動のアクセント帯を描画 |
+| GPU/NPU を表示 | ON / OFF (既定 ON) | OFF にすると GPU/NPU の表示と収集を停止 |
 
 ## プロジェクト構成
 
@@ -82,6 +87,7 @@ widget-go/
 ├── sysinfo/
 │   ├── cpu.go           # CPU 使用率取得 (gopsutil)
 │   ├── cpufreq.go       # CPU クロック周波数取得 (PDH + CallNtPowerInformation)
+│   ├── gpu.go           # GPU/NPU の列挙と使用率・メモリ取得
 │   ├── memory.go        # メモリ使用量取得 (gopsutil)
 │   ├── wifi.go          # Wi-Fi 情報取得 (netsh)
 │   ├── ethernet.go      # Ethernet 検出・リンク速度取得 (iphlpapi GetIfEntry2)
@@ -90,7 +96,8 @@ widget-go/
 │   ├── watcher.go       # IME Composition Window の検知 (WinEvent Hook)
 │   └── recovery.go      # 検知時の自動復旧処理
 ├── cmd/
-│   └── genicon/         # アイコン生成ツール
+│   ├── genicon/         # アイコン生成ツール
+│   └── gpuprobe/        # GPU/NPU 診断用 CLI
 ├── winres/
 │   ├── icon.ico         # アプリケーションアイコン
 │   └── winres.json      # Windows リソース設定
@@ -98,11 +105,14 @@ widget-go/
 └── go.sum
 ```
 
+GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` を使用します。
+
 ## アーキテクチャ
 
 ローカル HTTP サーバーをバックグラウンドで起動し、WebView2 がそのサーバーから配信される HTML/CSS/JS を描画するという構成です。
 
-- **バックグラウンドコレクター** — CPU/クロック/メモリ/ネットワークトラフィックは 2 秒間隔、Wi-Fi/Ethernet は 3 秒間隔でキャッシュを更新
+- **バックグラウンドコレクター** — CPU/クロック/メモリ/ネットワークトラフィック/GPU/NPU は 2 秒間隔、Wi-Fi/Ethernet は 3 秒間隔でキャッシュを更新
+- **GPU/NPU のデータソース** — Windows 標準の D3DKMT でアダプタを列挙し、DXCore の NPU 属性で種別を判定。使用率とメモリは PDH の `GPU Engine`・`GPU Adapter Memory` カウンタから取得する。ベンダーに依存せず、タスクマネージャーと同じデータソースを使用
 - **フロントエンド** — 2 秒間隔で `/api/system` をポーリングし UI を更新
 - **ウィンドウ制御** — Win32 API を直接呼び出してフレームレス化・ドラッグ・リサイズ・トレイを実現
 
@@ -133,6 +143,11 @@ widget-go/
 > 多重起動防止に使用しているミューテックス (`Global\widget-go-single-instance-mutex`) はプロセス終了時に自動解放されます。レジストリは使用しません。
 
 ## 変更履歴
+
+### 1.9.0 (予定)
+
+- **GPU/NPU の表示を追加** — GPU の使用率・専用/共有メモリと、NPU の使用率を表示。表示する GPU は専用容量 512 MiB 以上を優先して自動選択し、表示オプションで GPU/NPU の収集ごと ON/OFF を切替
+- **実機検証の範囲** — Intel (Arc 140V + AI Boost) でのみ実機確認。AMD / NVIDIA / Qualcomm および Arm64 は実機未検証
 
 ### 1.8.0 (2026-09-20)
 
