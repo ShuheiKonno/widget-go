@@ -76,8 +76,6 @@
         .compact .wifi-info { display: none; }
         .compact .wifi-compact-value { display: inline; }
         .compact .gpu-progress, .compact .npu-progress, .compact .accel-info { display: none; }
-        .compact .accel-normal { display: none; }
-        .compact .accel-compact { display: inline; }
         .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
         .section:last-child { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
@@ -121,11 +119,10 @@
         .wifi-compact-value { display:none; }
         /* GPU / NPU。ラベル・値は nowrap にし、幅 230px のコンパクト表示でも 1 行に収める */
         .accel-section .section-title, .accel-section .section-value { white-space:nowrap; }
-        .accel-compact { display:none; }
         .gpu-fill { background: linear-gradient(90deg, #6ad7ff, #5a8cff); }
         .npu-fill { background: linear-gradient(90deg, #ffd36a, #ff9f5a); }
+        .npu-progress { margin-bottom: 0; } /* NPU はバーで終わるので下余白を詰める */
         .accel-info { display:flex; flex-direction:column; gap:3px; }
-        .accel-name { color: var(--muted-color); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .accel-info .wifi-row { gap:6px; }
         .accel-info .wifi-label, .accel-info .wifi-value { white-space:nowrap; }
         .wifi-section { background:transparent; border:none; padding:0; perspective:800px; }
@@ -223,11 +220,9 @@
         </div>
         <!-- GPU/NPU は wifi の前に置く（後ろに置くと非表示でも .section:last-child を奪い、下に余白が残る） -->
         <div class="section accel-section" id="gpuSection" style="display:none">
-            <div class="section-header"><span class="section-icon">🎮</span><span class="section-title"><span class="accel-normal">GPU</span><span class="accel-compact" id="gpu-compact-label">GPU</span></span><span class="section-value"><span class="accel-normal" id="gpu-total">---</span><span class="accel-compact" id="gpu-compact">---</span></span></div>
+            <div class="section-header"><span class="section-icon">🎮</span><span class="section-title">GPU</span><span class="section-value" id="gpu-total">---</span></div>
             <div class="progress-bar gpu-progress"><div class="progress-fill gpu-fill" id="gpu-bar" style="width:0%"></div></div>
             <div class="accel-info">
-                <div class="accel-name" id="gpu-name">---</div>
-                <div class="wifi-row"><span class="wifi-label">Compute</span><span class="wifi-value" id="gpu-compute">---</span></div>
                 <div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value" id="gpu-dedicated">---</span></div>
                 <div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value" id="gpu-shared">---</span></div>
             </div>
@@ -235,9 +230,6 @@
         <div class="section accel-section" id="npuSection" style="display:none">
             <div class="section-header"><span class="section-icon">🧩</span><span class="section-title">NPU</span><span class="section-value" id="npu-usage">---</span></div>
             <div class="progress-bar npu-progress"><div class="progress-fill npu-fill" id="npu-bar" style="width:0%"></div></div>
-            <div class="accel-info">
-                <div class="accel-name" id="npu-name">---</div>
-            </div>
         </div>
         <div class="section wifi-section" id="wifiSection">
             <div class="flip-card">
@@ -798,23 +790,14 @@
                 const total = accelPct(g.TotalPct);
                 document.getElementById('gpu-total').textContent = formatAccelPct(g.TotalPct);
                 document.getElementById('gpu-bar').style.width = (total === null ? 0 : total).toFixed(1) + '%';
-                const nameEl = document.getElementById('gpu-name');
-                nameEl.textContent = g.Name || '---'; nameEl.title = g.Name || '';
-                document.getElementById('gpu-compute').textContent = formatAccelPct(g.ComputePct);
                 document.getElementById('gpu-dedicated').textContent = formatAccelMem(g.DedicatedUsed, g.DedicatedTotal);
                 document.getElementById('gpu-shared').textContent = formatAccelMem(g.SharedUsed, g.SharedTotal);
-                // コンパクト: Compute 系エンジンがあれば Compute %、無ければ全体 % を「GPU」ラベルで
-                const hasCompute = g.ComputePct !== null && g.ComputePct !== undefined;
-                document.getElementById('gpu-compact-label').textContent = hasCompute ? 'GPU Compute' : 'GPU';
-                document.getElementById('gpu-compact').textContent = formatAccelPct(hasCompute ? g.ComputePct : g.TotalPct);
             }
             if (showN) {
                 const n = lastNPU;
                 const usage = accelPct(n.UsagePct);
                 document.getElementById('npu-usage').textContent = formatAccelPct(n.UsagePct);
                 document.getElementById('npu-bar').style.width = (usage === null ? 0 : usage).toFixed(1) + '%';
-                const nameEl = document.getElementById('npu-name');
-                nameEl.textContent = n.Name || '---'; nameEl.title = n.Name || '';
             }
             const mode = (showG ? 'G' : '-') + (showN ? 'N' : '-');
             if (mode !== lastAccelMode) {
