@@ -629,6 +629,16 @@
         //           グラフ下の凡例 (↓rx ↑tx) が出す。
         // コンパクト表示: グラフも凡例も隠れるので、現在の合計スループット (rx+tx)。
         // 表示中のレイアウトと必ず一致させるため、判定は class を直接見る。
+        // 履歴中の最大スループット (rx / tx の大きい方)。
+        // グラフの縦軸スケールと、フル表示の net-peak 表示の両方が使う。
+        function netPeak(){
+            let peak = 0;
+            for (const p of netHistory){
+                if (p.rx > peak) peak = p.rx;
+                if (p.tx > peak) peak = p.tx;
+            }
+            return peak;
+        }
         function updateNetValue(){
             if (netHistory.length === 0) return;
             const el = document.getElementById('net-peak');
@@ -640,12 +650,7 @@
                 return;
             }
             if (netHistory.length < 2) return;
-            let peak = 0;
-            for (const p of netHistory){
-                if (p.rx > peak) peak = p.rx;
-                if (p.tx > peak) peak = p.tx;
-            }
-            el.textContent = formatRate(peak);
+            el.textContent = formatRate(netPeak());
             el.title = 'グラフのピーク (直近 2 分)' + unitHint;
         }
         function drawNetGraph(){
@@ -672,9 +677,8 @@
                 ctx.fillText('計測中...', 6, cssH/2);
                 return;
             }
-            // peak は関数冒頭で計算済み。キャンバスへの描画スケール用に再利用する。
             // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
-            const scale = Math.max(peak, 8*1024);
+            const scale = Math.max(netPeak(), 8*1024);
             const step = cssW / (netMaxSamples - 1);
             const offset = netMaxSamples - netHistory.length;
             function drawSeries(getVal, fill, stroke){
