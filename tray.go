@@ -11,6 +11,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"widget-go/aiusage"
 	"widget-go/sysinfo"
 )
 
@@ -330,6 +331,14 @@ func setTipText(nid *NOTIFYICONDATAW, text string) {
 // 127 単位を超える分は切り詰め、サロゲートペアの途中では切らない。残りはゼロで埋める。
 func tipUTF16(text string) [128]uint16 {
 	var out [128]uint16
+	copyUTF16(out[:], text)
+	return out
+}
+
+// copyUTF16 は text を NUL 終端の UTF-16 として dst に書く。dst に収まらない分は切り詰め、
+// サロゲートペアの途中では切らない。残りはゼロで埋める。
+func copyUTF16(dst []uint16, text string) {
+	clear(dst)
 	u := utf16.Encode([]rune(text))
 	for i, c := range u {
 		if c == 0 { // 途中の NUL 以降は Win32 側から見えないので捨てる
@@ -338,14 +347,36 @@ func tipUTF16(text string) [128]uint16 {
 		}
 	}
 	n := len(u)
-	if n > len(out)-1 {
-		n = len(out) - 1
-		if utf16.IsSurrogate(rune(u[n-1])) && u[n-1] < 0xDC00 {
+	if n > len(dst)-1 {
+		n = len(dst) - 1
+		if n > 0 && utf16.IsSurrogate(rune(u[n-1])) && u[n-1] < 0xDC00 {
 			n-- // 上位サロゲートだけ残さない
 		}
 	}
-	copy(out[:n], u[:n])
-	return out
+	if n > 0 {
+		copy(dst[:n], u[:n])
+	}
+}
+
+// showBalloon はトレイアイコン経由でバルーン（Windows 10/11 ではトースト）通知を出す。
+// flag は aiusage.NIIF_INFO / NIIF_WARNING / NIIF_ERROR。トレイが未登録なら何もしない。
+func showBalloon(title, message string, flag uint32) bool {
+	trayMu.Lock()
+	active, hwnd := trayActive, trayHwnd
+	trayMu.Unlock()
+	if !active || hwnd == 0 {
+		return false
+	}
+	var nid NOTIFYICONDATAW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	nid.UFlags = NIF_INFO
+	nid.DwInfoFlags = flag
+	copyUTF16(nid.SzInfoTitle[:], title)
+	copyUTF16(nid.SzInfo[:], message)
+	r, _, _ := procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&nid)))
+	return r != 0
 }
 
 // vsFixedFileInfo は VerQueryValueW("\\") が返す VS_FIXEDFILEINFO の先頭部分。
@@ -431,6 +462,8 @@ func showTrayMenu(hwnd uintptr) {
 		procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
 	}
 
+	appendUsageMenu(menu)
+
 	exitText, _ := syscall.UTF16PtrFromString("終了")
 	procAppendMenuW.Call(menu, MF_STRING, ID_TRAY_EXIT, uintptr(unsafe.Pointer(exitText)))
 
@@ -481,11 +514,25 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case WM_COMMAND:
-		if (wParam & 0xFFFF) == ID_TRAY_EXIT {
+		// 取得や通知は時間がかかる／UI スレッドを待つので、トレイのスレッドを塞がないよう go で逃がす。
+		switch wParam & 0xFFFF {
+		case ID_TRAY_EXIT:
 			go func() {
 				cleanupTray()
 				os.Exit(0)
 			}()
+			return 0
+		case ID_TRAY_AI_REFRESH:
+			go aiusage.RefreshNow()
+			return 0
+		case ID_TRAY_AI_LOGIN_CLAUDE:
+			go aiusage.ShowLogin("claude")
+			return 0
+		case ID_TRAY_AI_LOGIN_CODEX:
+			go aiusage.ShowLogin("codex")
+			return 0
+		case ID_TRAY_AI_TEST:
+			go aiusage.TestNotify()
 			return 0
 		}
 	case WM_DESTROY:
@@ -627,6 +674,9 @@ func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
 	defer runtime.UnlockOSThread()
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
+	// usageKey は、最後に作った AI 使用量のアイコンのキー。同じ間は作り直さない
+	// （2 秒ごとの作り直しで GDI ハンドルを無駄に消費しない）。
+	usageKey := ""
 	for {
 		select {
 		case <-stopCh:
@@ -635,6 +685,9 @@ func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
 			}
 			return
 		case <-ticker.C:
+		case <-trayKick:
+		}
+		{
 			trayMu.Lock()
 			if !trayActive {
 				trayMu.Unlock()
@@ -648,7 +701,7 @@ func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
 			trayMu.Unlock()
 
 			trayDisplayMu.RLock()
-			mode := trayDisplayMode
+			mode := effectiveTrayDisplay(trayDisplayMode, snapshotConfig().AI.Enabled)
 			trayDisplayMu.RUnlock()
 
 			var upd NOTIFYICONDATAW
@@ -656,7 +709,34 @@ func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
 			upd.HWnd = h
 			upd.UID = 1
 			upd.UFlags = NIF_TIP
-			setTipText(&upd, formatTrayTooltip())
+			sysTip := formatTrayTooltip()
+			setTipText(&upd, sysTip)
+
+			if mode != TRAY_DISPLAY_USAGE {
+				usageKey = ""
+			}
+
+			// AI 使用量: 角丸四角（5h の数字 + 7d のペース色）。画像が変わるときだけ作り直す。
+			if mode == TRAY_DISPLAY_USAGE {
+				info := aiusage.GetTrayInfo()
+				setTipText(&upd, buildUsageTooltip(info.Tooltip, sysTip))
+				if key := info.IconKey(); key == usageKey && currentCpuIcon != 0 {
+					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+					continue
+				} else if newIcon := buildUsageIcon(info); newIcon != 0 {
+					upd.UFlags |= NIF_ICON
+					upd.HIcon = newIcon
+					procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&upd)))
+					if currentCpuIcon != 0 {
+						procDestroyIcon.Call(currentCpuIcon)
+					}
+					currentCpuIcon = newIcon
+					usageKey = key
+					continue
+				}
+				// アイコンを作れなかったときは、静的アイコンへ落とす
+				usageKey = ""
+			}
 
 			if mode == TRAY_DISPLAY_CPU {
 				cacheMu.RLock()

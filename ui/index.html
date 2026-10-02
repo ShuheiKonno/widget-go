@@ -190,6 +190,82 @@
         .modal-opt.active { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
         .modal-toggle { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; font-size:11px; }
         .modal-toggle input { margin:0; cursor:pointer; }
+
+        /* ===== 区画の折りたたみ（D10）。シェブロンのクリックだけで開閉し、折りたたむと見出しだけが残る ===== */
+        .chev { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:9px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:transform .2s, background .15s; padding:0; }
+        .chev:hover { background: var(--btn-bg-hover); }
+        .section.collapsed .section-header { margin-bottom:0; }
+        .section.collapsed .chev { transform:rotate(-90deg); }
+        .section.collapsed > .sec-body { display:none; }
+        /* Wi-Fi/ネットワークは flip-card の中にあるので、本体を個別に隠し、表面へ戻す。
+           表裏の 2 面は同じセルに重なっており、裏面が残ると高さが縮まない。 */
+        .wifi-section.collapsed .wifi-info, .wifi-section.collapsed .flip-back { display:none; }
+        .wifi-section.collapsed .flip-card { transform:none !important; }
+        .wifi-section.collapsed .wifi-compact-value { display:inline; }
+        .compact .chev { display:none; }
+        .is-hidden { display:none !important; }
+        /* AI 区画が非表示のときは、直前の Wi-Fi 区画が最後の区画として下余白を持たないようにする */
+        .wifi-section:has(+ .ai-section.is-hidden) { margin-bottom:0; }
+
+        /* ===== AI 使用量（Claude / Codex）===== */
+        :root { --claude-a:#f0a27a; --claude-b:#d06b5b; --codex-a:#7be0c0; --codex-b:#34b3d6;
+                --warn:#facc15; --crit:#ef6a6a; --ok:#7fffaa; --chip-warn-bg:rgba(250,204,21,.14); --chip-warn-fg:#ffd84d;
+                --chip-login-bg:rgba(90,160,255,.16); --chip-login-fg:#9cc6ff; }
+        body.theme-light { --claude-a:#e58f63; --claude-b:#c4553f; --codex-a:#2fbf94; --codex-b:#1f8fb3;
+                --warn:#d9a400; --crit:#d33; --ok:#1aa86b; --chip-warn-bg:rgba(217,164,0,.16); --chip-warn-fg:#8a6500;
+                --chip-login-bg:rgba(30,100,220,.12); --chip-login-fg:#1d5fc2; }
+        .ai-sum { display:none; color:var(--text-color); font-size:11px; white-space:nowrap; }
+        .ai-section.collapsed .ai-sum, .compact .ai-sum { display:inline; }
+        .compact .ai-section .section-title { display:none; }
+        .compact .ai-section .ai-sum { letter-spacing:-.3px; margin-left:auto; }
+        .compact .ai-section .sec-body { display:none; }
+        .ai-refresh { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+        .ai-refresh:hover { background: var(--btn-bg-hover); }
+        .ai-refresh.busy { animation: ai-spin 0.9s linear infinite; pointer-events:none; }
+        @keyframes ai-spin { to { transform: rotate(360deg); } }
+        .compact .ai-refresh { display:none; }
+        .ai-dot { margin:0 1px; color:var(--muted-color); }
+        .sum-c { color:var(--claude-b); } .sum-x { color:var(--codex-b); }
+        .sum-v.warn, .pct.warn { color:var(--warn); } .sum-v.crit, .pct.crit { color:var(--crit); }
+        .sum-v.na, .pct.na { color:var(--muted-color); }
+        .prov + .prov { margin-top:9px; padding-top:8px; border-top:1px dashed var(--section-border); }
+        .prov-head { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+        .prov-name { font-size:12px; font-weight:700; display:flex; align-items:center; gap:5px; cursor:pointer; }
+        .prov-name i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+        .claude .prov-name i { background:linear-gradient(135deg,var(--claude-a),var(--claude-b)); }
+        .codex .prov-name i { background:linear-gradient(135deg,var(--codex-a),var(--codex-b)); }
+        .plan { font-size:9px; padding:0 5px; border-radius:8px; border:1px solid var(--section-border); color:var(--muted-color); line-height:15px; white-space:nowrap; }
+        .prov-state { margin-left:auto; font-size:10px; color:var(--muted-color); cursor:pointer; white-space:nowrap; }
+        .prov-state.ok::before { content:'● '; color:var(--ok); }
+        .prov-state.inc::before { content:'▲ '; color:var(--warn); }
+        .wrow { display:grid; grid-template-columns:20px 1fr 34px; align-items:center; column-gap:6px; }
+        .wrow .lab { font-size:11px; color:var(--muted-color); }
+        .wrow .progress-bar { margin:0; height:6px; }
+        .wrow .pct { text-align:right; font-family:'Consolas', monospace; font-size:12px; font-weight:700; }
+        .wreset { font-size:10px; color:var(--muted-color); padding-left:26px; margin:1px 0 4px; font-family:'Consolas', monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .claude .progress-fill { background:linear-gradient(90deg,var(--claude-a),var(--claude-b)); }
+        .codex .progress-fill { background:linear-gradient(90deg,var(--codex-a),var(--codex-b)); }
+        .progress-fill.warn { background:var(--warn) !important; }
+        .progress-fill.crit { background:var(--crit) !important; }
+        .extra { font-size:10px; color:var(--muted-color); padding-left:26px; display:flex; justify-content:space-between; font-family:'Consolas', monospace; margin-bottom:2px; gap:6px; }
+        .chip { display:flex; align-items:center; gap:6px; font-size:10px; line-height:1.3; padding:4px 6px; border-radius:5px; margin-bottom:5px; overflow-wrap:anywhere; }
+        .chip.warn { background:var(--chip-warn-bg); color:var(--chip-warn-fg); cursor:pointer; }
+        .chip.login { background:var(--chip-login-bg); color:var(--chip-login-fg); }
+        .chip.info { background:var(--section-bg); color:var(--muted-color); }
+        .ai-act { margin-left:auto; border:0; border-radius:4px; background:#5aa0ff; color:#fff; font:inherit; font-size:10px; padding:2px 8px; cursor:pointer; flex:none; }
+        .ai-act:hover { background:#4a90ef; }
+        .ai-act.quiet { background: var(--btn-bg); color: var(--text-color); }
+        .ai-act.quiet:hover { background: var(--btn-bg-hover); }
+
+        /* 設定モーダルの AI 項目 */
+        .modal-toggle.sub { margin-left:10px; font-size:10.5px; margin-top:4px; }
+        .ai-seg { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
+        .ai-seg .modal-opt.disabled, .ai-sub.disabled, .modal-opt.disabled { opacity:.4; pointer-events:none; }
+        .modal-hint { font-size:10px; color:var(--muted-color); margin:3px 0 0; line-height:1.4; }
+        .ai-num { width:58px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:4px; color:var(--text-color); font:inherit; font-size:11px; padding:2px 4px; text-align:right; }
+        details.ai-adv { margin-top:6px; }
+        details.ai-adv summary { font-size:11px; color:var(--muted-color); cursor:pointer; margin-bottom:6px; }
+        .ai-acct { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:5px 8px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:5px; font-size:11px; margin-top:4px; }
     </style>
 </head>
 <body>
@@ -219,6 +295,35 @@
                     <span class="modal-label">GPU / NPU</span>
                     <label class="modal-toggle"><span>GPU/NPU を表示</span><input type="checkbox" id="optShowGPU"></label>
                 </div>
+                <div class="modal-field" id="aiField">
+                    <span class="modal-label">AI 使用量（Claude / Codex）</span>
+                    <label class="modal-toggle"><span>AI 使用量を表示</span><input type="checkbox" id="optAIEnabled"></label>
+                    <div class="ai-sub" id="aiSub">
+                        <label class="modal-toggle sub"><span>Claude</span><input type="checkbox" id="optAIClaude"></label>
+                        <label class="modal-toggle sub"><span>Codex</span><input type="checkbox" id="optAICodex"></label>
+                        <span class="modal-label" style="margin-top:8px">5 時間枠のリセット表示</span>
+                        <div class="ai-seg" id="aiResetFmt">
+                            <button class="modal-opt" data-value="datetime">日時</button>
+                            <button class="modal-opt" data-value="relative">残り時間</button>
+                        </div>
+                        <span class="modal-label" style="margin-top:8px">トレイに出すサービス</span>
+                        <div class="ai-seg" id="aiTrayProv">
+                            <button class="modal-opt" data-value="claude">Claude</button>
+                            <button class="modal-opt" data-value="codex">Codex</button>
+                        </div>
+                        <details class="ai-adv">
+                            <summary>取得間隔・通知・アカウント</summary>
+                            <label class="modal-toggle"><span>使用量の取得間隔 (秒)</span><input class="ai-num" type="number" min="60" max="3600" step="60" id="optAIUsagePoll"></label>
+                            <label class="modal-toggle" style="margin-top:4px"><span>障害監視の間隔 (秒)</span><input class="ai-num" type="number" min="60" max="3600" step="60" id="optAIStatusPoll"></label>
+                            <label class="modal-toggle" style="margin-top:4px"><span>使用量しきい値の通知</span><input type="checkbox" id="optAINotifyUsage"></label>
+                            <label class="modal-toggle" style="margin-top:4px"><span>追加利用枠の通知</span><input type="checkbox" id="optAINotifyOverage"></label>
+                            <label class="modal-toggle" style="margin-top:4px"><span>障害の通知</span><input type="checkbox" id="optAINotifyStatus"></label>
+                            <div class="ai-acct" id="aiAcctClaude"><span>Claude</span><button class="ai-act quiet" data-ai-logout="claude">ログアウト</button></div>
+                            <div class="ai-acct" id="aiAcctCodex"><span>Codex</span><button class="ai-act quiet" data-ai-logout="codex">ログアウト</button></div>
+                        </details>
+                        <p class="modal-hint">ON にすると、この画面の下に使用量が出ます。初回はログインが必要です。</p>
+                    </div>
+                </div>
                 <div class="modal-field">
                     <span class="modal-label">CPU Core 番号</span>
                     <div class="modal-options" data-group="coreBase">
@@ -231,42 +336,51 @@
                     <div class="modal-options" data-group="trayDisplay">
                         <button class="modal-opt" data-value="icon">アイコンのみ</button>
                         <button class="modal-opt" data-value="cpu">CPU 使用率</button>
+                        <button class="modal-opt" data-value="usage" id="optTrayUsage" title="AI 使用量を ON にすると選べます">AI 使用量</button>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="section">
-            <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span></div>
-            <div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
-            <div class="clock-row"><span class="clock-label">クロック</span><span class="clock-value" id="cpu-clock">--- GHz</span><span class="clock-base" id="cpu-clock-base">base ---</span></div>
-            <div class="progress-bar clock-progress"><div class="progress-fill clock-fill" id="clock-bar" style="width:0%"></div><div class="clock-base-marker" id="clock-base-marker" style="left:50%"></div></div>
-            <div class="model-name cpu-model is-empty" id="cpu-model"></div>
-            <div class="cores-container" id="cores-container"></div>
-        </div>
-        <div class="section">
-            <div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value" id="memory-percent">0%</span></div>
-            <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
-            <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
-        </div>
-        <!-- GPU/NPU は wifi の前に置く（後ろに置くと非表示でも .section:last-child を奪い、下に余白が残る） -->
-        <div class="section accel-section" id="gpuSection" style="display:none">
-            <div class="section-header"><span class="section-icon">🎮</span><span class="section-title">GPU</span><span class="section-value" id="gpu-total">---</span></div>
-            <div class="progress-bar gpu-progress"><div class="progress-fill gpu-fill" id="gpu-bar" style="width:0%"></div></div>
-            <div class="accel-info">
-                <div class="model-name is-empty" id="gpu-model"></div>
-                <div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value" id="gpu-dedicated">---</span></div>
-                <div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value" id="gpu-shared">---</span></div>
+        <div class="section" data-sec="cpu">
+            <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span><button class="chev" data-sec="cpu" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
+                <div class="clock-row"><span class="clock-label">クロック</span><span class="clock-value" id="cpu-clock">--- GHz</span><span class="clock-base" id="cpu-clock-base">base ---</span></div>
+                <div class="progress-bar clock-progress"><div class="progress-fill clock-fill" id="clock-bar" style="width:0%"></div><div class="clock-base-marker" id="clock-base-marker" style="left:50%"></div></div>
+                <div class="model-name cpu-model is-empty" id="cpu-model"></div>
+                <div class="cores-container" id="cores-container"></div>
             </div>
         </div>
-        <div class="section accel-section" id="npuSection" style="display:none">
-            <div class="section-header"><span class="section-icon">🧩</span><span class="section-title">NPU</span><span class="section-value" id="npu-usage">---</span></div>
-            <div class="progress-bar npu-progress"><div class="progress-fill npu-fill" id="npu-bar" style="width:0%"></div></div>
-            <div class="model-name npu-model is-empty" id="npu-model"></div>
+        <div class="section" data-sec="memory">
+            <div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value" id="memory-percent">0%</span><button class="chev" data-sec="memory" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
+                <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
+            </div>
         </div>
-        <div class="section wifi-section" id="wifiSection">
+        <!-- GPU/NPU は wifi の前に置く（後ろに置くと非表示でも .section:last-child を奪い、下に余白が残る） -->
+        <div class="section accel-section" id="gpuSection" data-sec="gpu" style="display:none">
+            <div class="section-header"><span class="section-icon">🎮</span><span class="section-title">GPU</span><span class="section-value" id="gpu-total">---</span><button class="chev" data-sec="gpu" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="progress-bar gpu-progress"><div class="progress-fill gpu-fill" id="gpu-bar" style="width:0%"></div></div>
+                <div class="accel-info">
+                    <div class="model-name is-empty" id="gpu-model"></div>
+                    <div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value" id="gpu-dedicated">---</span></div>
+                    <div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value" id="gpu-shared">---</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="section accel-section" id="npuSection" data-sec="npu" style="display:none">
+            <div class="section-header"><span class="section-icon">🧩</span><span class="section-title">NPU</span><span class="section-value" id="npu-usage">---</span><button class="chev" data-sec="npu" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="progress-bar npu-progress"><div class="progress-fill npu-fill" id="npu-bar" style="width:0%"></div></div>
+                <div class="model-name npu-model is-empty" id="npu-model"></div>
+            </div>
+        </div>
+        <div class="section wifi-section" id="wifiSection" data-sec="network">
             <div class="flip-card">
                 <div class="flip-face flip-front">
-                    <div class="section-header"><span class="section-icon" id="conn-icon">📶</span><span class="section-title" id="conn-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span></div>
+                    <div class="section-header"><span class="section-icon" id="conn-icon">📶</span><span class="section-title" id="conn-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span><button class="chev" data-sec="network" title="折りたたむ">▼</button></div>
                     <div class="wifi-info">
                         <div class="wifi-row wifi-detail"><span class="wifi-label" id="wifi-ssid-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
                         <div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value" id="wifi-band">---</span></div>
@@ -276,7 +390,7 @@
                     </div>
                 </div>
                 <div class="flip-face flip-back">
-                    <div class="section-header"><span class="section-icon">📊</span><span class="section-title" data-compact="Net">Network</span><span class="section-value net-peak-toggle" id="net-peak" title="クリックで単位切替 (B ⇔ bit)">---</span></div>
+                    <div class="section-header"><span class="section-icon">📊</span><span class="section-title" data-compact="Net">Network</span><span class="section-value net-peak-toggle" id="net-peak" title="クリックで単位切替 (B ⇔ bit)">---</span><button class="chev" data-sec="network" title="折りたたむ">▼</button></div>
                     <canvas class="net-canvas" id="netCanvas"></canvas>
                     <div class="net-legend">
                         <span class="net-leg-rx">↓ <span id="net-rx-val">0 B/s</span></span>
@@ -284,6 +398,11 @@
                     </div>
                 </div>
             </div>
+        </div>
+        <!-- AI 使用量（Claude / Codex）。既定は OFF なので非表示。既存の区画の下に置く（D8） -->
+        <div class="section ai-section is-hidden" id="aiSection" data-sec="ai">
+            <div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><span class="section-value ai-sum" id="ai-sum"></span><button class="ai-refresh" id="aiRefreshBtn" type="button" title="今すぐ更新">↻</button><button class="chev" data-sec="ai" title="折りたたむ">▼</button></div>
+            <div class="sec-body" id="ai-body"></div>
         </div>
     </div>
     <script nonce="__WIDGET_TOKEN__">
@@ -362,7 +481,9 @@
             topmost: false,
             viewMode: 0,
             netUnit: 'byte',
-            showGPU: true
+            showGPU: true,
+            // 折りたたみ状態（Go 側の config.json の collapsed と同じ）。AI は既定で折りたたみ（D8）
+            collapsed: { cpu: false, memory: false, gpu: false, npu: false, network: false, ai: true }
         };
 
         // Close button (✕): タスクトレイに格納する
@@ -510,7 +631,7 @@
             mouseDownX = e.screenX;
             mouseDownY = e.screenY;
             movedSinceDown = false;
-            if (e.target.id === 'closeBtn') return;
+            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh')) return;
             const rect = dragArea.getBoundingClientRect();
             const onRight = (rect.right - e.clientX) <= resizeMargin;
             const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
@@ -736,6 +857,7 @@
             });
             document.getElementById('optTransparent').checked = !!settings.transparent;
             document.getElementById('optShowGPU').checked = !!settings.showGPU;
+            refreshAIModal();
         }
 
         // モーダル選択肢: Go 側 API に保存してから UI 反映
@@ -790,6 +912,305 @@
         // モーダル内の mousedown がドラッグ判定に回らないよう抑止
         settingsModal.addEventListener('mousedown', (e) => e.stopPropagation());
 
+        // ============ 区画の折りたたみ（D10）============
+        // 開閉は各見出しのシェブロン（▼）のクリックだけ。Wi-Fi は区画のどこをクリックしても表裏が
+        // 反転するため、見出し全体のクリックにはしない。状態は Go 側の config.json に保存される。
+        const collapsibleSections = ['cpu', 'memory', 'gpu', 'npu', 'network', 'ai'];
+        function applyCollapsed(){
+            collapsibleSections.forEach(function(n){
+                const el = document.querySelector('.section[data-sec="' + n + '"]');
+                if (!el) return;
+                const c = !!(settings.collapsed && settings.collapsed[n]);
+                el.classList.toggle('collapsed', c);
+                el.querySelectorAll('.chev').forEach(function(b){ b.title = c ? '展開' : '折りたたむ'; });
+                // Wi-Fi は折りたたむと表面に戻す。展開後は表面から始まる（裏面のグラフは再描画される）。
+                if (n === 'network' && c) el.classList.remove('flipped');
+            });
+        }
+        let heightTimer = 0;
+        function scheduleHeightAdjust(){
+            clearTimeout(heightTimer);
+            heightTimer = setTimeout(adjustWindowHeight, 40);
+        }
+        document.querySelectorAll('.chev').forEach(function(b){
+            // 区画（Wi-Fi の反転）やドラッグ開始へ伝えない
+            b.addEventListener('click', function(e){
+                e.stopPropagation();
+                const n = b.dataset.sec;
+                settings.collapsed[n] = !settings.collapsed[n];
+                apiFetch('/api/setoption?key=collapse.' + n + '&value=' + (settings.collapsed[n] ? 'true' : 'false')).catch(function(){});
+                applyCollapsed();
+                scheduleHeightAdjust();
+                setTimeout(function(){ apiFetch('/api/persistwindow').catch(function(){}); }, 300);
+            });
+        });
+
+        // ============ AI 使用量（Claude / Codex）============
+        const ai = { settings: null, usage: null, status: null, html: '', sum: '', timer: 0, statusTimer: 0 };
+        const AI_PROVIDERS = [
+            { id: 'claude', name: 'Claude', letter: 'C', cls: 'claude', flag: 'claudeEnabled' },
+            { id: 'codex',  name: 'Codex',  letter: 'X', cls: 'codex',  flag: 'codexEnabled' }
+        ];
+        const JP_WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
+        // 外部（サービス側）由来の文字列は必ずエスケープして埋め込む
+        function aiEsc(s){
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        // 0-60% は既定色、61-80% は黄、81-100% は赤（ClaudeMonitor と同じ閾値）
+        function aiBand(p){ return p >= 81 ? 'crit' : (p >= 61 ? 'warn' : ''); }
+        // 一度も取得できていない窓（0% で ResetsAt 無し）は null
+        function aiPct(w){
+            if (!w || typeof w.utilization !== 'number' || (w.utilization === 0 && !w.resetsAt)) return null;
+            return Math.max(0, Math.min(100, Math.round(w.utilization)));
+        }
+        function aiShortLabel(l){ return l === '5時間' ? '5h' : (l === '7日' ? '7d' : l); }
+        function aiResetText(iso, relative){
+            if (!iso) return '';
+            const t = new Date(iso);
+            if (isNaN(t.getTime())) return '';
+            if (relative) {
+                const diffMin = Math.round((t.getTime() - Date.now()) / 60000);
+                if (diffMin <= 0) return '↻ まもなくリセット';
+                const h = Math.floor(diffMin / 60), m = diffMin % 60;
+                return h <= 0 ? '↻ あと' + m + '分' : '↻ あと' + h + '時間' + m + '分';
+            }
+            const pad = function(n){ return String(n).padStart(2, '0'); };
+            return '↻ ' + (t.getMonth() + 1) + '月' + t.getDate() + '日（' + JP_WEEKDAYS[t.getDay()] + '）' + pad(t.getHours()) + ':' + pad(t.getMinutes());
+        }
+        // 表示する窓: ラベルのあるものだけ。まだ取得できていないときは 5h / 7d の枠だけ出す。
+        function aiWindows(u){
+            const out = [];
+            if (u.fiveHour && u.fiveHour.label) out.push({ key: 'five', label: aiShortLabel(u.fiveHour.label), win: u.fiveHour });
+            if (u.sevenDay && u.sevenDay.label) out.push({ key: 'seven', label: aiShortLabel(u.sevenDay.label), win: u.sevenDay });
+            if (out.length === 0) return [{ key: 'five', label: '5h', win: null }, { key: 'seven', label: '7d', win: null }];
+            return out;
+        }
+        function aiPrimaryPct(u){
+            const f = aiPct(u.fiveHour);
+            return f !== null ? f : aiPct(u.sevenDay);
+        }
+        // サービス障害の表示。個別の構成要素名（status ページ側で変わりうる）ではなく、
+        // 進行中のインシデントと、障害を示す構成要素の有無で判断する。
+        function aiStatusOf(st){
+            if (!st || !st.fetchedAt) return { label: '', cls: '', incident: '' };
+            const bad = ['degraded_performance', 'partial_outage', 'major_outage'];
+            const incs = st.incidents || [];
+            const svcBad = (st.services || []).some(function(s){ return bad.indexOf(s.status) !== -1; });
+            if (incs.length || svcBad) {
+                let t = incs.length ? (incs[0].name || '') : '';
+                if (incs.length > 1) t += ' ほか ' + (incs.length - 1) + ' 件';
+                return { label: '障害', cls: 'inc', incident: t || 'サービスに問題が出ています' };
+            }
+            return { label: '稼働中', cls: 'ok', incident: '' };
+        }
+        function aiProviderHtml(p, u, st){
+            const si = aiStatusOf(st);
+            const relative = !!(ai.settings && ai.settings.resetTimeFormat === 'relative');
+            const plan = (u.subscriptionType || '').replace(/^(Claude|ChatGPT)\s+/, '');
+            let h = '<div class="prov-head"><span class="prov-name" data-ai-open="usage" data-provider="' + p.id + '" title="使用量ページを開く"><i></i>' + p.name + '</span>';
+            if (plan && u.authState === 'ok') h += '<span class="plan">' + aiEsc(plan) + '</span>';
+            if (si.label) h += '<span class="prov-state ' + si.cls + '" data-ai-open="status" data-provider="' + p.id + '" title="ステータスページを開く">' + si.label + '</span>';
+            h += '</div>';
+            if (si.incident) h += '<div class="chip warn" data-ai-open="status" data-provider="' + p.id + '">⚠ ' + aiEsc(si.incident) + '</div>';
+            if (u.authState === 'needs_login') {
+                h += '<div class="chip login">未ログイン<button class="ai-act" data-ai-login="' + p.id + '">ログイン</button></div>';
+            } else if (u.authState === 'network_error') {
+                h += '<div class="chip warn" style="cursor:default">取得失敗: ' + aiEsc(u.lastError || '') + '</div>';
+            } else if (!u.authState || u.authState === 'init') {
+                h += '<div class="chip info">取得中…</div>';
+            }
+            aiWindows(u).forEach(function(w){
+                const pct = aiPct(w.win);
+                const b = pct === null ? '' : aiBand(pct);
+                h += '<div class="wrow"><span class="lab">' + aiEsc(w.label) + '</span><div class="progress-bar"><div class="progress-fill ' + b + '" style="width:' + (pct === null ? 0 : pct) + '%"></div></div><span class="pct ' + (pct === null ? 'na' : b) + '">' + (pct === null ? '—' : pct + '%') + '</span></div>';
+                if (pct !== null) {
+                    const txt = aiResetText(w.win.resetsAt, relative && w.key === 'five');
+                    if (txt) h += '<div class="wreset">' + aiEsc(txt) + '</div>';
+                }
+            });
+            const ov = u.overage;
+            if (typeof u.creditBalance === 'number') {
+                h += '<div class="extra"><span>クレジット残高</span><span>$' + u.creditBalance.toFixed(2) + '</span></div>';
+            } else if (ov && typeof ov.amountUsed === 'number' && !(ov.amountUsed === 0 && ov.spendingLimit == null)) {
+                const lim = (ov.spendingLimit != null && ov.spendingLimit > 0) ? ' / $' + ov.spendingLimit.toFixed(2) : '（上限なし）';
+                h += '<div class="extra"><span>追加利用枠</span><span>$' + ov.amountUsed.toFixed(2) + lim + '</span></div>';
+            }
+            return h;
+        }
+        // 折りたたみ時・コンパクト時の 1 行サマリ: C 42% · X 18%
+        function aiSummaryHtml(){
+            const s = ai.settings, u = ai.usage || {};
+            if (!s) return '';
+            const parts = [];
+            AI_PROVIDERS.forEach(function(p){
+                if (!s[p.flag]) return;
+                const x = u[p.id] || {};
+                let v;
+                if (x.authState === 'needs_login') v = '<span class="sum-v na">?</span>';
+                else if (!x.authState || x.authState === 'init') v = '<span class="sum-v na">…</span>';
+                else {
+                    const pc = aiPrimaryPct(x);
+                    v = pc === null ? '<span class="sum-v na">—</span>' : '<span class="sum-v ' + aiBand(pc) + '">' + pc + '%</span>';
+                }
+                parts.push('<span class="sum-' + p.letter.toLowerCase() + '">' + p.letter + '</span> ' + v);
+            });
+            return parts.join(' <span class="ai-dot">·</span> ');
+        }
+        function renderAI(){
+            const s = ai.settings;
+            if (!s || !s.enabled) return;
+            const u = ai.usage || {};
+            const html = AI_PROVIDERS.filter(function(p){ return s[p.flag]; }).map(function(p){
+                return '<div class="prov ' + p.cls + '">' + aiProviderHtml(p, u[p.id] || {}, ai.status && ai.status[p.id]) + '</div>';
+            }).join('');
+            const sum = aiSummaryHtml();
+            if (html !== ai.html) {
+                document.getElementById('ai-body').innerHTML = html;
+                ai.html = html;
+                scheduleHeightAdjust();
+            }
+            if (sum !== ai.sum) {
+                document.getElementById('ai-sum').innerHTML = sum;
+                ai.sum = sum;
+            }
+            refreshAIModal();
+        }
+        // ログイン待ち・取得中は短い間隔で、安定したら長い間隔で見る（Go 側の取得は既定 5 分ごと）
+        function aiNeedsFast(){
+            const s = ai.settings, u = ai.usage;
+            if (!s || !u) return true;
+            return AI_PROVIDERS.some(function(p){
+                return s[p.flag] && ['init', 'needs_login'].indexOf((u[p.id] || {}).authState || 'init') !== -1;
+            });
+        }
+        async function aiFetchUsage(){
+            if (!ai.settings || !ai.settings.enabled) return;
+            try { const r = await apiFetch('/api/ai/usage'); if (r.ok) { ai.usage = await r.json(); renderAI(); } } catch (e) {}
+        }
+        async function aiFetchStatus(){
+            if (!ai.settings || !ai.settings.enabled) return;
+            try { const r = await apiFetch('/api/ai/status'); if (r.ok) { ai.status = await r.json(); renderAI(); } } catch (e) {}
+        }
+        function aiLoop(){
+            clearTimeout(ai.timer);
+            if (!ai.settings || !ai.settings.enabled) return;
+            ai.timer = setTimeout(async function(){ await aiFetchUsage(); aiLoop(); }, aiNeedsFast() ? 3000 : 15000);
+        }
+        function aiStatusLoop(){
+            clearTimeout(ai.statusTimer);
+            if (!ai.settings || !ai.settings.enabled) return;
+            const sec = Math.max(60, ai.settings.statusPollSeconds || 300);
+            ai.statusTimer = setTimeout(async function(){ await aiFetchStatus(); aiStatusLoop(); }, sec * 1000);
+        }
+        function applyAISettings(){
+            const s = ai.settings;
+            if (!s) return;
+            const on = !!s.enabled;
+            document.getElementById('aiSection').classList.toggle('is-hidden', !on);
+            if (!on) {
+                clearTimeout(ai.timer); clearTimeout(ai.statusTimer);
+                ai.usage = null; ai.status = null; ai.html = ''; ai.sum = '';
+            } else {
+                aiFetchUsage().then(aiLoop);
+                aiFetchStatus().then(aiStatusLoop);
+            }
+            applyCollapsed();
+            scheduleHeightAdjust();
+            refreshAIModal();
+        }
+        async function aiLoadSettings(){
+            try { const r = await apiFetch('/api/ai/settings'); ai.settings = await r.json(); applyAISettings(); } catch (e) {}
+        }
+        function aiPost(path, obj){
+            return apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj || {}) });
+        }
+        async function aiSetOption(obj){
+            try {
+                const r = await aiPost('/api/ai/setoption', obj);
+                if (r.ok) { ai.settings = await r.json(); applyAISettings(); }
+            } catch (e) {}
+        }
+        // 区画内のボタン（ログイン、使用量・ステータスページを開く）
+        document.getElementById('ai-body').addEventListener('click', function(e){
+            const t = e.target.closest('[data-ai-login],[data-ai-open]');
+            if (!t) return;
+            e.stopPropagation();
+            if (t.dataset.aiLogin) aiPost('/api/ai/relogin?provider=' + t.dataset.aiLogin).catch(function(){});
+            else if (t.dataset.aiOpen) aiPost('/api/ai/open-' + t.dataset.aiOpen + '?provider=' + t.dataset.provider).catch(function(){});
+        });
+        // 見出しの「今すぐ更新」。取得が終わるまで回し、終わったら最新の値と障害状況を描き直す。
+        document.getElementById('aiRefreshBtn').addEventListener('click', async function(e){
+            e.stopPropagation();
+            const btn = this;
+            btn.classList.add('busy');
+            try {
+                const r = await aiPost('/api/ai/refresh');
+                if (r.ok) { ai.usage = await r.json(); renderAI(); }
+                aiFetchStatus();
+            } catch (err) {}
+            btn.classList.remove('busy');
+        });
+        // 設定モーダルの AI 項目
+        function refreshAIModal(){
+            const s = ai.settings;
+            if (!s) return;
+            const u = ai.usage || {};
+            document.getElementById('optAIEnabled').checked = !!s.enabled;
+            // タスクバーの「AI 使用量」は、AI 使用量が ON のときだけ選べる（選んだまま OFF にしても保存値は保たれる）
+            document.getElementById('optTrayUsage').classList.toggle('disabled', !s.enabled);
+            document.getElementById('aiSub').classList.toggle('disabled', !s.enabled);
+            document.getElementById('optAIClaude').checked = !!s.claudeEnabled;
+            document.getElementById('optAICodex').checked = !!s.codexEnabled;
+            document.querySelectorAll('#aiResetFmt .modal-opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.resetTimeFormat); });
+            // トレイに出すサービス: 両方有効なときだけ選べる（片方だけなら有効な側に固定）
+            const both = !!(s.claudeEnabled && s.codexEnabled);
+            document.querySelectorAll('#aiTrayProv .modal-opt').forEach(function(b){
+                b.classList.toggle('active', b.dataset.value === s.trayProvider);
+                b.classList.toggle('disabled', !both);
+            });
+            const setNum = function(id, v){ const el = document.getElementById(id); if (document.activeElement !== el) el.value = v; };
+            setNum('optAIUsagePoll', s.usagePollSeconds);
+            setNum('optAIStatusPoll', s.statusPollSeconds);
+            document.getElementById('optAINotifyUsage').checked = !!s.notifyUsage;
+            document.getElementById('optAINotifyOverage').checked = !!s.notifyOverage;
+            document.getElementById('optAINotifyStatus').checked = !!s.notifyStatus;
+            document.getElementById('aiAcctClaude').style.display = (s.enabled && s.claudeEnabled && (u.claude || {}).authState === 'ok') ? '' : 'none';
+            document.getElementById('aiAcctCodex').style.display = (s.enabled && s.codexEnabled && (u.codex || {}).authState === 'ok') ? '' : 'none';
+        }
+        [['optAIEnabled', 'enabled'], ['optAIClaude', 'claudeEnabled'], ['optAICodex', 'codexEnabled'],
+         ['optAINotifyUsage', 'notifyUsage'], ['optAINotifyOverage', 'notifyOverage'], ['optAINotifyStatus', 'notifyStatus']].forEach(function(pair){
+            document.getElementById(pair[0]).addEventListener('change', function(e){
+                e.stopPropagation();
+                const o = {}; o[pair[1]] = this.checked;
+                aiSetOption(o);
+            });
+        });
+        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds']].forEach(function(pair){
+            document.getElementById(pair[0]).addEventListener('change', function(e){
+                e.stopPropagation();
+                const o = {}; o[pair[1]] = Number(this.value) || 0;
+                aiSetOption(o);   // 範囲外はサーバー側で矯正され、応答で表示が戻る
+            });
+        });
+        document.getElementById('aiResetFmt').addEventListener('click', function(e){
+            const b = e.target.closest('.modal-opt'); if (!b) return;
+            e.stopPropagation();
+            aiSetOption({ resetTimeFormat: b.dataset.value });
+        });
+        document.getElementById('aiTrayProv').addEventListener('click', function(e){
+            const b = e.target.closest('.modal-opt'); if (!b || b.classList.contains('disabled')) return;
+            e.stopPropagation();
+            aiPost('/api/ai/provider', { provider: b.dataset.value }).then(aiLoadSettings).catch(function(){});
+        });
+        document.querySelectorAll('[data-ai-logout]').forEach(function(b){
+            b.addEventListener('click', function(e){
+                e.stopPropagation();
+                aiPost('/api/ai/logout?provider=' + b.dataset.aiLogout).then(function(){ setTimeout(aiFetchUsage, 1500); }).catch(function(){});
+            });
+        });
+
         // Go 側の永続設定を起動時に取得して UI に反映する。
         // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
         // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
@@ -803,6 +1224,7 @@
             if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
             if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
             if (typeof s.showGPU === 'boolean') { settings.showGPU = s.showGPU; applyAccelData(lastGPU, lastNPU); }
+            if (s.collapsed) Object.assign(settings.collapsed, s.collapsed);
             // CPU 名は起動後に変わらないので、ここで一度だけ反映する
             if (s.cpuName) setModelName('cpu-model', s.cpuName);
 
@@ -820,6 +1242,9 @@
                     .catch(()=>{});
             }
             applyCompactBtn();
+            applyCollapsed();
+            scheduleHeightAdjust();
+            aiLoadSettings();
         }).catch(()=>{ applyTheme(); });
 
         // ============ GPU / NPU ============

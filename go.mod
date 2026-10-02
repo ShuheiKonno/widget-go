@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
 	github.com/shirou/gopsutil/v4 v4.26.6
+	golang.org/x/image v0.39.0
 	golang.org/x/sys v0.47.0
 )
 

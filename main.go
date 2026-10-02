@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"widget-go/aiusage"
 	"widget-go/ime"
 	"widget-go/sysinfo"
 
@@ -95,6 +96,7 @@ const (
 	NIF_MESSAGE = 0x00000001
 	NIF_ICON    = 0x00000002
 	NIF_TIP     = 0x00000004
+	NIF_INFO    = 0x00000010
 
 	WM_APP       = 0x8000
 	WM_TRAYICON  = WM_APP + 1
@@ -112,8 +114,15 @@ const (
 
 	ID_TRAY_EXIT = 1001
 
-	TRAY_DISPLAY_ICON = 0
-	TRAY_DISPLAY_CPU  = 1
+	// AI 使用量のメニュー項目（AI 使用量が ON のときだけ出す）
+	ID_TRAY_AI_REFRESH      = 1002
+	ID_TRAY_AI_LOGIN_CLAUDE = 1003
+	ID_TRAY_AI_LOGIN_CODEX  = 1004
+	ID_TRAY_AI_TEST         = 1005
+
+	TRAY_DISPLAY_ICON  = 0
+	TRAY_DISPLAY_CPU   = 1
+	TRAY_DISPLAY_USAGE = 2 // AI 使用量（Claude / Codex）。AI 使用量が OFF のときは実際の表示はアイコンのみ
 
 	SPI_GETWORKAREA = 0x0030
 
@@ -318,7 +327,7 @@ var (
 	viewModeBeforeTray int
 
 	trayDisplayMu   sync.RWMutex
-	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%
+	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%, 2=AI 使用量
 
 	// wmTaskbarCreated は Explorer が起動/再起動時にブロードキャストする
 	// "TaskbarCreated" メッセージの ID。initTrayWindow で登録する。
@@ -949,6 +958,7 @@ func main() {
 		localAppData = os.Getenv("APPDATA")
 	}
 	appRoot := filepath.Join(localAppData, "widget-go")
+	appDataRoot = appRoot
 	dataPath := filepath.Join(appRoot, "WebView2")
 	_ = os.MkdirAll(dataPath, 0755)
 
@@ -972,9 +982,12 @@ func main() {
 	viewModeMu.Unlock()
 	mutateConfig(func(c *Config) { c.ViewMode = viewModeNormal })
 	trayDisplayMu.Lock()
-	if c.TrayDisplay == "cpu" {
+	switch c.TrayDisplay {
+	case "cpu":
 		trayDisplayMode = TRAY_DISPLAY_CPU
-	} else {
+	case "usage":
+		trayDisplayMode = TRAY_DISPLAY_USAGE
+	default:
 		trayDisplayMode = TRAY_DISPLAY_ICON
 	}
 	trayDisplayMu.Unlock()
@@ -1040,6 +1053,12 @@ func main() {
 	startTray()
 	// Alt+F4 などで w.Run() を抜けた場合に通知領域へアイコンを残さない。
 	defer cleanupTray()
+
+	// AI 使用量（aiusage）を始める。メイン WebView を登録してから呼ぶ（補助 WebView の
+	// 生成・Eval は、すべてメイン WebView の Dispatch 経由で UI スレッドに寄せられる）。
+	// 設定が OFF（既定）のうちは、認証 WebView2 を作らず、取得もしない。
+	setMainWebView(w)
+	aiusage.Start(aiHost{})
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
 	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 使用量セクション モックアップ</title>
+<style>
+/* ===== このページ自体の見た目 ===== */
+:root { --page-bg:#1b1c22; --page-fg:#e8e8f0; --page-muted:#9a9ab0; --page-line:rgba(255,255,255,.12); --page-card:#23242c; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--page-bg); color:var(--page-fg); font-family:'Segoe UI','Yu Gothic UI',sans-serif; font-size:14px; line-height:1.6; padding:24px 24px 64px; }
+h1 { font-size:20px; font-weight:600; margin-bottom:4px; }
+.lead { color:var(--page-muted); font-size:13px; max-width:880px; }
+.toolbar { display:flex; flex-wrap:wrap; gap:16px 28px; margin:18px 0 28px; padding:12px 14px; background:var(--page-card); border:1px solid var(--page-line); border-radius:10px; }
+.ctl { display:flex; align-items:center; gap:8px; }
+.ctl > span { font-size:12px; color:var(--page-muted); }
+.seg { display:inline-flex; border:1px solid var(--page-line); border-radius:7px; overflow:hidden; }
+.seg button { background:transparent; color:var(--page-fg); border:0; padding:5px 11px; font:inherit; font-size:12px; cursor:pointer; border-right:1px solid var(--page-line); }
+.seg button:last-child { border-right:0; }
+.seg button:hover { background:rgba(255,255,255,.08); }
+.seg button.on { background:#5aa0ff; color:#fff; }
+.stage { display:flex; flex-wrap:wrap; gap:36px 40px; align-items:flex-start; }
+figure { display:flex; flex-direction:column; gap:10px; }
+figcaption { font-size:12px; color:var(--page-muted); max-width:300px; }
+figcaption b { color:var(--page-fg); font-weight:600; display:block; font-size:13px; }
+.meas { font-family:Consolas,monospace; color:#7bffe0; }
+.notes { margin-top:44px; max-width:880px; border-top:1px solid var(--page-line); padding-top:18px; color:var(--page-muted); font-size:13px; }
+.notes h2 { font-size:14px; color:var(--page-fg); margin-bottom:6px; }
+.notes ul { padding-left:20px; }
+.notes li { margin-bottom:4px; }
+.notes code { font-family:Consolas,monospace; color:var(--page-fg); }
+
+/* ===== ここから widget-go (ui/index.html) の見た目を流用 =====
+   body.theme-light → .win.light に読み替え。幅・余白・フォントは実寸のまま。 */
+.win {
+  --container-bg: rgba(16,16,22,0.97); --text-color:#f0f0f5; --muted-color:#a8a8b8;
+  --section-bg: rgba(255,255,255,0.05); --section-border: rgba(255,255,255,0.10);
+  --section-title:#d8d8e8; --section-value:#7bffe0; --bar-track: rgba(255,255,255,0.12);
+  --core-track: rgba(255,255,255,0.10); --btn-bg: rgba(255,255,255,0.12); --btn-bg-hover: rgba(255,255,255,0.22); --btn-color:#bbb;
+  --modal-bg: rgba(20,20,28,0.98); --modal-border: rgba(255,255,255,0.12);
+  --input-bg: rgba(255,255,255,0.05); --input-border: rgba(255,255,255,0.14);
+  /* 追加: AI セクション用 */
+  --claude-a:#f0a27a; --claude-b:#d06b5b; --codex-a:#7be0c0; --codex-b:#34b3d6;
+  --warn:#facc15; --crit:#ef6a6a; --ok:#7fffaa; --chip-warn-bg:rgba(250,204,21,.14); --chip-warn-fg:#ffd84d;
+  --chip-login-bg:rgba(90,160,255,.16); --chip-login-fg:#9cc6ff;
+  width:230px; background:var(--container-bg); color:var(--text-color); padding:30px 10px 10px; position:relative;
+  font-family:'Segoe UI','Yu Gothic UI',sans-serif; font-size:13px; user-select:none; border-radius:8px;
+  box-shadow:0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08); }
+.win.light {
+  --container-bg: rgba(245,246,252,0.96); --text-color:#24263a; --muted-color:#606078;
+  --section-bg: rgba(0,0,0,0.04); --section-border: rgba(0,0,0,0.1); --section-title:#3b3b5a; --section-value:#0a7f68;
+  --bar-track: rgba(0,0,0,0.1); --core-track: rgba(0,0,0,0.08); --btn-bg: rgba(0,0,0,0.08); --btn-bg-hover: rgba(0,0,0,0.16); --btn-color:#444;
+  --modal-bg: rgba(250,250,255,0.99); --modal-border: rgba(0,0,0,0.1); --input-bg: rgba(0,0,0,0.04); --input-border: rgba(0,0,0,0.15);
+  --claude-a:#e58f63; --claude-b:#c4553f; --codex-a:#2fbf94; --codex-b:#1f8fb3;
+  --warn:#d9a400; --crit:#d33; --ok:#1aa86b; --chip-warn-bg:rgba(217,164,0,.16); --chip-warn-fg:#8a6500;
+  --chip-login-bg:rgba(30,100,220,.12); --chip-login-fg:#1d5fc2; }
+.win.compact { width:130px; padding:23px 4px 4px; }
+.top-btns { position:absolute; top:8px; right:8px; display:flex; gap:4px; z-index:5; }
+.top-btn { width:18px; height:18px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; font-size:10px; background:var(--btn-bg); color:var(--btn-color); line-height:1; }
+.top-btn.expanded { background:#5aa0ff; color:#fff; }
+.top-btn.pin.active { background:#4CAF50; color:#fff; }
+.compact .top-btns { top:5px; right:5px; gap:3px; }
+.compact .top-btn { width:16px; height:16px; font-size:9px; }
+.section { background:var(--section-bg); border-radius:8px; padding:8px 10px; margin-bottom:8px; border:1px solid var(--section-border); }
+.section:last-child { margin-bottom:0; }
+.compact .section { padding:4px 6px; margin-bottom:3px; }
+.section-header { display:flex; align-items:center; margin-bottom:6px; }
+.compact .section-header { margin-bottom:0; }
+.section-icon { font-size:14px; margin-right:6px; }
+.compact .section-icon { font-size:12px; margin-right:3px; }
+.section-title { font-size:12px; font-weight:600; flex-grow:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--section-title); }
+.compact .section-title { font-size:11px; }
+.section-value { color:var(--section-value); font-size:13px; font-weight:700; font-family:Consolas,monospace; flex-shrink:0; margin-left:auto; }
+.compact .section-value { font-size:11px; }
+.model-name { font-size:10px; line-height:1.3; color:var(--muted-color); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.compact .model-name, .compact .hide-compact { display:none; }
+.progress-bar { position:relative; height:5px; background:var(--bar-track); border-radius:3px; overflow:hidden; margin-bottom:6px; }
+.progress-fill { height:100%; border-radius:3px; }
+.cpu-fill { background:linear-gradient(90deg,#8a9cff,#b07cff); }
+.memory-fill { background:linear-gradient(90deg,#ffa3ff,#ff7a8a); }
+.gpu-fill { background:linear-gradient(90deg,#6ad7ff,#5a8cff); }
+.clock-fill { background:linear-gradient(90deg,#5ad0ff,#8a9cff); }
+.clock-row { display:flex; align-items:baseline; justify-content:space-between; gap:4px; margin-bottom:4px; }
+.clock-label { color:var(--muted-color); font-size:11px; }
+.clock-value { color:var(--section-value); font-size:12px; font-weight:700; font-family:Consolas,monospace; }
+.clock-base { color:var(--muted-color); font-size:10px; font-family:Consolas,monospace; }
+.cores { display:grid; grid-template-columns:repeat(4,1fr); gap:3px; margin-top:5px; }
+.core-label { color:var(--muted-color); font-size:8px; display:block; text-align:center; margin-bottom:2px; }
+.core-bar { height:24px; background:var(--core-track); border-radius:3px; position:relative; overflow:hidden; }
+.core-bar i { position:absolute; bottom:0; width:100%; background:linear-gradient(180deg,#8a9cff,#b07cff); border-radius:3px; }
+.core-bar b { position:relative; display:block; text-align:center; color:#fff; font-size:9px; font-weight:600; line-height:24px; text-shadow:0 1px 2px rgba(0,0,0,.6); }
+.memory-details { text-align:right; font-size:11px; color:var(--muted-color); font-family:Consolas,monospace; }
+.memory-details .used { color:#ffa3ff; font-weight:600; }
+.win.light .memory-details .used { color:#e85ad0; }
+.rows { display:flex; flex-direction:column; gap:3px; }
+.row { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+.row-label { color:var(--muted-color); font-size:11px; white-space:nowrap; }
+.row-value { font-size:11px; font-weight:600; font-family:Consolas,monospace; white-space:nowrap; }
+
+/* ===== 新規: AI 使用量セクション ===== */
+/* ===== 区画の折りたたみ（D10）。シェブロンのクリックのみ。折りたたむと見出しだけが残る ===== */
+.chev { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:9px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:transform .2s, background .15s; padding:0; }
+.chev:hover { background:var(--btn-bg-hover); }
+.section.collapsed > .section-header { margin-bottom:0; }
+.section.collapsed > .section-header .chev { transform:rotate(-90deg); }
+.section.collapsed > .sec-body { display:none; }
+.compact .chev { display:none; }
+/* AI は折りたたんだとき、見出しに 1 行サマリを出す */
+.ai-sum { display:none; }
+.section.collapsed .ai-sum { display:inline; }
+.prov + .prov { margin-top:9px; padding-top:8px; border-top:1px dashed var(--section-border); }
+.prov-head { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+.prov-name { font-size:12px; font-weight:700; display:flex; align-items:center; gap:5px; }
+.prov-name i { width:8px; height:8px; border-radius:50%; display:inline-block; }
+.claude .prov-name i { background:linear-gradient(135deg,var(--claude-a),var(--claude-b)); }
+.codex  .prov-name i { background:linear-gradient(135deg,var(--codex-a),var(--codex-b)); }
+.plan { font-size:9px; padding:0 5px; border-radius:8px; border:1px solid var(--section-border); color:var(--muted-color); line-height:15px; white-space:nowrap; }
+.prov-state { margin-left:auto; font-size:10px; color:var(--muted-color); cursor:pointer; white-space:nowrap; }
+.prov-state.ok::before { content:'● '; color:var(--ok); }
+.prov-state.inc::before { content:'▲ '; color:var(--warn); }
+.wrow { display:grid; grid-template-columns:20px 1fr 34px; align-items:center; column-gap:6px; }
+.wrow .lab { font-size:11px; color:var(--muted-color); }
+.wrow .progress-bar { margin:0; height:6px; }
+.wrow .pct { text-align:right; font-family:Consolas,monospace; font-size:12px; font-weight:700; }
+.wreset { font-size:10px; color:var(--muted-color); padding-left:26px; margin:1px 0 4px; font-family:Consolas,monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.claude .progress-fill { background:linear-gradient(90deg,var(--claude-a),var(--claude-b)); }
+.codex  .progress-fill { background:linear-gradient(90deg,var(--codex-a),var(--codex-b)); }
+.progress-fill.warn { background:var(--warn) !important; }
+.progress-fill.crit { background:var(--crit) !important; }
+.pct.warn { color:var(--warn); } .pct.crit { color:var(--crit); } .pct.na { color:var(--muted-color); }
+.extra { font-size:10px; color:var(--muted-color); padding-left:26px; display:flex; justify-content:space-between; font-family:Consolas,monospace; margin-bottom:2px; }
+.chip { display:flex; align-items:center; gap:6px; font-size:10px; line-height:1.3; padding:4px 6px; border-radius:5px; margin-bottom:5px; }
+.chip.warn { background:var(--chip-warn-bg); color:var(--chip-warn-fg); }
+.chip.login { background:var(--chip-login-bg); color:var(--chip-login-fg); }
+.chip button { margin-left:auto; border:0; border-radius:4px; background:#5aa0ff; color:#fff; font:inherit; font-size:10px; padding:2px 8px; }
+.sum-c { color:var(--claude-b); } .sum-x { color:var(--codex-b); }
+/* コンパクト(130px)は見出しの文字を出さず、アイコン + 1 行サマリのみ。
+   「AI」を残すと 3 桁(100%)でサマリが溢れる。 */
+.compact .ai-section .section-title { display:none; }
+.compact .sum-line { font-size:11px; letter-spacing:-.3px; margin-left:auto; white-space:nowrap; }
+.compact .sum-line .dot { margin:0 1px; color:var(--muted-color); }
+.sum-v.warn { color:var(--warn); } .sum-v.crit { color:var(--crit); } .sum-v.na { color:var(--muted-color); }
+.ai-section.is-hidden { display:none; }
+
+/* ===== 設定モーダル ===== */
+.dim > .section { opacity:.35; }
+.overlay { position:absolute; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; border-radius:8px; z-index:20; }
+.modal { background:var(--modal-bg); border:1px solid var(--modal-border); border-radius:10px; padding:14px 14px 10px; width:92%; max-width:260px; box-shadow:0 8px 24px rgba(0,0,0,.4); max-height:94%; overflow:auto; }
+.modal h2 { font-size:13px; font-weight:600; margin-bottom:10px; color:var(--section-title); display:flex; justify-content:space-between; }
+.modal h2 span { color:var(--muted-color); font-weight:400; }
+.mf { margin-bottom:10px; }
+.mf > label.l { font-size:11px; color:var(--muted-color); display:block; margin-bottom:4px; }
+.mf .tag { font-size:9px; background:#5aa0ff; color:#fff; border-radius:7px; padding:0 5px; margin-left:4px; vertical-align:1px; }
+.opts { display:flex; gap:4px; flex-wrap:wrap; }
+.opt { flex:1 1 auto; min-width:46px; text-align:center; padding:5px 6px; font-size:11px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:5px; color:var(--text-color); }
+.opt.active { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
+.tog { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:5px; font-size:11px; margin-bottom:4px; }
+.tog input { margin:0; }
+.tog.sub { margin-left:10px; font-size:10.5px; }
+.num { width:58px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:4px; color:var(--text-color); font:inherit; font-size:11px; padding:2px 4px; text-align:right; }
+details.adv { margin-bottom:6px; }
+details.adv summary { font-size:11px; color:var(--muted-color); cursor:pointer; margin-bottom:6px; }
+
+/* ===== トレイ ===== */
+.tray-wrap { display:flex; flex-direction:column; gap:18px; background:var(--page-card); border:1px solid var(--page-line); border-radius:12px; padding:16px; width:380px; }
+.tray-row { display:flex; gap:14px; align-items:center; }
+.ti { display:inline-block; background-repeat:no-repeat; image-rendering:pixelated; vertical-align:middle; }
+.ti-box { width:96px; height:96px; flex:none; display:flex; align-items:center; justify-content:center;
+  /* 透過部分が分かるよう市松模様の上に置く（ClaudeMonitor の tray-preview.png と同じ見せ方） */
+  background:conic-gradient(#404040 25%, #5a5a5a 0 50%, #404040 0 75%, #5a5a5a 0) 0 0/16px 16px; border-radius:6px; }
+.tray-row .cap { font-size:12px; color:var(--page-muted); }
+.tray-row .cap b { color:var(--page-fg); font-weight:600; }
+.taskbar { display:flex; gap:10px; align-items:center; justify-content:flex-end; padding:8px 12px; border-radius:6px; font-size:11px; }
+.taskbar.dark { background:#1f1f24; color:#ddd; } .taskbar.light { background:#e9eaf0; color:#333; }
+.taskbar .tbi { display:inline-flex; align-items:center; min-width:16px; min-height:16px; font-size:11px; }
+.tip { background:#2b2c33; color:#f0f0f5; border:1px solid rgba(255,255,255,.14); border-radius:4px; padding:6px 9px; font-size:12px; white-space:pre-line; width:max-content; max-width:100%; }
+.tip small { display:block; margin-top:4px; color:#9a9ab0; font-size:10.5px; font-family:Consolas,monospace; }
+.menu { background:#2b2c33; color:#f0f0f5; border:1px solid rgba(255,255,255,.14); border-radius:7px; padding:4px; width:230px; font-size:12px; box-shadow:0 6px 18px rgba(0,0,0,.4); }
+.menu div { padding:5px 12px; border-radius:4px; }
+.menu .dis { color:#8a8a98; }
+.menu .hl { background:rgba(255,255,255,.1); }
+.menu hr { border:0; border-top:1px solid rgba(255,255,255,.12); margin:3px 6px; }
+.menu .new::after { content:'NEW'; font-size:9px; background:#5aa0ff; color:#fff; border-radius:7px; padding:0 5px; margin-left:8px; }
+</style>
+</head>
+<body>
+
+<h1>AI 使用量セクション モックアップ</h1>
+<p class="lead">docs/plan-claude-monitor.md の §4・§6 の UI 案。幅 230px / 130px は実寸で、スタイルは <code>ui/index.html</code> のものを流用しています。数値はダミーです。上のスイッチで状態を切り替えると、通常表示・コンパクト・トレイが連動して変わります。①の各区画のシェブロンで折りたたみを試せます。</p>
+
+<div class="toolbar">
+  <div class="ctl"><span>状態</span><div class="seg" id="ctl-state">
+    <button data-v="ok" class="on">正常</button><button data-v="high">高使用率</button><button data-v="login">要ログイン</button><button data-v="incident">障害</button><button data-v="limit">上限到達（100%）</button></div></div>
+  <div class="ctl"><span>有効なプロバイダー</span><div class="seg" id="ctl-prov">
+    <button data-v="both" class="on">Claude + Codex</button><button data-v="claude">Claude のみ</button><button data-v="codex">Codex のみ</button><button data-v="off">AI 無効（D2 既定）</button></div></div>
+  <div class="ctl"><span>トレイ表示</span><div class="seg" id="ctl-tray">
+    <button data-v="claude" class="on">Claude</button><button data-v="codex">Codex</button></div></div>
+  <div class="ctl"><span>折りたたみ（①③）</span><div class="seg" id="ctl-col">
+    <button data-v="default" class="on">既定（AI のみ折りたたみ）</button><button data-v="expand">すべて展開</button><button data-v="collapse">すべて折りたたみ</button></div></div>
+</div>
+
+<div class="stage">
+  <figure>
+    <div class="win" id="winA"></div>
+    <figcaption><b>① 通常表示（ダーク・幅 230px）</b>高さ: <span class="meas" id="measA"></span>。<br>総高: <span class="meas" id="measAll"></span>。<br><b style="display:inline">各区画の見出し右端のシェブロン（▼）で折りたためる</b>（CPU・メモリ・GPU・NPU・Wi-Fi・AI の 6 区画）。折りたたむと見出しだけが残り、値は見える。AI は折りたたむと見出しに 1 行サマリが出る。実機の Wi-Fi は区画クリックで裏返るため、折りたたみはシェブロンのみ。※既存区画はダミー（コア 8 個・NPU あり）で、実機の総高とは一致しない。</figcaption>
+  </figure>
+
+  <figure>
+    <div class="win light" id="winB"></div>
+    <figcaption><b>② 通常表示（ライト）— 要ログイン + 障害の同時表示</b>高さ: <span class="meas" id="measB"></span>。常にこの組み合わせで固定（上のスイッチの対象外）。</figcaption>
+  </figure>
+
+  <figure>
+    <div class="win compact" id="winC"></div>
+    <figcaption><b>③ コンパクト表示（幅 130px）</b>AI は 1 行 <code>C 42% · X 18%</code>。高さ: <span class="meas" id="measC"></span>。値の色は 5h 使用率（61%〜黄、81%〜赤）、未ログインは <code>?</code>。折りたたみ状態に関わらず、常に見出しのみ（シェブロンも出さない）。</figcaption>
+  </figure>
+
+  <figure>
+    <div class="win" id="winD" style="min-height:640px"></div>
+    <figcaption><b>④ 設定モーダル（追加項目に NEW 印）</b>トレイの選択肢に「AI 使用量」を追加。取得間隔・通知は <code>&lt;details&gt;</code> に畳んで縦幅を節約。</figcaption>
+  </figure>
+
+  <figure>
+    <div class="tray-wrap" id="tray">
+      <div id="trayRows"></div>
+      <div>
+        <div class="cap" style="margin-bottom:6px"><b>タスクバー上の実寸（16px）</b> <span id="trayWho"></span></div>
+        <div class="taskbar dark"><span>ダーク</span><span class="tbi" id="tb1"></span></div>
+        <div style="height:6px"></div>
+        <div class="taskbar light"><span>ライト</span><span class="tbi" id="tb2"></span></div>
+      </div>
+      <div>
+        <div class="cap" style="margin-bottom:6px"><b>ツールチップ（上限 128 文字）</b></div>
+        <div class="tip" id="tip"></div>
+      </div>
+      <div>
+        <div class="cap" style="margin-bottom:6px"><b>右クリックメニュー</b></div>
+        <div class="menu" id="menu"></div>
+      </div>
+    </div>
+    <figcaption><b>⑤ トレイ（trayDisplay = "usage"）</b>ClaudeMonitor 最新版の意匠: <b style="display:inline">角丸四角</b>、中央の数字が 5h 使用率、背景色が 7d のペース判定（緑 / 琥珀 / 赤）。<b style="display:inline">リングは無い</b>。画像は ClaudeMonitor の描画コードを実行して生成したもの。トレイに出るのは 1 プロバイダーのみ（上の「トレイ表示」で切替）。</figcaption>
+  </figure>
+</div>
+
+<div class="notes">
+  <h2>このモックで仮置きしたこと（確定ではありません）</h2>
+  <ul>
+    <li>バー色: 既定はプロバイダー色（Claude=橙、Codex=青緑）。ClaudeMonitor の閾値を踏襲し、61%〜 は黄、81%〜 は赤に切り替え。</li>
+    <li>セクション位置は「既存の下」を既定にしている（既存セクションの位置を動かさないため）。先頭にする案はスイッチで確認できる。</li>
+    <li>追加利用枠（overage）は、使用率が高い状態でのみ Claude の行に 1 行出す表示にしている。</li>
+    <li>トレイは ClaudeMonitor 最新版（コミット c66799a 以降）の角丸四角。リングは存在しない（README の「円形ディスク + リング」は古い記述）。背景色は固定の 60/80% ではなく、7d 窓の経過割合に応じて閾値を縮めるペース判定。このモックの背景色は 7d の値から割り当てたダミー。</li>
+    <li>トレイに出すプロバイダーは 1 つ。ClaudeMonitor ではタブの選択（ActiveProvider）が決めていたが、タブを廃止するので、設定に「AI 使用量で表示するサービス」を新設する想定。</li>
+    <li>ログイン・障害の各チップは、クリックでそれぞれ認証画面・ステータスページを外部で開く想定（計画書 §5 の <code>/api/ai/relogin</code>・<code>open-status</code>）。</li>
+  </ul>
+</div>
+
+<script>
+/* ---------- ダミーデータ ---------- */
+const DATA = {
+  ok:       { claude:{plan:'Max 5x', h5:42, r5:'14:30（あと 2:14）', d7:18, band:'g', r7:'10/07 09:00', st:'ok'},
+              codex: {plan:'Plus',   h5:12, r5:'16:05（あと 3:49）', d7:3, band:'g',  r7:'10/08 21:00', st:'ok'} },
+  high:     { claude:{plan:'Max 5x', h5:87, r5:'14:30（あと 0:41）', d7:64, band:'a', r7:'10/07 09:00', st:'ok', extra:['追加利用枠','$3.20 / $50']},
+              codex: {plan:'Plus',   h5:63, r5:'16:05（あと 1:20）', d7:71, band:'a', r7:'10/08 21:00', st:'ok'} },
+  limit:    { claude:{plan:'Max 5x', h5:100, r5:'14:30（あと 0:12）', d7:92, band:'r', r7:'10/07 09:00', st:'ok', extra:['追加利用枠','$41.80 / $50']},
+              codex: {plan:'Plus',   h5:100, r5:'16:05（あと 0:48）', d7:100, band:'r', r7:'10/08 21:00', st:'ok'} },
+  login:    { claude:{plan:'Max 5x', h5:42, r5:'14:30（あと 2:14）', d7:18, band:'g', r7:'10/07 09:00', st:'ok'},
+              codex: {login:true} },
+  incident: { claude:{plan:'Max 5x', h5:42, r5:'14:30（あと 2:14）', d7:18, band:'g', r7:'10/07 09:00', st:'inc', incident:'部分的な障害 · API 応答遅延'},
+              codex: {plan:'Plus',   h5:12, r5:'16:05（あと 3:49）', d7:3, band:'g',  r7:'10/08 21:00', st:'ok'} },
+  mixed:    { claude:{plan:'Max 5x', h5:42, r5:'14:30（あと 2:14）', d7:18, band:'g', r7:'10/07 09:00', st:'inc', incident:'部分的な障害 · API 応答遅延'},
+              codex: {login:true} },
+};
+const S = { state:'ok', prov:'both', pos:'bottom', col:'default', tray:'claude' };
+/* 例: mockup-ai-section.html#state=limit&prov=claude&col=collapse（col は default / expand / collapse）で初期状態を指定できる */
+new URLSearchParams(location.hash.slice(1)).forEach((v,k)=>{ if (k in S) S[k]=v; });
+for (const [id,key] of [['ctl-state','state'],['ctl-prov','prov'],['ctl-pos','pos'],['ctl-col','col'],['ctl-tray','tray']])
+  document.querySelectorAll('#'+id+' button').forEach(b=>b.classList.toggle('on', b.dataset.v===S[key]));
+const band = p => p >= 81 ? 'crit' : p >= 61 ? 'warn' : '';
+
+/* ---------- 区画（折りたたみ対応）---------- */
+const SEC_LABEL = {cpu:'CPU', memory:'メモリ', gpu:'GPU', npu:'NPU', network:'Wi-Fi / ネットワーク', ai:'AI 使用量'};
+function chevBtn(id, collapsed){
+  return `<button class="chev" data-sec="${id}" title="${collapsed?'展開':'折りたたむ'}（${SEC_LABEL[id]}）">▼</button>`;
+}
+function sec(id, coll, compact, icon, title, value, body){
+  const c = !compact && !!coll[id];
+  return `<div class="section ${c?'collapsed':''}" data-sec="${id}"><div class="section-header"><span class="section-icon">${icon}</span><span class="section-title">${title}</span><span class="section-value">${value}</span>${compact?'':chevBtn(id, c)}</div>${compact?'':`<div class="sec-body">${body}</div>`}</div>`;
+}
+function baseSections(compact, coll){
+  const cores = Array.from({length:8},(_, i)=>{const v=[34,22,41,18,27,52,15,30][i];
+    return `<div><span class="core-label">Core ${i}</span><div class="core-bar"><i style="height:${v}%"></i><b>${v}%</b></div></div>`}).join('');
+  const cpu = sec('cpu', coll, compact, '💻', 'CPU', '31%', `<div class="progress-bar"><div class="progress-fill cpu-fill" style="width:31%"></div></div>
+    <div class="clock-row"><span class="clock-label">クロック</span><span class="clock-value">3.42 GHz</span><span class="clock-base">base 2.40</span></div>
+    <div class="progress-bar"><div class="progress-fill clock-fill" style="width:62%"></div></div>
+    <div class="model-name">Intel(R) Core(TM) Ultra 7 155H</div><div class="cores">${cores}</div>`);
+  const mem = sec('memory', coll, compact, '🧠', 'メモリ', '58%', `<div class="progress-bar"><div class="progress-fill memory-fill" style="width:58%"></div></div><div class="memory-details"><span class="used">18.6 GB</span> / 32.0 GB</div>`);
+  const gpu = sec('gpu', coll, compact, '🎮', 'GPU', '14%', `<div class="progress-bar"><div class="progress-fill gpu-fill" style="width:14%"></div></div><div class="model-name" style="margin-bottom:3px">Intel(R) Arc(TM) Graphics</div>
+    <div class="rows"><div class="row"><span class="row-label">専用メモリ</span><span class="row-value">0.6 / 0.5 GB</span></div><div class="row"><span class="row-label">共有メモリ</span><span class="row-value">2.1 / 15.8 GB</span></div></div>`);
+  const npu = sec('npu', coll, compact, '🧩', 'NPU', '3%', `<div class="progress-bar" style="margin-bottom:2px"><div class="progress-fill" style="width:3%;background:linear-gradient(90deg,#ffd36a,#ff9f5a)"></div></div><div class="model-name">Intel(R) AI Boost</div>`);
+  const net = sec('network', coll, compact, '📶', 'Wi-Fi', (compact || coll.network) ? '5GHz' : '', `<div class="rows"><div class="row"><span class="row-label">SSID</span><span class="row-value">office-5g</span></div><div class="row"><span class="row-label">帯域</span><span class="row-value">5GHz</span></div><div class="row"><span class="row-label">規格</span><span class="row-value">Wi-Fi 6E</span></div><div class="row"><span class="row-label">信号強度</span><span class="row-value">-52 dBm</span></div></div>`);
+  return {cpu, mem, gpu, npu, net};
+}
+
+/* ---------- AI セクション ---------- */
+function wrow(label, pct, reset){
+  const b = band(pct);
+  return `<div class="wrow"><span class="lab">${label}</span><div class="progress-bar"><div class="progress-fill ${b}" style="width:${pct}%"></div></div><span class="pct ${b}">${pct}%</span></div>
+    <div class="wreset">リセット ${reset}</div>`;
+}
+function provBlock(name, key, d){
+  const label = key==='claude' ? 'Claude' : 'Codex';
+  if (d.login) {
+    return `<div class="prov ${key}"><div class="prov-head"><span class="prov-name"><i></i>${label}</span></div>
+      <div class="chip login">未ログイン <button>ログイン</button></div>
+      <div class="wrow"><span class="lab">5h</span><div class="progress-bar"><div class="progress-fill" style="width:0"></div></div><span class="pct na">—</span></div>
+      <div class="wrow" style="margin-top:4px"><span class="lab">7d</span><div class="progress-bar"><div class="progress-fill" style="width:0"></div></div><span class="pct na">—</span></div></div>`;
+  }
+  return `<div class="prov ${key}"><div class="prov-head"><span class="prov-name"><i></i>${label}</span><span class="plan">${d.plan}</span>
+      <span class="prov-state ${d.st}" title="ステータスページを開く">${d.st==='ok'?'稼働中':'障害'}</span></div>
+      ${d.incident?`<div class="chip warn">⚠ ${d.incident}</div>`:''}
+      ${wrow('5h', d.h5, d.r5)}${wrow('7d', d.d7, d.r7)}
+      ${d.extra?`<div class="extra"><span>${d.extra[0]}</span><span>${d.extra[1]}</span></div>`:''}</div>`;
+}
+function summaryHtml(data, prov){
+  const part = (letter, cls, d) => d.login ? `<span class="${cls}">${letter}</span> <span class="sum-v na">?</span>`
+      : `<span class="${cls}">${letter}</span> <span class="sum-v ${band(d.h5)}">${d.h5}%</span>`;
+  const items = [];
+  if (prov==='both'||prov==='claude') items.push(part('C','sum-c',data.claude));
+  if (prov==='both'||prov==='codex')  items.push(part('X','sum-x',data.codex));
+  return items.join(' <span class="dot">·</span> ');
+}
+function aiSection(data, prov, compact, coll){
+  const sum = summaryHtml(data, prov);
+  const blocks = (prov==='both'||prov==='claude' ? provBlock('Claude','claude',data.claude) : '')
+               + (prov==='both'||prov==='codex'  ? provBlock('Codex','codex',data.codex) : '');
+  if (compact) {
+    return `<div class="section ai-section"><div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI</span><span class="section-value sum-line" style="color:var(--text-color)">${sum}</span></div></div>`;
+  }
+  const c = !!coll.ai;
+  return `<div class="section ai-section ${c?'collapsed':''}" data-sec="ai"><div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span>
+    <span class="section-value ai-sum" style="color:var(--text-color);font-size:11px">${sum}</span>${chevBtn('ai', c)}</div><div class="sec-body">${blocks}</div></div>`;
+}
+
+/* ---------- 画面組み立て ---------- */
+function topBtns(compact){
+  return `<div class="top-btns"><span class="top-btn pin active">📌</span><span class="top-btn">⚙</span><span class="top-btn ${compact?'expanded':''}">${compact?'▢':'▬'}</span><span class="top-btn" style="font-weight:700;padding-bottom:4px">_</span></div>`;
+}
+function build(root, {data, prov, compact, coll, pos, modal}){
+  const b = baseSections(compact, coll);
+  const base = b.cpu + b.mem + b.gpu + b.npu + b.net;
+  const ai = prov==='off' ? '' : aiSection(data, prov, compact, coll);
+  root.innerHTML = topBtns(compact) + `<div class="${modal?'dim':''}">` + (pos==='top' ? ai+base : base+ai) + `</div>` + (modal?modalHtml():'');
+}
+function modalHtml(){
+  return `<div class="overlay"><div class="modal"><h2>表示オプション<span>✕</span></h2>
+   <div class="mf"><label class="l">テーマ</label><div class="opts"><span class="opt active">ダーク</span><span class="opt">ライト</span><span class="opt">システム</span></div></div>
+   <div class="mf"><label class="l">GPU / NPU</label><label class="tog"><span>GPU/NPU を表示</span><input type="checkbox" checked></label></div>
+   <div class="mf"><label class="l">AI 使用量<span class="tag">NEW</span></label>
+     <label class="tog"><span>AI 使用量を表示</span><input type="checkbox" checked></label>
+     <label class="tog sub"><span>Claude</span><input type="checkbox" checked></label>
+     <label class="tog sub"><span>Codex</span><input type="checkbox" checked></label>
+     <div class="opts" style="margin-top:6px"><span class="opt active">日時</span><span class="opt">残り時間</span></div>
+     <div style="font-size:10px;color:var(--muted-color);margin-top:3px">5h 枠のリセット時刻の表示形式</div>
+     <details class="adv" style="margin-top:8px"><summary>取得間隔・通知</summary>
+       <label class="tog"><span>使用量の取得間隔 (秒)</span><input class="num" value="300"></label>
+       <label class="tog"><span>障害監視の間隔 (秒)</span><input class="num" value="300"></label>
+       <label class="tog"><span>使用量しきい値の通知</span><input type="checkbox" checked></label>
+       <label class="tog"><span>追加利用枠の通知</span><input type="checkbox" checked></label>
+       <label class="tog"><span>障害の通知</span><input type="checkbox" checked></label></details>
+   </div>
+   <div class="mf"><label class="l">タスクバー (最小化時)</label><div class="opts"><span class="opt">アイコンのみ</span><span class="opt">CPU 使用率</span><span class="opt active">AI 使用量 <span class="tag" style="margin-left:2px">NEW</span></span></div>
+     <div style="font-size:10px;color:var(--muted-color);margin:6px 0 3px">「AI 使用量」で表示するサービス<span class="tag">NEW</span></div>
+     <div class="opts"><span class="opt active">Claude</span><span class="opt">Codex</span></div></div>
+  </div></div>`;
+}
+
+/* ---------- トレイ（ClaudeMonitor 最新版の意匠）----------
+   角丸四角 + 中央に 5h 使用率の数字。背景色が 7d のペース判定（緑/琥珀/赤）。リングは無い。
+   画像は ClaudeMonitor の tray.go の drawTrayIconImage / drawTrayIconErrorImage を実際に実行して
+   作ったスプライト（mockup-ai-section-tray.png: 横=0..100%、縦=緑/琥珀/赤、最下段の左端=認証エラー）。 */
+const SPRITE = 'mockup-ai-section-tray.png', BAND_ROW = {g:0, a:1, r:2};
+function trayIcon(pct, band, scale){
+  const el = document.createElement('span'); el.className = 'ti';
+  const row = band==='err' ? 3 : BAND_ROW[band], col = band==='err' ? 0 : pct;
+  el.style.cssText = `width:${16*scale}px;height:${16*scale}px;background-image:url(${SPRITE});` +
+    `background-size:${1616*scale}px ${64*scale}px;background-position:-${col*16*scale}px -${row*16*scale}px`;
+  return el;
+}
+function trayProvider(prov){ return prov==='codex' ? 'codex' : prov==='claude' ? 'claude' : S.tray; }
+function buildTray(data, prov){
+  const el = document.getElementById('trayRows'); el.innerHTML='';
+  /* ClaudeMonitor の assets/tray-preview.png と同じ 5 サンプル + エラー */
+  [['通常（緑）',25,'g'],['5 と 6 の判読性',56,'g'],['ペース超過（琥珀）',68,'a'],['高使用（赤）',95,'r'],['100%（3 桁は専用の詰め描画）',100,'r'],['認証エラー',0,'err']].forEach(([name,pct,bk])=>{
+    const row = document.createElement('div'); row.className='tray-row'; row.style.marginBottom='10px';
+    const box = document.createElement('div'); box.className='ti-box'; box.append(trayIcon(pct, bk, 6));
+    const cap = document.createElement('div'); cap.className='cap';
+    cap.innerHTML = `<b>${name}</b><br>${bk==='err' ? 'Cookie 失効・通信エラー' : `5h ${pct}%（数字）／ 背景色 = 7d のペース判定`}`;
+    row.append(box, cap); el.append(row);
+  });
+  // 現在の状態でのアイコン（トレイに出るのは 1 プロバイダーのみ。ClaudeMonitor の ActiveProvider と同じ挙動）
+  const tp = trayProvider(prov), d = data[tp], name = tp==='codex' ? 'Codex' : 'Claude';
+  const icon = (sc)=> prov==='off' ? null : (d.login ? trayIcon(0,'err',sc) : trayIcon(d.h5, d.band, sc));
+  ['tb1','tb2'].forEach(id=>{ const t = document.getElementById(id); t.innerHTML=''; const i = icon(1); if (i) t.append(i); else t.textContent='（CPU / アイコン）'; });
+  document.getElementById('trayWho').textContent = prov==='off' ? '（AI 無効）' : `（表示中: ${name}）`;
+  // ツールチップ: ClaudeMonitor の文面（1 行目 = 名称、2 行目 = 5時間 / 7日 [/ Eu: 追加利用枠]）を先頭に、widget-go の項目を末尾に足す
+  let text;
+  if (prov==='off') text = 'CPU: 31% | Mem: 58% | 5GHz(36ch) | GPU: 14%';
+  else if (d.login) text = `${name} モニター — 未ログイン\n右クリック → ログイン`;
+  else text = `${name} モニター\n5時間: ${d.h5}% / 7日: ${d.d7}%` + (d.extra ? ` / Eu: ${d.extra[1].split(' / ')[0]}` : '') + '\nCPU 31% | Mem 58% | GPU 14%';
+  document.getElementById('tip').innerHTML = text.replace(/\n/g,'<br>') + `<small>${text.length} / 127 文字（終端 NUL 込みで 128）</small>`;
+  // 右クリックメニュー
+  const loginItems = [];
+  if (prov!=='codex' && data.claude.login) loginItems.push('Claude にログイン…');
+  if (prov!=='claude' && data.codex.login) loginItems.push('Codex にログイン…');
+  document.getElementById('menu').innerHTML =
+    `<div class="dis">システムモニター v2.0.0</div><hr>` +
+    (prov==='off' ? '' : `<div class="hl new">AI 使用量を更新</div>` + loginItems.map(t=>`<div class="new">${t}</div>`).join('') + `<hr>`) +
+    `<div>終了</div>`;
+}
+
+/* ---------- 折りたたみ状態（フレームごと。実機では config.json の collapsed に保存）---------- */
+function preset(name){
+  const o = {cpu:0, memory:0, gpu:0, npu:0, network:0, ai:0};
+  if (name === 'default') o.ai = 1;                              // D8: AI は既定で折りたたみ
+  if (name === 'collapse') for (const k in o) o[k] = 1;
+  return o;
+}
+const COLL = { A: preset(S.col), B: preset('expand'), D: preset('expand') };
+['A','B','D'].forEach(k => { document.getElementById('win'+k).dataset.frame = k; });
+
+/* ---------- 描画 ---------- */
+function render(){
+  const data = DATA[S.state];
+  build(document.getElementById('winA'), {data, prov:S.prov, compact:false, coll:COLL.A, pos:S.pos});
+  build(document.getElementById('winB'), {data:DATA.mixed, prov:'both', compact:false, coll:COLL.B, pos:S.pos});
+  build(document.getElementById('winC'), {data, prov:S.prov, compact:true, coll:COLL.A, pos:S.pos});
+  build(document.getElementById('winD'), {data, prov:'both', compact:false, coll:COLL.D, pos:'bottom', modal:true});
+  measure();
+  buildTray(data, S.prov);
+}
+/* 高さの実測。AI セクションが加える分（本体 + 下余白 8px / コンパクトは 3px）と、
+   全展開 / 既定 / 全折りたたみのときの総高を、画面外に組んで測る。 */
+function measure(){
+  [['A','winA'],['B','winB'],['C','winC']].forEach(([k,id])=>{
+    const win = document.getElementById(id), ai = win.querySelector('.ai-section');
+    const gap = win.classList.contains('compact') ? 3 : 8;
+    const add = ai ? ai.offsetHeight + gap : 0;
+    document.getElementById('meas'+k).textContent = `${win.offsetHeight}px（うち AI セクション +${add}px）`;
+  });
+  const probe = document.createElement('div'); probe.className = 'win';
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden';
+  document.body.appendChild(probe);
+  const h = name => { build(probe, {data:DATA[S.state], prov:S.prov, compact:false, coll:preset(name), pos:S.pos}); return probe.offsetHeight; };
+  document.getElementById('measAll').textContent = `全展開 ${h('expand')}px ／ 既定（AI のみ折りたたみ）${h('default')}px ／ 全折りたたみ ${h('collapse')}px`;
+  probe.remove();
+}
+function bind(id, key){
+  document.getElementById(id).addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    S[key] = b.dataset.v;
+    if (key === 'col') COLL.A = preset(S.col);
+    [...b.parentNode.children].forEach(x=>x.classList.toggle('on', x===b));
+    render();
+  });
+}
+bind('ctl-state','state'); bind('ctl-prov','prov'); bind('ctl-col','col'); bind('ctl-tray','tray');
+/* シェブロンのクリックだけで折りたたむ（見出し全体のクリックにはしない。実機の Wi-Fi は区画クリックで裏返るため） */
+document.addEventListener('click', e=>{
+  const c = e.target.closest('.chev'); if(!c) return;
+  const win = c.closest('.win'), f = win && win.dataset.frame; if(!f || !COLL[f]) return;
+  e.stopPropagation();
+  COLL[f][c.dataset.sec] = COLL[f][c.dataset.sec] ? 0 : 1;
+  render();
+});
+render();
+</script>
+</body>
+</html>

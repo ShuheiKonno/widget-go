@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"widget-go/aiusage"
 )
 
 // Config はプロセスをまたいで永続化される設定。
@@ -40,12 +43,59 @@ type Config struct {
 	Topmost     bool      `json:"topmost"`
 	ViewMode    int       `json:"viewMode"`
 	Transparent bool      `json:"transparent"`
-	TrayDisplay string    `json:"trayDisplay"` // "icon" | "cpu"
+	TrayDisplay string    `json:"trayDisplay"` // "icon" | "cpu" | "usage"
 	Theme       string    `json:"theme"`       // "dark" | "light" | "system"
 	CoreBase    int       `json:"coreBase"`    // 0 | 1
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
 	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
 	IME         IMEConfig `json:"ime"`
+	// AI は Claude / Codex の使用量モニター（旧 ClaudeMonitor）の設定。既定は OFF。
+	AI aiusage.Settings `json:"ai"`
+	// Collapsed は各区画の折りたたみ状態（D10）。
+	Collapsed CollapsedConfig `json:"collapsed"`
+}
+
+// CollapsedConfig は区画ごとの折りたたみ状態。true が折りたたみ。
+// AI 以外の既存の区画にも及ぶので、Config.AI の中ではなくトップレベルに置く。
+type CollapsedConfig struct {
+	CPU     bool `json:"cpu"`
+	Memory  bool `json:"memory"`
+	GPU     bool `json:"gpu"`
+	NPU     bool `json:"npu"`
+	Network bool `json:"network"`
+	AI      bool `json:"ai"`
+}
+
+// field は区画名に対応するフィールドを返す。未知の名前は nil。
+func (c *CollapsedConfig) field(name string) *bool {
+	switch name {
+	case "cpu":
+		return &c.CPU
+	case "memory":
+		return &c.Memory
+	case "gpu":
+		return &c.GPU
+	case "npu":
+		return &c.NPU
+	case "network":
+		return &c.Network
+	case "ai":
+		return &c.AI
+	}
+	return nil
+}
+
+// setCollapsed は区画の折りたたみ状態を保存する。name は許可リスト（cpu / memory / gpu / npu /
+// network / ai）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+func setCollapsed(name, val string) error {
+	if val != "true" && val != "false" {
+		return fmt.Errorf("invalid collapse value %q", val)
+	}
+	if (&CollapsedConfig{}).field(name) == nil {
+		return fmt.Errorf("unknown collapse section %q", name)
+	}
+	mutateConfig(func(c *Config) { *c.Collapsed.field(name) = val == "true" })
+	return nil
 }
 
 // IMEConfig は IME Composition Window 検知・自動復旧機能の設定。
@@ -71,6 +121,11 @@ func defaultConfig() Config {
 	// v1.8.0 以前の config.json にはキーが無い。既定値を先に入れておくと
 	// loadConfig の Unmarshal で上書きされず ON のまま残る。
 	c.ShowGPU = true
+	// v1.9.3 以前の config.json には "ai" が無い。既定値を先に入れておくと、
+	// loadConfig の Unmarshal で欠けたキーが上書きされず既定のまま残る。
+	c.AI = aiusage.DefaultSettings()
+	// 区画は既定で展開。AI だけは既定で折りたたみ（D8）。旧 config にキーが無くても残る。
+	c.Collapsed.AI = true
 	c.IME = IMEConfig{
 		Enabled:     true,
 		CooldownSec: 2,
@@ -96,6 +151,8 @@ func loadConfig() {
 	if err := json.Unmarshal(data, &tmp); err != nil {
 		return
 	}
+	// 手編集や旧バージョンで範囲外・欠損になった値を安全な値へ矯正する。
+	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
 	config = tmp
 }
 

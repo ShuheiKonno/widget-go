@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"widget-go/aiusage"
 	"widget-go/sysinfo"
 )
 
@@ -63,6 +64,9 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 
 func startServer(ln net.Listener, token string) {
 	mux := http.NewServeMux()
+
+	// AI 使用量（Claude / Codex）。securityMiddleware の内側に置かれる。
+	aiusage.RegisterHandlers(mux)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -282,6 +286,10 @@ func startServer(ln net.Listener, token string) {
 		case "cpu", "1":
 			m = TRAY_DISPLAY_CPU
 			label = "cpu"
+		case "usage", "2":
+			// 保存はするが、AI 使用量が OFF の間は実際の表示がアイコンのみになる（effectiveTrayDisplay）
+			m = TRAY_DISPLAY_USAGE
+			label = "usage"
 		default:
 			http.Error(w, "invalid mode", http.StatusBadRequest)
 			return
@@ -290,6 +298,7 @@ func startServer(ln net.Listener, token string) {
 		trayDisplayMode = m
 		trayDisplayMu.Unlock()
 		mutateConfig(func(c *Config) { c.TrayDisplay = label })
+		kickTray() // 次の周期を待たずに反映する
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]int{"trayDisplay": m})
 	})
@@ -332,6 +341,14 @@ func startServer(ln net.Listener, token string) {
 			}
 			mutateConfig(func(c *Config) { c.ShowGPU = enable })
 		default:
+			// 区画の折りたたみ: key=collapse.<name>&value=true|false
+			if name, ok := strings.CutPrefix(key, "collapse."); ok {
+				if err := setCollapsed(name, val); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				break
+			}
 			http.Error(w, "unknown key", http.StatusBadRequest)
 			return
 		}
@@ -353,6 +370,7 @@ func startServer(ln net.Listener, token string) {
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
 			"showGPU":     showGPU.Load(),
+			"collapsed":   c.Collapsed,
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。
