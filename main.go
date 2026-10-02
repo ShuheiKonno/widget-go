@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"widget-go/aiusage"
 	"widget-go/ime"
 	"widget-go/sysinfo"
 
@@ -95,6 +96,7 @@ const (
 	NIF_MESSAGE = 0x00000001
 	NIF_ICON    = 0x00000002
 	NIF_TIP     = 0x00000004
+	NIF_INFO    = 0x00000010
 
 	WM_APP       = 0x8000
 	WM_TRAYICON  = WM_APP + 1
@@ -949,6 +951,7 @@ func main() {
 		localAppData = os.Getenv("APPDATA")
 	}
 	appRoot := filepath.Join(localAppData, "widget-go")
+	appDataRoot = appRoot
 	dataPath := filepath.Join(appRoot, "WebView2")
 	_ = os.MkdirAll(dataPath, 0755)
 
@@ -1040,6 +1043,12 @@ func main() {
 	startTray()
 	// Alt+F4 などで w.Run() を抜けた場合に通知領域へアイコンを残さない。
 	defer cleanupTray()
+
+	// AI 使用量（aiusage）を始める。メイン WebView を登録してから呼ぶ（補助 WebView の
+	// 生成・Eval は、すべてメイン WebView の Dispatch 経由で UI スレッドに寄せられる）。
+	// 設定が OFF（既定）のうちは、認証 WebView2 を作らず、取得もしない。
+	setMainWebView(w)
+	aiusage.Start(aiHost{})
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
 	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))

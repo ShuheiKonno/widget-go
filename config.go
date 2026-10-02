@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"widget-go/aiusage"
 )
 
 // Config はプロセスをまたいで永続化される設定。
@@ -46,6 +48,8 @@ type Config struct {
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
 	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
 	IME         IMEConfig `json:"ime"`
+	// AI は Claude / Codex の使用量モニター（旧 ClaudeMonitor）の設定。既定は OFF。
+	AI aiusage.Settings `json:"ai"`
 }
 
 // IMEConfig は IME Composition Window 検知・自動復旧機能の設定。
@@ -71,6 +75,9 @@ func defaultConfig() Config {
 	// v1.8.0 以前の config.json にはキーが無い。既定値を先に入れておくと
 	// loadConfig の Unmarshal で上書きされず ON のまま残る。
 	c.ShowGPU = true
+	// v1.9.3 以前の config.json には "ai" が無い。既定値を先に入れておくと、
+	// loadConfig の Unmarshal で欠けたキーが上書きされず既定のまま残る。
+	c.AI = aiusage.DefaultSettings()
 	c.IME = IMEConfig{
 		Enabled:     true,
 		CooldownSec: 2,
@@ -96,6 +103,8 @@ func loadConfig() {
 	if err := json.Unmarshal(data, &tmp); err != nil {
 		return
 	}
+	// 手編集や旧バージョンで範囲外・欠損になった値を安全な値へ矯正する。
+	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
 	config = tmp
 }
 

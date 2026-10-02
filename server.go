@@ -16,6 +16,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"widget-go/aiusage"
 	"widget-go/sysinfo"
 )
 
@@ -63,6 +64,9 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 
 func startServer(ln net.Listener, token string) {
 	mux := http.NewServeMux()
+
+	// AI 使用量（Claude / Codex）。securityMiddleware の内側に置かれる。
+	aiusage.RegisterHandlers(mux)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

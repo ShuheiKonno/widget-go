@@ -330,6 +330,14 @@ func setTipText(nid *NOTIFYICONDATAW, text string) {
 // 127 単位を超える分は切り詰め、サロゲートペアの途中では切らない。残りはゼロで埋める。
 func tipUTF16(text string) [128]uint16 {
 	var out [128]uint16
+	copyUTF16(out[:], text)
+	return out
+}
+
+// copyUTF16 は text を NUL 終端の UTF-16 として dst に書く。dst に収まらない分は切り詰め、
+// サロゲートペアの途中では切らない。残りはゼロで埋める。
+func copyUTF16(dst []uint16, text string) {
+	clear(dst)
 	u := utf16.Encode([]rune(text))
 	for i, c := range u {
 		if c == 0 { // 途中の NUL 以降は Win32 側から見えないので捨てる
@@ -338,14 +346,35 @@ func tipUTF16(text string) [128]uint16 {
 		}
 	}
 	n := len(u)
-	if n > len(out)-1 {
-		n = len(out) - 1
-		if utf16.IsSurrogate(rune(u[n-1])) && u[n-1] < 0xDC00 {
+	if n > len(dst)-1 {
+		n = len(dst) - 1
+		if n > 0 && utf16.IsSurrogate(rune(u[n-1])) && u[n-1] < 0xDC00 {
 			n-- // 上位サロゲートだけ残さない
 		}
 	}
-	copy(out[:n], u[:n])
-	return out
+	if n > 0 {
+		copy(dst[:n], u[:n])
+	}
+}
+
+// showBalloon はトレイアイコン経由でバルーン（Windows 10/11 ではトースト）通知を出す。
+// flag は aiusage.NIIF_INFO / NIIF_WARNING / NIIF_ERROR。トレイが未登録なら何もしない。
+func showBalloon(title, message string, flag uint32) {
+	trayMu.Lock()
+	active, hwnd := trayActive, trayHwnd
+	trayMu.Unlock()
+	if !active || hwnd == 0 {
+		return
+	}
+	var nid NOTIFYICONDATAW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	nid.UFlags = NIF_INFO
+	nid.DwInfoFlags = flag
+	copyUTF16(nid.SzInfoTitle[:], title)
+	copyUTF16(nid.SzInfo[:], message)
+	procShellNotifyIcon.Call(NIM_MODIFY, uintptr(unsafe.Pointer(&nid)))
 }
 
 // vsFixedFileInfo は VerQueryValueW("\\") が返す VS_FIXEDFILEINFO の先頭部分。

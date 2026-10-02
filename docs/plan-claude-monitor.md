@@ -157,10 +157,11 @@ rockfish と ClaudeMonitor で同名のエンドポイントがある: `/api/set
 | `GET /api/ai/usage` | `/api/usage` | `{claude, codex}` のスナップショット |
 | `GET /api/ai/status` | `/api/status` | |
 | `POST /api/ai/refresh` | `/api/refresh` | 同期取得 |
-| `POST /api/ai/relogin?provider=` | `/api/relogin` | |
+| `POST /api/ai/relogin?provider=` | `/api/relogin` | ログイン画面を画面内に出す |
+| `POST /api/ai/logout?provider=` | （新規。旧: プロセス再起動） | D7: Destroy → 認証フォルダ削除 → 再作成。再起動しない |
 | `POST /api/ai/provider` | `/api/provider` | 役割を変更: タブ切替ではなく `trayProvider` の更新（D9）。無効なプロバイダーは 400。保存後にトレイを再描画 |
 | `GET /api/ai/settings` / `POST /api/ai/setoption` | `/api/settings` / `/api/setoption` の AI 分 | 既存の `/api/settings` に混ぜるか別にするかは T2 で決める |
-| `GET /api/ai/open-usage` / `open-status` | 同名 | 外部ブラウザで開く。`openExternalURL` は許可リスト方式にする（任意 URL を開かない） |
+| `POST /api/ai/open-usage` / `open-status` | 同名（旧は GET） | 外部ブラウザで開く。`openExternalURL` は許可リスト方式にする（任意 URL を開かない） |
 
 **既存 API の拡張（D10）**: `/api/setoption` に `key=collapse.<name>&value=true|false` を追加（`<name>` は `cpu` / `memory` / `gpu` / `npu` / `network` / `ai` の許可リスト。それ以外のキー・値は 400）。`/api/settings` の応答に `"collapsed": {cpu, memory, gpu, npu, network, ai}` を足す。
 
@@ -225,10 +226,28 @@ rockfish と ClaudeMonitor で同名のエンドポイントがある: `/api/set
 3. 再起動せずにログアウト（Cookie 削除）できる方法があるか。**→ ある**（Destroy → フォルダ削除 → 再作成、または CDP でクッキー削除。D7 を「再起動なし」に変更）。
 4. 旧データフォルダのコピーで認証が引き継がれるか（§7）。**→ 引き継がれる**（`Local State` + `Cookies` の最小コピーで Claude・Codex とも認証が通った。D1 は (a) 最小コピーで確定できる）。
 
-### T1: `aiusage/` の切り出し（UI なし）
+### T1: `aiusage/` の切り出し（UI なし）— 2026-10-02 実装済み（認証済みの実データでの確認を除く）
 
 - 旧ファイルを移し、`package aiusage` と `Host` を導入。`main.go` に `mainWebViewInst` と `aiusage.Start(host)` を挿入。`/api/ai/*` を登録。
 - 受け入れ条件: `go vet` / `go test` / `go test -race` / lint が通る。AI を ON にして起動し、`curl -H "X-Widget-Token: …" http://127.0.0.1:<port>/api/ai/usage` で Claude の値が返る。
+
+**T1 の実施結果（2026-10-02）**
+
+- 作ったもの: `aiusage/`（`host.go` / `settings.go` / `authview.go` / `usage.go` / `claude.go` / `codex.go` / `codex_usage.go` / `status.go` / `codex_status.go` / `notify.go` / `handlers.go` / `win.go` / `scripts.go`）と、本体側の `aihost.go`（Host 実装）。`config.go` に `AI aiusage.Settings`、`server.go` に `aiusage.RegisterHandlers(mux)`、`main.go` に `setMainWebView(w)` と `aiusage.Start(aiHost{})`、`tray.go` に `showBalloon`（`NIF_INFO`）を追加。取り込み元は ClaudeMonitor `cc10dda`。
+- 構造の整理: Claude 用と Codex 用で重複していた補助 WebView の処理（約 830 行の 2 ファイル）を、`authView` 1 つ（生成・破棄・ログイン画面・取得・ログアウト）に統合した。取得スクリプト・状態判定・通知判定・変換関数は、内容を変えずに移植した。
+- 取り込まなかったもの: `__debugLog`（一時デバッグ用）、`tray.go` の描画（T3）、`single_instance.go`、メイン UI の HTML、`--restarted` の処理（D7 により不要）、`applyCodexUsage`（未使用の ID トークン経路）。
+- `notify.log` は DataRoot に置き、起動時に 1MiB を超えていたら `notify.log.1` へ退避する。
+- 自動テスト: `go vet`・`go test`（全パッケージ）・`golangci-lint`（0 件）が通る。ClaudeMonitor のテスト（通知・状態・変換）を移植し、設定の矯正、ハンドラ（メソッド制限・409・400・部分更新）、ON/OFF での WebView 生成回数、ログアウトでのフォルダ削除と再作成、`config.json` の旧形式の読み込み、`copyUTF16` を追加した。`go test -race` はこの PC に gcc が無く実行していない（CI で実行される）。
+- **実機の確認（独立した `LOCALAPPDATA`、認証データ無しの空のプロファイルで、24 項目すべて成功）**: ON にすると実行中の `Dispatch` 内で補助 WebView を生成でき（T0-1 の経路。Bind コールバックが届き `needs_login` が報告される）、Codex も同様。ログアウトはプロセスを再起動せずに Destroy → フォルダ削除 → 再作成が動き、未ログインに戻る。OFF にすると約 0.9 秒でブラウザプロセスが全て終了し、メインの UI は生きたまま、スナップショットは `init` に戻る。再度 ON/OFF も動く。トークン無しの API は 403、OFF 中の `refresh` は 409、メソッド違いは 405、不正なプロバイダーや任意の URL の `open-usage` は 400。
+- **認証済みの実データでの確認（2026-10-02、独立した `LOCALAPPDATA` で利用者がアプリ内でログインして実施。出力はステータスと使用率・プラン名のみ）**:
+  - Claude: `authState=ok`、Claude Pro、5 時間・7 日の使用率とリセット時刻、追加使用量（上限あり）が取れた。
+  - Codex: `authState=ok`、ChatGPT Plus、5 時間・7 日の使用率とリセット時刻、クレジット残高が取れた。
+  - ログイン済みのプロファイルでアプリを再起動し、AI を ON のまま起動すると、起動の約 2〜4 秒で `ok` になる（起動時の生成経路と、認証の永続化）。
+  - ログイン済みのセッションで `logout` を実行すると、約 6 秒で `needs_login` に戻る。プロセスは再起動せず、アプリは生きたまま（D7 を実セッションで確認）。
+- **未解決の現象（再現せず）**: ログイン直後の最初の再起動で、補助 WebView は生成されたのに、ページ内からの報告が届かず `init` のまま、`refresh` は「fetch timeout」になった（24 秒と 40 秒の 2 回）。以降、同じ手順を 3 回試しても再現しない（強制終了の 3 秒後の再起動も、2 秒で `ok`）。空のプロファイルでは起動経路でも 4 秒で `needs_login` が報告される。原因は特定できていない（検証での強制終了の繰り返し、claude.ai 側の一時的な遅延などが候補）。対策の候補は、取得がタイムアウトしたときに補助 WebView のページを再読み込みして回復させる処理だが、再現しないため効果を確かめられない。T2 以降で、再現した場合に備えて `refresh` のタイムアウトを `notify.log` に残す。
+- **既知の問題（ClaudeMonitor から引き継いだもの）**: 障害監視の対象名が古い。`status.openai.com` の現在の構成要素（25 件）に、`Codex Web` と `CLI` が存在せず（`Codex in ChatGPT Desktop` だけが一致）、この 2 つは常に `unknown` になる。`codexStatusTargets`（`aiusage/codex_status.go`、ClaudeMonitor `codex_status.go:17` と同じ）を、現在のステータスページに合わせて見直す必要がある。何を監視対象にするか（`Codex in ChatGPT Desktop` だけにする、`ChatGPT Work` や `Agent` を加えるなど）は利用者の判断。T2 でステータス表示を作るときに決める。
+- **未確認**: (1) 生成直後の空 `Dispatch`（4a）が止まりを解消するか（Bind が届いたことは確認したが、止まりの有無は測っていない）。(2) ログイン画面を × で閉じたときにアプリが終了しないこと、初回生成時の補助ウィンドウのちらつき（利用者の目視が必要）。(3) バルーン通知の実表示（`showBalloon`。T3 でも確認する）。
+
 
 ### T2: UI と設定
 
