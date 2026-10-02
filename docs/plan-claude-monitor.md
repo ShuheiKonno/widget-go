@@ -270,6 +270,17 @@ rockfish と ClaudeMonitor で同名のエンドポイントがある: `/api/set
 
 - `trayDisplay = "usage"`（角丸四角の意匠・ペース判定・表示プロバイダーの設定 D9）、ツールチップ、メニュー項目、`Balloon`。`TestDumpTrayPreview`（`DUMP_TRAY_PREVIEW=1`）も移植し、`assets/tray-preview.png` 相当の画像で 5/6 と 100% の判読性を実機の 16px で確認する。
 
+
+
+**T3 の実施結果（2026-10-02）**
+
+- 実装: `aiusage/trayicon.go`（ClaudeMonitor の角丸四角の描画、ペース判定、エラーアイコンを内容を変えずに移植。依存は `golang.org/x/image` v0.39.0 を追加）、`aiusage/tray.go`（`TrayInfo`: プロバイダー選択・アイコンのキー・画像・ツールチップ、`RefreshNow` / `ShowLogin` / `LoginNeeded` / `TestNotify`）、`trayusage.go`（`effectiveTrayDisplay`、`buildUsageTooltip`、`imageToHICON`、右クリックメニューの AI 項目、`kickTray`）。`tray.go` の `runTrayTicker` に AI 使用量のアイコンと合図の受信、メニューのコマンド（更新・ログイン・通知テスト）、`showBalloon` の結果の返却を追加。`trayDisplay` は `"icon" | "cpu" | "usage"`、設定モーダルのタスクバーの選択肢に「AI 使用量」を追加（AI が OFF のときは選べない）。
+- 仕様どおりの動作: トレイは 1 個。`"usage"` は AI が ON のときだけ有効で、OFF のときは保存値は `"usage"` のまま、実際の表示だけアイコンのみに落ちる（`effectiveTrayDisplay`）。アイコンは画像が変わるとき（数字・色・プロバイダー・エラー）だけ作り直す。ツールチップは AI の行を先頭に、widget-go の項目を 127 文字（UTF-16 単位）に収まる分だけ足し、収まらない項目は末尾から落とす（途中で切らない）。スナップショットの更新・設定変更・表示の切替で、次の周期（2 秒）を待たずに更新する。
+- 改善（ClaudeMonitor からの変更）: 短期枠が無いプラン（Codex の週次のみなど）は、アイコンの数字とツールチップに長期枠を使う（存在しない短期枠の 0% を出さない）。
+- 自動テスト: `go vet`・`go test`（全パッケージ）・`golangci-lint`（0 件）が通る。ClaudeMonitor のペース判定のテストを移植し、`buildTrayInfo`（プロバイダー選択、週次のみ、クレジットと追加利用枠、エラー状態）、アイコンのキー、描画（0〜100%、3 桁の詰め描画、角が透明、色と数字の違い）、`effectiveTrayDisplay`、ツールチップの文字数配分（UTF-16 単位）、HICON 変換、`kickTray` を追加した。`DUMP_TRAY_PREVIEW=<PNG のパス> go test ./aiusage -run TestDumpTrayPreview` で、状態ごとのアイコンの一覧画像を出せる。
+- **実機の確認（独立した `LOCALAPPDATA`）**: (1) 隠れているアイコンの領域を UI Automation で読み、ツールチップを確認した。`Claude モニター — 未ログイン / 右クリック → ログイン / CPU: … | Mem: … | …`、Codex に切り替えると `Codex モニター / 5時間: 4% / 7日: 45% / Credit: … / CPU: … | …`（全項目が 127 文字に収まる）。AI を OFF にするとシステムの項目だけになり、再び ON にすると AI の行が戻る。(2) 実際のトレイに描画されたアイコンを画面から取り出して確認した（緑の角丸四角に数字）。(3) `POST /api/ai/test-notify` で `Shell_NotifyIcon` が成功し、`notify.log` に `balloon … ok=true` が残る。(4) トレイに出すサービスの切替（Claude / Codex）が反映される。
+- **不具合の修正（利用者の確認で発覚）**: ログインを終えても、次の取得（既定 5 分ごと）まで「未ログイン」のまま残っていた。ログイン後の画面遷移では、ページ内の取得スクリプト（ドキュメント生成の 1.5 秒後に 1 回）が再実行されないため。ClaudeMonitor から引き継いだ挙動で、T1 の確認では私が毎回 `refresh` を呼んでいたため気づけなかった。修正: (1) ログイン画面を出している間は 4 秒おきに取得し直す（最長 10 分。成功するとログイン画面が自動で閉じて止まる。`watchLoop`）。(2) ログイン画面を × で閉じたときも 1 回取得し直す。(3) AI 区画の見出しに「↻ 今すぐ更新」ボタンを追加（取得中は回転し、終わると値と障害状況を描き直す）。実機で、ログアウト → ログイン画面 → 利用者がログイン、の流れで、`refresh` を呼ばなくても自動で `ok` になり、ログイン画面が自動で画面外へ戻ることを確認した。`watchLoop` のテスト（画面が閉じたら止まる、最長時間で止まる、最初から閉じていれば取得しない）を追加。
+- **未確認**: (1) トレイの右クリックメニューの操作（更新・ログイン・通知テストのコマンド）。メッセージ専用ウィンドウへの `WM_COMMAND` の送信は、この環境から行えなかったため、利用者の目視が必要。コマンドの中身（更新・ログイン・通知テスト）は、それぞれ API 経由で確認済みのものと同じ関数を呼ぶ。(2) バルーン通知（トースト）が画面に実際に表示されること。`Shell_NotifyIcon` の成功までは確認したが、表示は集中モード（通知の抑止）などの OS 設定に依存する。(3) 閾値（60% / 80%）を実際に超えたときの通知。判定ロジックは ClaudeMonitor から移植したテストで確認済み。(4) 高 DPI 環境でのアイコンの見え方（アイコンは 16px で作り、Windows が拡大する。ClaudeMonitor と同じ）。(5) ダークとライトのタスクバーでの視認性。
 ### T4: 移行・文書・リリース
 
 - Cookie コピー（D1）、README（機能・保存先・アンインストール手順に `AuthWebView2` 等を追記。冒頭にプレリリースである旨を書く）、`winres.json` を `2.0.0.0` に更新し、変更履歴に `### 2.0.0` を追記、`release.yml` の `prerelease` を `true` にする（D6）。ClaudeMonitor 側は変更しない（D5）。

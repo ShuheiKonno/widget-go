@@ -37,6 +37,11 @@ func RegisterHandlers(mux *http.ServeMux) {
 		v.logout()
 		writeJSON(w, map[string]any{"ok": true})
 	}))))
+	// 通知（バルーン）の経路の確認用。テスト通知を 1 つ出す。
+	mux.HandleFunc("/api/ai/test-notify", post(requireEnabled(func(w http.ResponseWriter, r *http.Request) {
+		TestNotify()
+		writeJSON(w, map[string]any{"ok": true})
+	})))
 	mux.HandleFunc("/api/ai/open-usage", post(handleOpen(map[string]string{
 		"claude": "https://claude.ai/settings/usage",
 		"codex":  "https://chatgpt.com/codex/settings/usage",

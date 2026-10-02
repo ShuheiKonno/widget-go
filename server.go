@@ -286,6 +286,10 @@ func startServer(ln net.Listener, token string) {
 		case "cpu", "1":
 			m = TRAY_DISPLAY_CPU
 			label = "cpu"
+		case "usage", "2":
+			// 保存はするが、AI 使用量が OFF の間は実際の表示がアイコンのみになる（effectiveTrayDisplay）
+			m = TRAY_DISPLAY_USAGE
+			label = "usage"
 		default:
 			http.Error(w, "invalid mode", http.StatusBadRequest)
 			return
@@ -294,6 +298,7 @@ func startServer(ln net.Listener, token string) {
 		trayDisplayMode = m
 		trayDisplayMu.Unlock()
 		mutateConfig(func(c *Config) { c.TrayDisplay = label })
+		kickTray() // 次の周期を待たずに反映する
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]int{"trayDisplay": m})
 	})

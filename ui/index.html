@@ -219,6 +219,11 @@
         .compact .ai-section .section-title { display:none; }
         .compact .ai-section .ai-sum { letter-spacing:-.3px; margin-left:auto; }
         .compact .ai-section .sec-body { display:none; }
+        .ai-refresh { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+        .ai-refresh:hover { background: var(--btn-bg-hover); }
+        .ai-refresh.busy { animation: ai-spin 0.9s linear infinite; pointer-events:none; }
+        @keyframes ai-spin { to { transform: rotate(360deg); } }
+        .compact .ai-refresh { display:none; }
         .ai-dot { margin:0 1px; color:var(--muted-color); }
         .sum-c { color:var(--claude-b); } .sum-x { color:var(--codex-b); }
         .sum-v.warn, .pct.warn { color:var(--warn); } .sum-v.crit, .pct.crit { color:var(--crit); }
@@ -255,7 +260,7 @@
         /* 設定モーダルの AI 項目 */
         .modal-toggle.sub { margin-left:10px; font-size:10.5px; margin-top:4px; }
         .ai-seg { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
-        .ai-seg .modal-opt.disabled, .ai-sub.disabled { opacity:.4; pointer-events:none; }
+        .ai-seg .modal-opt.disabled, .ai-sub.disabled, .modal-opt.disabled { opacity:.4; pointer-events:none; }
         .modal-hint { font-size:10px; color:var(--muted-color); margin:3px 0 0; line-height:1.4; }
         .ai-num { width:58px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:4px; color:var(--text-color); font:inherit; font-size:11px; padding:2px 4px; text-align:right; }
         details.ai-adv { margin-top:6px; }
@@ -331,6 +336,7 @@
                     <div class="modal-options" data-group="trayDisplay">
                         <button class="modal-opt" data-value="icon">アイコンのみ</button>
                         <button class="modal-opt" data-value="cpu">CPU 使用率</button>
+                        <button class="modal-opt" data-value="usage" id="optTrayUsage" title="AI 使用量を ON にすると選べます">AI 使用量</button>
                     </div>
                 </div>
             </div>
@@ -395,7 +401,7 @@
         </div>
         <!-- AI 使用量（Claude / Codex）。既定は OFF なので非表示。既存の区画の下に置く（D8） -->
         <div class="section ai-section is-hidden" id="aiSection" data-sec="ai">
-            <div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><span class="section-value ai-sum" id="ai-sum"></span><button class="chev" data-sec="ai" title="折りたたむ">▼</button></div>
+            <div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><span class="section-value ai-sum" id="ai-sum"></span><button class="ai-refresh" id="aiRefreshBtn" type="button" title="今すぐ更新">↻</button><button class="chev" data-sec="ai" title="折りたたむ">▼</button></div>
             <div class="sec-body" id="ai-body"></div>
         </div>
     </div>
@@ -625,7 +631,7 @@
             mouseDownX = e.screenX;
             mouseDownY = e.screenY;
             movedSinceDown = false;
-            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act')) return;
+            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh')) return;
             const rect = dragArea.getBoundingClientRect();
             const onRight = (rect.right - e.clientX) <= resizeMargin;
             const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
@@ -1134,12 +1140,26 @@
             if (t.dataset.aiLogin) aiPost('/api/ai/relogin?provider=' + t.dataset.aiLogin).catch(function(){});
             else if (t.dataset.aiOpen) aiPost('/api/ai/open-' + t.dataset.aiOpen + '?provider=' + t.dataset.provider).catch(function(){});
         });
+        // 見出しの「今すぐ更新」。取得が終わるまで回し、終わったら最新の値と障害状況を描き直す。
+        document.getElementById('aiRefreshBtn').addEventListener('click', async function(e){
+            e.stopPropagation();
+            const btn = this;
+            btn.classList.add('busy');
+            try {
+                const r = await aiPost('/api/ai/refresh');
+                if (r.ok) { ai.usage = await r.json(); renderAI(); }
+                aiFetchStatus();
+            } catch (err) {}
+            btn.classList.remove('busy');
+        });
         // 設定モーダルの AI 項目
         function refreshAIModal(){
             const s = ai.settings;
             if (!s) return;
             const u = ai.usage || {};
             document.getElementById('optAIEnabled').checked = !!s.enabled;
+            // タスクバーの「AI 使用量」は、AI 使用量が ON のときだけ選べる（選んだまま OFF にしても保存値は保たれる）
+            document.getElementById('optTrayUsage').classList.toggle('disabled', !s.enabled);
             document.getElementById('aiSub').classList.toggle('disabled', !s.enabled);
             document.getElementById('optAIClaude').checked = !!s.claudeEnabled;
             document.getElementById('optAICodex').checked = !!s.codexEnabled;

@@ -33,10 +33,14 @@ type aiHost struct{}
 
 func (aiHost) Dispatch(f func()) { dispatchUI(f) }
 
-func (aiHost) Balloon(title, msg string, flag uint32) { showBalloon(title, msg, flag) }
+// Balloon は結果を notify.log に残す（バルーンが出ないときの切り分け用。ClaudeMonitor の notifyLog と同じ）。
+func (aiHost) Balloon(title, msg string, flag uint32) {
+	ok := showBalloon(title, msg, flag)
+	aiusage.Logf("balloon title=%q flag=%d ok=%v", title, flag, ok)
+}
 
-// OnSnapshotChanged は、トレイの AI 使用量表示（trayDisplay = "usage"）を実装する T3 で使う。
-func (aiHost) OnSnapshotChanged() {}
+// OnSnapshotChanged は、スナップショットや設定が変わったときに、トレイを次の周期を待たずに更新する。
+func (aiHost) OnSnapshotChanged() { kickTray() }
 
 // OnAuthWindowHidden は、ログイン用の補助ウィンドウを閉じた直後に、メインウィンドウの
 // 最前面と透過を再適用する。WebView2 の初期化やナビゲーション、別ウィンドウの表示で

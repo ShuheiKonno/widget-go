@@ -49,6 +49,7 @@ func TestHandlersMethodGuard(t *testing.T) {
 		"/api/ai/refresh":     http.MethodGet,
 		"/api/ai/relogin":     http.MethodGet,
 		"/api/ai/logout":      http.MethodGet,
+		"/api/ai/test-notify": http.MethodGet,
 		"/api/ai/open-usage":  http.MethodGet,
 		"/api/ai/open-status": http.MethodGet,
 	} {
@@ -68,6 +69,7 @@ func TestHandlersRequireEnabled(t *testing.T) {
 		{http.MethodPost, "/api/ai/refresh"},
 		{http.MethodPost, "/api/ai/relogin?provider=claude"},
 		{http.MethodPost, "/api/ai/logout?provider=claude"},
+		{http.MethodPost, "/api/ai/test-notify"},
 	} {
 		if rec := do(mux, c.method, c.target, ""); rec.Code != http.StatusConflict {
 			t.Errorf("%s %s = %d, want 409", c.method, c.target, rec.Code)

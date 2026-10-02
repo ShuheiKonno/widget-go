@@ -114,8 +114,15 @@ const (
 
 	ID_TRAY_EXIT = 1001
 
-	TRAY_DISPLAY_ICON = 0
-	TRAY_DISPLAY_CPU  = 1
+	// AI 使用量のメニュー項目（AI 使用量が ON のときだけ出す）
+	ID_TRAY_AI_REFRESH      = 1002
+	ID_TRAY_AI_LOGIN_CLAUDE = 1003
+	ID_TRAY_AI_LOGIN_CODEX  = 1004
+	ID_TRAY_AI_TEST         = 1005
+
+	TRAY_DISPLAY_ICON  = 0
+	TRAY_DISPLAY_CPU   = 1
+	TRAY_DISPLAY_USAGE = 2 // AI 使用量（Claude / Codex）。AI 使用量が OFF のときは実際の表示はアイコンのみ
 
 	SPI_GETWORKAREA = 0x0030
 
@@ -320,7 +327,7 @@ var (
 	viewModeBeforeTray int
 
 	trayDisplayMu   sync.RWMutex
-	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%
+	trayDisplayMode = TRAY_DISPLAY_ICON // 0=アイコンのみ, 1=CPU%, 2=AI 使用量
 
 	// wmTaskbarCreated は Explorer が起動/再起動時にブロードキャストする
 	// "TaskbarCreated" メッセージの ID。initTrayWindow で登録する。
@@ -975,9 +982,12 @@ func main() {
 	viewModeMu.Unlock()
 	mutateConfig(func(c *Config) { c.ViewMode = viewModeNormal })
 	trayDisplayMu.Lock()
-	if c.TrayDisplay == "cpu" {
+	switch c.TrayDisplay {
+	case "cpu":
 		trayDisplayMode = TRAY_DISPLAY_CPU
-	} else {
+	case "usage":
+		trayDisplayMode = TRAY_DISPLAY_USAGE
+	default:
 		trayDisplayMode = TRAY_DISPLAY_ICON
 	}
 	trayDisplayMu.Unlock()

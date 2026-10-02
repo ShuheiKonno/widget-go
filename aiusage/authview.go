@@ -94,6 +94,8 @@ func authWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if host != nil {
 				host.OnAuthWindowHidden()
 			}
+			// 閉じる直前にログインが済んでいた場合に備えて、すぐ取得し直す（UI スレッドで待たない）。
+			go w.v.refresh()
 		}
 		return 0
 	case wmDestroy:
@@ -209,6 +211,12 @@ func (v *authView) showLogin() {
 		return
 	}
 	wasHidden := v.visible.CompareAndSwap(false, true)
+	if wasHidden {
+		// ログインの完了を待つ。ログイン後の画面遷移ではページ内の取得スクリプトが再実行されず、
+		// 通常の取得（既定 5 分ごと）まで未ログインのまま残るので、こちらから取得し直す。
+		// 成功すれば applyUsagePayload が hideLogin を呼び、visible が false になって止まる。
+		go watchLoop(loginWatchInterval, loginWatchMax, func() bool { return v.visible.Load() && v.instance() != nil }, v.refresh)
+	}
 	hostDispatch(func() {
 		inst, hwnd := v.state()
 		if inst == nil {
@@ -221,6 +229,25 @@ func (v *authView) showLogin() {
 		moveOnscreen(hwnd, v.p.loginPos[0], v.p.loginPos[1])
 		inst.Navigate(v.p.loginURL)
 	})
+}
+
+// ログイン画面を出している間に取得し直す間隔と、待つ最長の時間。
+var (
+	loginWatchInterval = 4 * time.Second
+	loginWatchMax      = 10 * time.Minute
+)
+
+// watchLoop は interval ごとに step を呼ぶ。keepGoing が false になるか、max を過ぎたら止まる。
+// 呼び出し側は goroutine で動かすこと（step は取得の完了を待つので長くかかる）。
+func watchLoop(interval, max time.Duration, keepGoing func() bool, step func()) {
+	deadline := time.Now().Add(max)
+	for time.Now().Before(deadline) {
+		time.Sleep(interval)
+		if !keepGoing() {
+			return
+		}
+		step()
+	}
 }
 
 // hideLogin は取得に成功した後、ログイン画面を画面外へ戻す。どの goroutine からでも呼べる。

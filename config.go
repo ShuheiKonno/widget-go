@@ -43,7 +43,7 @@ type Config struct {
 	Topmost     bool      `json:"topmost"`
 	ViewMode    int       `json:"viewMode"`
 	Transparent bool      `json:"transparent"`
-	TrayDisplay string    `json:"trayDisplay"` // "icon" | "cpu"
+	TrayDisplay string    `json:"trayDisplay"` // "icon" | "cpu" | "usage"
 	Theme       string    `json:"theme"`       // "dark" | "light" | "system"
 	CoreBase    int       `json:"coreBase"`    // 0 | 1
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
