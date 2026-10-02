@@ -215,10 +215,25 @@
                 --warn:#d9a400; --crit:#d33; --ok:#1aa86b; --chip-warn-bg:rgba(217,164,0,.16); --chip-warn-fg:#8a6500;
                 --chip-login-bg:rgba(30,100,220,.12); --chip-login-fg:#1d5fc2; }
         .ai-sum { display:none; color:var(--text-color); font-size:11px; white-space:nowrap; }
-        .ai-section.collapsed .ai-sum, .compact .ai-sum { display:inline; }
-        .compact .ai-section .section-title { display:none; }
-        .compact .ai-section .ai-sum { letter-spacing:-.3px; margin-left:auto; }
+        .ai-section.collapsed .ai-sum { display:inline; }
+        /* コンパクト表示: 「C 42% · X 18%」の 1 行サマリでは何の数字か読み取れないので、
+           プロバイダごとに「ドット + 名前 + 使用率」の行に分け、CPU/メモリ/GPU と同じ
+           見た目に揃える。AI 区画のヘッダは名前が出れば冗長なので隠し、区画の枠も外して
+           各行を独立した区画として見せる。 */
+        .compact .ai-section { background:transparent; border:none; padding:0; }
+        .compact .ai-section > .section-header { display:none; }
         .compact .ai-section .sec-body { display:none; }
+        .ai-compact { display:none; }
+        .compact .ai-compact { display:flex; flex-direction:column; gap:3px; }
+        .ai-crow { display:flex; align-items:center; background:var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:4px 6px; }
+        .ai-crow i { width:8px; height:8px; border-radius:50%; flex:none; margin-right:6px; }
+        .ai-crow.claude i { background:linear-gradient(135deg,var(--claude-a),var(--claude-b)); }
+        .ai-crow.codex i { background:linear-gradient(135deg,var(--codex-a),var(--codex-b)); }
+        .ai-cname { font-size:11px; font-weight:600; color:var(--section-title); flex-grow:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ai-cval { font-size:11px; font-weight:700; font-family:'Consolas', monospace; color:var(--section-value); flex-shrink:0; margin-left:auto; }
+        .ai-cval.warn { color:var(--warn); }
+        .ai-cval.crit { color:var(--crit); }
+        .ai-cval.na { color:var(--muted-color); }
         .ai-refresh { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
         .ai-refresh:hover { background: var(--btn-bg-hover); }
         .ai-refresh.busy { animation: ai-spin 0.9s linear infinite; pointer-events:none; }
@@ -402,6 +417,7 @@
         <!-- AI 使用量（Claude / Codex）。既定は OFF なので非表示。既存の区画の下に置く（D8） -->
         <div class="section ai-section is-hidden" id="aiSection" data-sec="ai">
             <div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><span class="section-value ai-sum" id="ai-sum"></span><button class="ai-refresh" id="aiRefreshBtn" type="button" title="今すぐ更新">↻</button><button class="chev" data-sec="ai" title="折りたたむ">▼</button></div>
+            <div class="ai-compact" id="ai-compact"></div>
             <div class="sec-body" id="ai-body"></div>
         </div>
     </div>
@@ -946,7 +962,7 @@
         });
 
         // ============ AI 使用量（Claude / Codex）============
-        const ai = { settings: null, usage: null, status: null, html: '', sum: '', timer: 0, statusTimer: 0 };
+        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0 };
         const AI_PROVIDERS = [
             { id: 'claude', name: 'Claude', letter: 'C', cls: 'claude', flag: 'claudeEnabled' },
             { id: 'codex',  name: 'Codex',  letter: 'X', cls: 'codex',  flag: 'codexEnabled' }
@@ -1058,6 +1074,26 @@
             });
             return parts.join(' <span class="ai-dot">·</span> ');
         }
+        // コンパクト表示用。プロバイダごとに 1 行。状態は記号ではなく短い語で出す
+        // （? や … では何が起きているか分からないため）。
+        function aiCompactHtml(){
+            const s = ai.settings, u = ai.usage || {};
+            if (!s) return '';
+            return AI_PROVIDERS.filter(function(p){ return s[p.flag]; }).map(function(p){
+                const x = u[p.id] || {};
+                let cls = 'na', val;
+                if (x.authState === 'needs_login') val = '未ログイン';
+                else if (x.authState === 'network_error') val = '取得失敗';
+                else if (!x.authState || x.authState === 'init') val = '取得中';
+                else {
+                    const pc = aiPrimaryPct(x);
+                    if (pc === null) val = '—';
+                    else { cls = aiBand(pc); val = pc + '%'; }
+                }
+                return '<div class="ai-crow ' + p.cls + '"><i></i><span class="ai-cname">' + p.name +
+                       '</span><span class="ai-cval ' + cls + '">' + val + '</span></div>';
+            }).join('');
+        }
         function renderAI(){
             const s = ai.settings;
             if (!s || !s.enabled) return;
@@ -1066,6 +1102,7 @@
                 return '<div class="prov ' + p.cls + '">' + aiProviderHtml(p, u[p.id] || {}, ai.status && ai.status[p.id]) + '</div>';
             }).join('');
             const sum = aiSummaryHtml();
+            const comp = aiCompactHtml();
             if (html !== ai.html) {
                 document.getElementById('ai-body').innerHTML = html;
                 ai.html = html;
@@ -1074,6 +1111,11 @@
             if (sum !== ai.sum) {
                 document.getElementById('ai-sum').innerHTML = sum;
                 ai.sum = sum;
+            }
+            if (comp !== ai.comp) {
+                document.getElementById('ai-compact').innerHTML = comp;
+                ai.comp = comp;
+                scheduleHeightAdjust();
             }
             refreshAIModal();
         }
@@ -1111,7 +1153,7 @@
             document.getElementById('aiSection').classList.toggle('is-hidden', !on);
             if (!on) {
                 clearTimeout(ai.timer); clearTimeout(ai.statusTimer);
-                ai.usage = null; ai.status = null; ai.html = ''; ai.sum = '';
+                ai.usage = null; ai.status = null; ai.html = ''; ai.sum = ''; ai.comp = '';
             } else {
                 aiFetchUsage().then(aiLoop);
                 aiFetchStatus().then(aiStatusLoop);
