@@ -256,6 +256,16 @@ rockfish と ClaudeMonitor で同名のエンドポイントがある: `/api/set
 - D10 の区画の折りたたみ: 6 区画のシェブロン、`.collapsed` の CSS（コンパクト用の隠し規則を共通化）、`Config.Collapsed`、`/api/setoption` の `collapse.<name>`、`/api/settings` への `collapsed`、折りたたみ・展開時の `adjustWindowHeight()`、Wi-Fi/Network の表面への復帰とグラフの再描画。
 - テスト: `defaultConfig` と、`collapsed` キーが無い旧 config を読んだときに `ai == true`・他は `false` になること。`/api/setoption` の許可リスト（不正な `<name>` と値は 400）。折りたたみ状態の `/api/settings` への反映。
 
+
+**T2 の実施結果（2026-10-02）**
+
+- 実装: `ui/index.html`（6 区画のシェブロンと折りたたみ、AI 区画、設定モーダルの AI 項目、コンパクト表示）、`config.go`（`Config.Collapsed`、`CollapsedConfig`、`setCollapsed`）、`server.go`（`/api/setoption` の `collapse.<name>`、`/api/settings` の `collapsed`）。テスト: `collapsed_test.go`（旧 config の既定、部分指定、AI の展開の保持、6 区画の保存、不正な区画名・値の拒否と設定が変わらないこと）。`go vet`・`go test`・`golangci-lint`（0 件）が通る。
+- 折りたたみは見出し右端のシェブロンのクリックだけで行う。シェブロンのクリックは Wi-Fi の反転とドラッグ開始に伝えない（`stopPropagation` と、`mousedown` の除外）。折りたたむと見出しだけが残り、値は見える。コンパクトではシェブロンを出さない。AI は既定で折りたたみで、見出しに `C 42% · X 18%` の 1 行サマリが出る（未ログインは `?`、取得中は `…`）。
+- AI 区画は、使用量の取得（短時間は 3 秒、安定したら 15 秒ごと）と、障害状況（`statusPollSeconds` ごと）を `/api/ai/*` から読む。**サービス障害の表示は、構成要素の名前ではなく、進行中のインシデントと、障害を示す構成要素の有無で判断する**。`status.openai.com` に `Codex Web` と `CLI` が無い問題（T1 の欄）の影響を受けず、監視対象の名前の見直しは、表示には必要ない（`codexStatusTargets` 自体は、通知の判定でまだ使われる）。
+- サービス側（外部）由来の文字列（インシデント名、エラー文）は、必ずエスケープして埋め込む。HTML を含む文字列を流し込んでも、タグとして解釈されず、そのまま表示されることを確認した。
+- 設定モーダルに、AI 使用量の ON/OFF、Claude / Codex のチェック（両方 OFF にしても最低 1 つは残る）、5 時間枠のリセット表示（日時 / 残り時間）、トレイに出すサービス（D9。両方有効なときだけ選べる）、取得間隔・障害監視の間隔、通知 3 種、ログイン済みのサービスのログアウトを追加した。
+- **画面の確認（実際のアプリを独立した `LOCALAPPDATA` で起動し、Edge のヘッドレスを DevTools Protocol で操作）**: 既定の表示（AI は折りたたみ、見出しにサマリ）、AI の展開（Claude は未ログインのバナーとログインボタン、Codex は使用率・リセット時刻・クレジット残高）、全折りたたみ、コンパクト、設定モーダルを撮って確認した。動作は、Wi-Fi の区画クリックで反転しシェブロンでは反転しないこと、折りたたみで表面へ戻ること、折りたたみ状態が `config.json` と `/api/settings` に保存されリロードで復元されること、AI の ON/OFF が画面とサーバーの設定に反映されること、両方 OFF にしても 1 つ残ること、取得間隔の範囲外が矯正されること、エスケープ。
+- **未確認**: (1) 実際のウィジェットのウィンドウで、折りたたみ・展開に合わせて高さが詰まること（ヘッドレスでは `adjustWindowHeight` の結果のウィンドウサイズは見えない。下端固定で上端が動く想定）。(2) ライトテーマでの AI 区画の見た目。(3) 設定モーダルが、実際の（高さが自動調整された）ウィンドウでスクロールして使えること。(4) 画面からのログイン（`ログイン` ボタン）と、ログイン画面を × で閉じたときの動作。(5) `trayDisplay = "usage"` の選択肢は T3 で追加する（モーダルの「タスクバー」の項目は未変更）。
 ### T3: トレイと通知
 
 - `trayDisplay = "usage"`（角丸四角の意匠・ペース判定・表示プロバイダーの設定 D9）、ツールチップ、メニュー項目、`Balloon`。`TestDumpTrayPreview`（`DUMP_TRAY_PREVIEW=1`）も移植し、`assets/tray-preview.png` 相当の画像で 5/6 と 100% の判読性を実機の 16px で確認する。

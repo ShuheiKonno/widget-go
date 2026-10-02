@@ -336,6 +336,14 @@ func startServer(ln net.Listener, token string) {
 			}
 			mutateConfig(func(c *Config) { c.ShowGPU = enable })
 		default:
+			// 区画の折りたたみ: key=collapse.<name>&value=true|false
+			if name, ok := strings.CutPrefix(key, "collapse."); ok {
+				if err := setCollapsed(name, val); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				break
+			}
 			http.Error(w, "unknown key", http.StatusBadRequest)
 			return
 		}
@@ -357,6 +365,7 @@ func startServer(ln net.Listener, token string) {
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
 			"showGPU":     showGPU.Load(),
+			"collapsed":   c.Collapsed,
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。
