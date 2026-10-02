@@ -16,11 +16,13 @@ type fakeHost struct {
 
 func (h *fakeHost) Dispatch(f func()) { f() }
 func (h *fakeHost) Balloon(title, msg string, flag uint32) {
+	h.mu.Lock()
 	h.balloons = append(h.balloons, balloonCall{title, msg, flag})
+	h.mu.Unlock()
 }
 func (h *fakeHost) OnSnapshotChanged()               { h.mu.Lock(); h.changed++; h.mu.Unlock() }
 func (h *fakeHost) OnAuthWindowHidden()              {}
-func (h *fakeHost) DataRoot() string                 { return h.root }
+func (h *fakeHost) DataRoot() string                 { h.mu.Lock(); defer h.mu.Unlock(); return h.root }
 func (h *fakeHost) Settings() Settings               { h.mu.Lock(); defer h.mu.Unlock(); return h.s }
 func (h *fakeHost) MutateSettings(f func(*Settings)) { h.mu.Lock(); defer h.mu.Unlock(); f(&h.s) }
 

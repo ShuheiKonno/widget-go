@@ -144,6 +144,8 @@ func (v *authView) create() {
 	if v.instance() != nil {
 		return
 	}
+	// 初めて作るときに、旧 ClaudeMonitor の認証データ（Cookie と鍵だけ）を引き継ぐ（D1）。
+	v.migrateLegacy()
 	dir := v.dataDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		v.p.reportError("network_error", fmt.Sprintf("認証データフォルダを作れません: %v", err))

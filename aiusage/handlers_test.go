@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,11 +15,12 @@ import (
 
 // stubWebView は WebView2 の生成を失敗させる（テストで本物の WebView2 を作らない）。
 // 生成が呼ばれた回数を返す。
-func stubWebView(t *testing.T) *int {
+func stubWebView(t *testing.T) *atomic.Int32 {
 	t.Helper()
-	calls := new(int)
+	// ログアウトのテストでは、別の goroutine から呼ばれるので、atomic で数える（-race 対策）。
+	calls := new(atomic.Int32)
 	prev := newWebView
-	newWebView = func(webview2.WebViewOptions) webview2.WebView { *calls++; return nil }
+	newWebView = func(webview2.WebViewOptions) webview2.WebView { calls.Add(1); return nil }
 	t.Cleanup(func() { newWebView = prev })
 	resetClaudeSnapshot()
 	resetCodexSnapshot()
@@ -142,22 +144,22 @@ func TestSetOptionEnabledCreatesViews(t *testing.T) {
 	mux := newTestMux()
 
 	do(mux, http.MethodPost, "/api/ai/setoption", `{"notifyUsage":false}`)
-	if *calls != 0 {
-		t.Fatalf("OFF のうちは WebView を作らないはず: %d 回", *calls)
+	if calls.Load() != 0 {
+		t.Fatalf("OFF のうちは WebView を作らないはず: %d 回", calls.Load())
 	}
 
 	do(mux, http.MethodPost, "/api/ai/setoption", `{"enabled":true}`)
-	if *calls != 2 {
-		t.Fatalf("ON で Claude と Codex の 2 つを作りにいくはず: %d 回", *calls)
+	if calls.Load() != 2 {
+		t.Fatalf("ON で Claude と Codex の 2 つを作りにいくはず: %d 回", calls.Load())
 	}
 	if s := getUsageSnapshot(); s.AuthState != "network_error" {
 		t.Errorf("生成に失敗したら network_error のはず: %+v", s)
 	}
 
-	*calls = 0
+	calls.Store(0)
 	do(mux, http.MethodPost, "/api/ai/setoption", `{"enabled":true,"codexEnabled":false}`)
-	if *calls != 1 {
-		t.Fatalf("Codex を外したら Claude の 1 つだけ: %d 回", *calls)
+	if calls.Load() != 1 {
+		t.Fatalf("Codex を外したら Claude の 1 つだけ: %d 回", calls.Load())
 	}
 }
 
@@ -208,10 +210,10 @@ func TestLogoutWipesDataAndRecreates(t *testing.T) {
 	claudeView.logout()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(filepath.Join(dir, "EBWebView")); os.IsNotExist(err) && *calls >= 1 {
+		if _, err := os.Stat(filepath.Join(dir, "EBWebView")); os.IsNotExist(err) && calls.Load() >= 1 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("ログアウトで認証データが消え、WebView を作り直すはず（生成の呼び出し %d 回）", *calls)
+	t.Fatalf("ログアウトで認証データが消え、WebView を作り直すはず（生成の呼び出し %d 回）", calls.Load())
 }

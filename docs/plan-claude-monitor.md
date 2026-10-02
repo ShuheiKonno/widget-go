@@ -285,6 +285,19 @@ rockfish と ClaudeMonitor で同名のエンドポイントがある: `/api/set
 
 - Cookie コピー（D1）、README（機能・保存先・アンインストール手順に `AuthWebView2` 等を追記。冒頭にプレリリースである旨を書く）、`winres.json` を `2.0.0.0` に更新し、変更履歴に `### 2.0.0` を追記、`release.yml` の `prerelease` を `true` にする（D6）。ClaudeMonitor 側は変更しない（D5）。
 
+
+
+**T4 の実施結果（2026-10-02）。リリース（タグの作成と公開）は未実施**
+
+- **D1 の引き継ぎ（`aiusage/migrate.go`）**: 認証用の WebView を初めて作るときに、旧 ClaudeMonitor（DataRoot と同じ階層の `ClaudeMonitor\\{AuthWebView2,CodexAuthWebView2}\\EBWebView`）から、`Local State` と `Default\\Network\\Cookies`（あれば `-journal`）だけをコピーする。一時フォルダに作ってから改名するので、失敗しても中途半端なものを残さない。コピー元は変更しない。
+  - 印（`AuthWebView2.migrated` / `CodexAuthWebView2.migrated`）: 引き継いだあと、または、既に認証データがあって上書きしなかったときに付ける。印が無いと、**ログアウト（認証フォルダの削除）→ 再作成で旧データが戻り、ログアウトが無効になる**ため。旧データが無いとき、コピーに失敗したとき（旧 ClaudeMonitor が起動中で Cookie がロックされているなど）は、印を付けず、次回に再試行する。
+  - テスト: Cookie と鍵だけを引き継ぎキャッシュなどは引き継がない／コピー元が変わらない／旧データが無ければ何もしない／必須ファイルが欠けた旧データは無視／既存を上書きしない／**ログアウトの後に旧データが戻らない**／失敗時に何も残さず印も付けない／プロバイダーごとに別／生成の前に引き継ぐ。
+  - 実機（独立した `LOCALAPPDATA`。旧 ClaudeMonitor のフォルダは、利用者がテスト用のプロファイルでログインしたセッションの Cookie で用意した。実際の ClaudeMonitor のデータには触れていない）: 初回の起動で自動的にログイン済み（`ok`、Claude Pro）になる／ダミーのキャッシュは引き継がれない／コピー元は無傷／ログアウトで `needs_login` になり、**再起動しても旧データが戻らない**。
+- **バージョン**: `winres/winres.json` を `2.0.0.0`（5 か所）にし、`go-winres make` で `rsrc_windows_386.syso` と `rsrc_windows_amd64.syso` を再生成。リリース用の設定でビルドしたバイナリの埋め込みバージョンが `2.0.0.0` であることを確認した（トレイメニューは `formatFileVersion` により `v2.0.0` と表示される）。
+- **`release.yml`**: `prerelease: true` にした（コメント付き。正式版にするときは `false` に戻し、公開済みのリリースは `gh release edit <タグ> --prerelease=false` で外す）。
+- **README**: 冒頭にプレリリースの案内、機能・使い方・表示オプション・「AI 使用量」の節（ON の手順、旧 ClaudeMonitor からの引き継ぎ、ログアウト、通知、メモリの目安、注意）・プロジェクト構成・アーキテクチャ・依存・設定ファイルの保存場所（`AuthWebView2` など）・アンインストール、変更履歴の `2.0.0` を追記。
+- ClaudeMonitor 側は変更していない（D5）。
+- **未実施・利用者の判断が要るもの**: (1) タグ `v2.0.0` の作成とプッシュ（`release.yml` が起動し、プレリリースとして公開される）。(2) 実際の旧 ClaudeMonitor のデータでの引き継ぎの確認（利用者の環境で、AI 使用量を初めて ON にして確認する）。(3) 変更をリモートへプッシュし、PR を作成する。
 ## 11. リスク
 
 | リスク | 影響 | 対処 |
