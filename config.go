@@ -131,7 +131,7 @@ func (h *HiddenConfig) field(name string) *bool {
 
 // syncShowGPU は GPU/NPU の収集可否（ShowGPU）を非表示設定に合わせる。
 // GPU と NPU の両方が非表示のときだけ収集を止める。
-func (c *Config) syncShowGPU() { c.ShowGPU = !(c.Hidden.GPU && c.Hidden.NPU) }
+func (c *Config) syncShowGPU() { c.ShowGPU = !c.Hidden.GPU || !c.Hidden.NPU }
 
 // setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / gpu / npu /
 // network）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
