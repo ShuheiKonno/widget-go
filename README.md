@@ -5,7 +5,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 ![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)
 
-> **v2.0.0 はプレリリースです。** Claude / Codex の使用量モニター（旧 [ClaudeMonitor](https://github.com/ShuheiKonno/ClaudeMonitor)）を取り込みました。正式版になるまで、GitHub の Releases では「プレリリース」として公開します（「Latest」には含まれません）。従来どおりの動作だけでよい場合は v1.9.3 を使えます。AI 使用量は既定で OFF なので、ON にしない限り、認証用の WebView2 の起動も、取得も行いません (画面には、区画の折りたたみボタン ▼ が加わります)。
+> **v2.0 系 (v2.0.0 / v2.0.1) はプレリリースです。** Claude / Codex の使用量モニター（旧 [ClaudeMonitor](https://github.com/ShuheiKonno/ClaudeMonitor)）を取り込みました。正式版になるまで、GitHub の Releases では「プレリリース」として公開します（「Latest」には含まれません）。従来どおりの動作だけでよい場合は v1.9.3 を使えます。AI 使用量は既定で OFF なので、ON にしない限り、認証用の WebView2 の起動も、取得も行いません (画面には、区画の折りたたみボタン ▼ が加わります)。
 
 ## 機能
 
@@ -193,6 +193,12 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` �
 
 ## 変更履歴
 
+### 2.0.1 (2026-10-03) — プレリリース
+
+- **トレイアイコンの左クリックを、表示と格納のトグルに変更** — 表示中ならトレイへ格納 (最小化)、格納中・最小化中なら表示して前面に出す。コンパクト表示で格納しても、戻すと元のモードに戻る。トレイ未登録のときは隠さない
+- **AI 使用量の取得が一律 "fetch timeout" になるのを修正** — 補助情報の bootstrap が返らないと、取得済みの使用量まで止まっていたため、使用量を先に確定させる。fetch ごとに打ち切り、どの API が何 ms で応答しなかったかを表示に出す (#19)
+- **コンパクト表示の AI 使用量を、プロバイダごとの行にする** (#18)
+
 ### 2.0.0 (2026-10-02) — プレリリース
 
 - **AI 使用量 (Claude / Codex) を追加** — 旧 ClaudeMonitor の機能を取り込み。5 時間枠・7 日枠の使用率とリセット時刻、プラン、追加利用枠 / クレジット残高、サービス障害を表示。既定は OFF (⚙ で ON)。認証はアプリ内の専用 WebView2 で行い、Cookie を保存する。ON にしたときに WebView2 を生成し、OFF で破棄して解放する
@@ -205,6 +211,8 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` �
 - 設定 (`config.json`) に `ai` と `collapsed` を追加。古い `config.json` はそのまま読め、AI 使用量は OFF のまま
 - 依存に `golang.org/x/image` を追加
 
+
+### 1.9.3 (2026-09-28)
 
 - **ネットワークグラフが描画されなくなっていたのを修正** — 1.9.2 でピーク値の計算を `drawNetGraph` から `updateNetValue` へ移した際、グラフの縦軸スケールが参照する `peak` を消してしまい、`ReferenceError` で描画が中断していた (数値は例外より前に更新されるため、トラフィックの数字だけが出てグラフが出ない状態になっていた)。ピーク計算を `netPeak()` に切り出し、縦軸スケールとフル表示の数値表示の両方から使うようにした
 
