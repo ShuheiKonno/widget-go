@@ -589,6 +589,9 @@ func getWindowDpiScale() float64 {
 // resizeWindow はウィンドウを width×height（論理px）にリサイズする。
 // anchorTop=false は下端固定（コンパクト化・幾何復元で下端に揃える既定）、
 // anchorTop=true は上端固定（下端エッジを掴んだ手動リサイズで下方向に伸ばす）。
+// minWindowHeight はウィンドウ高さの下限（論理 px）。
+const minWindowHeight = 40
+
 func resizeWindow(width, height int32, anchorTop bool) {
 	resizeWindowAnchored(width, height, anchorTop, false)
 }
@@ -621,8 +624,10 @@ func resizeWindowAnchored(width, height int32, anchorTop, anchorRight bool) {
 	if width > 600 {
 		width = 600
 	}
-	if height < 100 {
-		height = 100
+	// 下限は区画 1 つのコンパクト表示（約 55px）より小さくする。大きいと下に空白が出る。
+	// 設定画面は内容が高いので、開いている間はフロント側が必要な高さまで広げる。
+	if height < minWindowHeight {
+		height = minWindowHeight
 	}
 	if height > 1000 {
 		height = 1000
@@ -641,7 +646,31 @@ func resizeWindowAnchored(width, height int32, anchorTop, anchorRight bool) {
 	if anchorTop {
 		newTop = rect.Top // 上端固定（下端エッジのドラッグ時）
 	}
+	// 下端固定で高くすると上へ伸びて画面外に出る（設定画面を開いたときなど）。
+	// 作業領域に収まるよう高さと位置を矯正する。
+	if hmon, _, _ := procMonitorFromWindow.Call(windowHandle.Load(), MONITOR_DEFAULTTONEAREST); hmon != 0 {
+		var mi MONITORINFO
+		mi.CbSize = uint32(unsafe.Sizeof(mi))
+		if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+			newTop, scaledH = clampVertical(newTop, scaledH, mi.RcWork.Top, mi.RcWork.Bottom)
+		}
+	}
 	procSetWindowPos.Call(windowHandle.Load(), 0, uintptr(newLeft), uintptr(newTop), uintptr(scaledW), uintptr(scaledH), SWP_NOZORDER)
+}
+
+// clampVertical は [top, top+height) を [workTop, workBottom) に収める。
+// 作業領域より高い場合は高さを作業領域の高さに切り詰める。
+func clampVertical(top, height, workTop, workBottom int32) (int32, int32) {
+	if height > workBottom-workTop {
+		height = workBottom - workTop
+	}
+	if top < workTop {
+		top = workTop
+	}
+	if top+height > workBottom {
+		top = workBottom - height
+	}
+	return top, height
 }
 
 // layoutIsCompact はコンパクト表示のレイアウトが当たっているかを返す。

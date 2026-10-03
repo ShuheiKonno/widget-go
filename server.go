@@ -304,7 +304,7 @@ func startServer(ln net.Listener, token string) {
 	})
 
 	// theme / coreBase / netUnit などフロント向け設定を保存する。
-	// showGPU だけは Go 側の GPU/NPU 収集の ON/OFF にも使う。
+	// hide.gpu / hide.npu は Go 側の GPU/NPU 収集の ON/OFF にも使う。
 	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
 		key := r.URL.Query().Get("key")
 		val := r.URL.Query().Get("value")
@@ -328,19 +328,28 @@ func startServer(ln net.Listener, token string) {
 				return
 			}
 			mutateConfig(func(c *Config) { c.NetUnit = val })
-		case "showGPU":
-			if val != "true" && val != "false" {
-				http.Error(w, "invalid showGPU", http.StatusBadRequest)
+		case "order":
+			// 区画の表示順: value=cpu,memory,gpu,npu,network,ai を並べ替えたもの
+			if err := setOrder(val); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			enable := val == "true"
-			showGPU.Store(enable)
-			if !enable {
-				// 次の /api/system が古い GPU/NPU を返して一瞬再表示されないよう即座に捨てる
-				clearGPUCache()
-			}
-			mutateConfig(func(c *Config) { c.ShowGPU = enable })
 		default:
+			// 区画の表示/非表示: key=hide.<name>&value=true|false（true が非表示）
+			if name, ok := strings.CutPrefix(key, "hide."); ok {
+				if err := setHidden(name, val); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				// GPU と NPU が両方非表示のときだけ収集を止める（Config.syncShowGPU）
+				enable := snapshotConfig().ShowGPU
+				showGPU.Store(enable)
+				if !enable {
+					// 次の /api/system が古い GPU/NPU を返して一瞬再表示されないよう即座に捨てる
+					clearGPUCache()
+				}
+				break
+			}
 			// 区画の折りたたみ: key=collapse.<name>&value=true|false
 			if name, ok := strings.CutPrefix(key, "collapse."); ok {
 				if err := setCollapsed(name, val); err != nil {
@@ -371,6 +380,8 @@ func startServer(ln net.Listener, token string) {
 			"netUnit":     c.NetUnit,
 			"showGPU":     showGPU.Load(),
 			"collapsed":   c.Collapsed,
+			"hidden":      c.Hidden,
+			"order":       c.Order,
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。
