@@ -276,7 +276,12 @@ func (v *authView) setInterval(ms int) {
 	})
 }
 
-// refresh はページ内の取得スクリプトを走らせ、Bind コールバックの完了まで待つ（最大 15 秒）。
+// refreshTimeout は取得スクリプトのコールバックを待つ上限。
+// ページ内の timedFetch の合計上限（Claude 12 秒 / Codex 14 秒）より長く取る。
+// これより短いと Go 側のタイムアウトが先に走り、ページ内が特定した理由が表示に出ない。
+const refreshTimeout = 20 * time.Second
+
+// refresh はページ内の取得スクリプトを走らせ、Bind コールバックの完了まで待つ（最大 refreshTimeout）。
 // 並行呼び出しは refreshMu で直列化される。
 //
 // UI スレッドから同期で呼んではならない（Dispatch した Eval の完了を待つのでデッドロックする）。
@@ -306,8 +311,10 @@ func (v *authView) refresh() {
 
 	select {
 	case <-ch:
-	case <-time.After(15 * time.Second):
-		v.p.reportError("network_error", "fetch timeout")
+	case <-time.After(refreshTimeout):
+		// ページ内の取得は timedFetch で個別に打ち切り、理由付きで返るようになっている。
+		// ここに落ちるのは取得スクリプトが注入されていない等、ページ側が応答できない場合。
+		v.p.reportError("network_error", "fetch timeout (ページが応答しません)")
 	}
 }
 

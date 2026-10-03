@@ -3,10 +3,43 @@ package aiusage
 // 補助 WebView のページ内で動く取得スクリプト。ClaudeMonitor (cc10dda) の auth_webview.go /
 // codex_auth_webview.go から、内容を変えずに移植している。
 
+// timedFetchJS は両プロバイダの取得スクリプトが使う共通ヘルパ。
+//
+// ページ内の fetch が返らないと、Go 側は authView.refresh のタイムアウトで一律
+// "fetch timeout" にするしかなく、どこで止まったのかが残らない。fetch ごとに
+// 打ち切り、何が起きたかを文言に含めて返す。
+//
+// 各スクリプトの ms の合計は authView.refresh の待ち時間より短く保つこと。
+// 超えると Go 側のタイムアウトが先に走り、せっかくの理由が表示に出ない。
+const timedFetchJS = `
+  function timedFetch(url, label, ms, init) {
+    const ac = new AbortController();
+    const timer = setTimeout(function() { ac.abort(); }, ms);
+    const opts = Object.assign({credentials: 'include', signal: ac.signal}, init || {});
+    return fetch(url, opts).then(function(r) {
+      clearTimeout(timer);
+      return r;
+    }, function(e) {
+      clearTimeout(timer);
+      if (e && e.name === 'AbortError') throw new Error(label + ' が ' + ms + 'ms で応答しません');
+      throw new Error(label + ' に失敗: ' + String((e && e.message) || e));
+    });
+  }
+`
+
+// 取得の合計上限: 使用量 8s + bootstrap 4s = 12s
 const authFetcherScript = `
-(function() {
-  async function fetchClaudeUsage() {
-    if (location.hostname !== 'claude.ai') return;
+(function() {` + timedFetchJS + `
+  // explicit は Go から明示的に呼ばれたかどうか。初期化スクリプトはドキュメント生成毎に
+  // 走るので、ナビゲーション途中の about:blank などで定期タイマーが発火することがある。
+  // そこで報告すると直前の正常な値をエラーで上書きしてしまうため、報告は explicit のみ。
+  async function fetchClaudeUsage(explicit) {
+    if (location.hostname !== 'claude.ai') {
+      if (explicit) {
+        window.__postFetchError && window.__postFetchError('claude.ai を表示していません (現在: ' + location.hostname + ')');
+      }
+      return;
+    }
     try {
       const orgMatch = document.cookie.match(/lastActiveOrg=([^;]+)/);
       if (!orgMatch) {
@@ -16,10 +49,9 @@ const authFetcherScript = `
       }
       const orgId = decodeURIComponent(orgMatch[1]);
       const headers = {'Content-Type': 'application/json'};
-      const [usageR, bootR] = await Promise.all([
-        fetch('/api/organizations/' + orgId + '/usage', {credentials: 'include', headers}),
-        fetch('/edge-api/bootstrap/' + orgId + '/app_start?statsig_hashing_algorithm=djb2&growthbook_format=sdk&include_system_prompts=false', {credentials: 'include', headers})
-      ]);
+      // 使用量を先に確定させる。以前は bootstrap と Promise.all で束ねていたため、
+      // 補助情報でしかない bootstrap が返らないだけで使用量まで巻き添えで止まっていた。
+      const usageR = await timedFetch('/api/organizations/' + orgId + '/usage', '使用量 API', 8000, {headers});
       if (usageR.status === 401 || usageR.status === 403) {
         window.__postLoginRequired && window.__postLoginRequired('Cookie 失効 (status=' + usageR.status + ')');
         return;
@@ -29,9 +61,11 @@ const authFetcherScript = `
         return;
       }
       const usage = await usageR.json();
+      // ここから先は表示名・プラン等の補助情報。失敗しても使用量は返す。
       let email = '', display = '', caps = [], tier = '', billing = '';
-      if (bootR.ok) {
-        try {
+      try {
+        const bootR = await timedFetch('/edge-api/bootstrap/' + orgId + '/app_start?statsig_hashing_algorithm=djb2&growthbook_format=sdk&include_system_prompts=false', 'bootstrap API', 4000, {headers});
+        if (bootR.ok) {
           const boot = await bootR.json();
           email = (boot.account && boot.account.email_address) || '';
           display = (boot.account && (boot.account.display_name || boot.account.full_name)) || '';
@@ -42,8 +76,8 @@ const authFetcherScript = `
             tier = m.organization.rate_limit_tier || '';
             billing = m.organization.billing_type || '';
           }
-        } catch (e) { /* bootstrap パース失敗は致命傷ではない */ }
-      }
+        }
+      } catch (e) { /* bootstrap は取得失敗・パース失敗とも致命傷ではない */ }
 
       // 追加使用量（従量課金 / extra_usage）を抽出する。
       // /api/organizations/{orgId}/usage の extra_usage は次の構造:
@@ -80,17 +114,19 @@ const authFetcherScript = `
       window.__postFetchError && window.__postFetchError(String((e && e.message) || e));
     }
   }
-  window.__fetchClaudeUsage = fetchClaudeUsage;
+  // Go から呼ばれる経路だけ explicit=true。無言で return すると Go 側は 15 秒待って
+  // "fetch timeout" にしかできないので、この経路では必ず理由を返す。
+  window.__fetchClaudeUsage = function() { return fetchClaudeUsage(true); };
   // ナビゲーション直後はリダイレクトと cookie 反映を待つために 1.5s 遅延
-  setTimeout(fetchClaudeUsage, 1500);
+  setTimeout(function() { fetchClaudeUsage(false); }, 1500);
   // バックアップタイマー (Go 側 ticker と二重保険)。
   // まず安全な既定値で起動し、直後に Go へ最新の設定間隔を問い合わせて上書きする。
   // この Init はドキュメント生成（再ナビゲーション含む）毎に走るため、再ログイン後も
   // 常に最新値へ収束する。設定変更時は Go が __setUsageInterval(ms) を Eval で呼ぶ。
-  let __usageTimer = setInterval(fetchClaudeUsage, 5 * 60 * 1000);
+  let __usageTimer = setInterval(function() { fetchClaudeUsage(false); }, 5 * 60 * 1000);
   window.__setUsageInterval = function(ms) {
     if (__usageTimer) clearInterval(__usageTimer);
-    __usageTimer = setInterval(fetchClaudeUsage, ms);
+    __usageTimer = setInterval(function() { fetchClaudeUsage(false); }, ms);
   };
   if (window.__getUsageIntervalMs) {
     window.__getUsageIntervalMs().then(function(ms) {
@@ -100,8 +136,9 @@ const authFetcherScript = `
 })();
 `
 
+// 取得の合計上限: session 5s + usage 6s + me 3s = 14s
 const codexAuthFetcherScript = `
-(function() {
+(function() {` + timedFetchJS + `
   function decodeJwtPayload(token) {
     try {
       const part = token.split('.')[1];
@@ -116,12 +153,18 @@ const codexAuthFetcherScript = `
     }
   }
 
-  async function fetchCodexUsage() {
-    if (location.hostname !== 'chatgpt.com') return;
+  // explicit の意味は Claude 側と同じ。定期タイマー由来では報告しない。
+  async function fetchCodexUsage(explicit) {
+    if (location.hostname !== 'chatgpt.com') {
+      if (explicit) {
+        window.__postCodexFetchError && window.__postCodexFetchError('chatgpt.com を表示していません (現在: ' + location.hostname + ')');
+      }
+      return;
+    }
     try {
       // ChatGPT のログインCookieからWebセッションを取得する。wham APIはCookieだけでなく
       // Bearer tokenを要求するため、セッションのaccessTokenを同一オリジン内で利用する。
-      const sessionR = await fetch('/api/auth/session', {credentials: 'include', headers: {'Accept': 'application/json'}});
+      const sessionR = await timedFetch('/api/auth/session', 'セッション API', 5000, {headers: {'Accept': 'application/json'}});
       if (sessionR.status === 401 || sessionR.status === 403) {
         window.__postCodexLoginRequired && window.__postCodexLoginRequired('ChatGPT にログインしてください');
         return;
@@ -143,7 +186,7 @@ const codexAuthFetcherScript = `
         authClaims.chatgpt_account_id || authClaims.account_id || '';
       const usageHeaders = {'Accept': 'application/json', 'Authorization': 'Bearer ' + accessToken};
       if (accountId) usageHeaders['ChatGPT-Account-Id'] = accountId;
-      const usageR = await fetch('/backend-api/wham/usage', {credentials: 'include', headers: usageHeaders});
+      const usageR = await timedFetch('/backend-api/wham/usage', '使用量 API', 6000, {headers: usageHeaders});
       if (usageR.status === 401 || usageR.status === 403) {
         window.__postCodexLoginRequired && window.__postCodexLoginRequired('ChatGPT の認証期限が切れています。再ログインしてください');
         return;
@@ -156,7 +199,7 @@ const codexAuthFetcherScript = `
       let email = (session.user && session.user.email) || claims.email || '';
       let displayName = (session.user && session.user.name) || claims.name || '';
       try {
-        const meR = await fetch('/backend-api/me', {credentials: 'include', headers: {'Accept': 'application/json'}});
+        const meR = await timedFetch('/backend-api/me', 'me API', 3000, {headers: {'Accept': 'application/json'}});
         if (meR.ok) {
           const me = await meR.json();
           email = email || me.email || (me.user && me.user.email) || '';
@@ -168,12 +211,12 @@ const codexAuthFetcherScript = `
       window.__postCodexFetchError && window.__postCodexFetchError(String((e && e.message) || e));
     }
   }
-  window.__fetchCodexUsage = fetchCodexUsage;
-  setTimeout(fetchCodexUsage, 1500);
-  let __codexUsageTimer = setInterval(fetchCodexUsage, 5 * 60 * 1000);
+  window.__fetchCodexUsage = function() { return fetchCodexUsage(true); };
+  setTimeout(function() { fetchCodexUsage(false); }, 1500);
+  let __codexUsageTimer = setInterval(function() { fetchCodexUsage(false); }, 5 * 60 * 1000);
   window.__setCodexUsageInterval = function(ms) {
     if (__codexUsageTimer) clearInterval(__codexUsageTimer);
-    __codexUsageTimer = setInterval(fetchCodexUsage, ms);
+    __codexUsageTimer = setInterval(function() { fetchCodexUsage(false); }, ms);
   };
   if (window.__getCodexUsageIntervalMs) {
     window.__getCodexUsageIntervalMs().then(function(ms) {
