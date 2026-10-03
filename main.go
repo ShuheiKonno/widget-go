@@ -23,6 +23,8 @@ import (
 var (
 	user32                    = syscall.NewLazyDLL("user32.dll")
 	procFindWindow            = user32.NewProc("FindWindowW")
+	procIsWindowVisible       = user32.NewProc("IsWindowVisible")
+	procIsIconic              = user32.NewProc("IsIconic")
 	procGetWindowLong         = user32.NewProc("GetWindowLongW")
 	procSetWindowLong         = user32.NewProc("SetWindowLongW")
 	procSetWindowPos          = user32.NewProc("SetWindowPos")
@@ -135,8 +137,9 @@ const (
 	ALPHA_OPAQUE      = 255
 	ALPHA_TRANSPARENT = 160
 
-	SW_HIDE = 0
-	SW_SHOW = 5
+	SW_HIDE    = 0
+	SW_SHOW    = 5
+	SW_RESTORE = 9
 
 	IMAGE_ICON     = 1
 	LR_DEFAULTSIZE = 0x00000040

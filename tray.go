@@ -508,7 +508,7 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_TRAYICON:
 		switch lParam & 0xFFFF {
 		case WM_LBUTTONUP:
-			showWindowFromTray()
+			toggleWindowFromTray()
 		case WM_RBUTTONUP:
 			showTrayMenu(hwnd)
 		}
@@ -804,9 +804,41 @@ func hideWindowToTray() {
 	procShowWindow.Call(windowHandle.Load(), SW_HIDE)
 }
 
-// showWindowFromTray は本体ウィンドウを表示して前面に出す。
-// 既に表示されている場合は前面化のみ（トグルで隠すと、前面に無いだけの
-// ウィンドウがクリックで消えて誤動作に見えるため）。
+// windowShown は、本体ウィンドウが表示中かを返す純粋関数。トレイへ格納中（viewModeTray）、
+// 非表示、OS による最小化のどれかなら、表示中ではない。
+func windowShown(inTrayMode, visible, iconic bool) bool {
+	return !inTrayMode && visible && !iconic
+}
+
+// isMainWindowShown は、現在の本体ウィンドウが表示中かを返す。
+func isMainWindowShown() bool {
+	hwnd := windowHandle.Load()
+	if hwnd == 0 {
+		return false
+	}
+	viewModeMu.RLock()
+	inTray := viewMode == viewModeTray
+	viewModeMu.RUnlock()
+	visible, _, _ := procIsWindowVisible.Call(hwnd)
+	iconic, _, _ := procIsIconic.Call(hwnd)
+	return windowShown(inTray, visible != 0, iconic != 0)
+}
+
+// toggleWindowFromTray は、トレイアイコンの左クリックの動作。表示中なら格納（最小化。
+// タスクバーのボタンは無いのでトレイへ隠す）し、格納中なら表示して前面に出す。
+//
+// 以前は、表示中のクリックは前面化だけだった（前面に無いだけのウィンドウがクリックで消えると
+// 誤動作に見えるため）。クリックで開閉するトグルに変えた。前面に出したいだけのときは、
+// 他のウィンドウの陰になっていても、このクリックでいったん隠れるので、もう一度クリックする。
+func toggleWindowFromTray() {
+	if isMainWindowShown() {
+		hideWindowToTray()
+		return
+	}
+	showWindowFromTray()
+}
+
+// showWindowFromTray は本体ウィンドウを表示して前面に出す。OS で最小化されている場合は復元する。
 func showWindowFromTray() {
 	if windowHandle.Load() == 0 {
 		setupMainWindow("システムモニター")
@@ -824,7 +856,11 @@ func showWindowFromTray() {
 	}
 	viewModeMu.Unlock()
 
-	procShowWindow.Call(hwnd, SW_SHOW)
+	if iconic, _, _ := procIsIconic.Call(hwnd); iconic != 0 {
+		procShowWindow.Call(hwnd, SW_RESTORE)
+	} else {
+		procShowWindow.Call(hwnd, SW_SHOW)
+	}
 	alwaysOnTopMu.Lock()
 	top := alwaysOnTop
 	alwaysOnTopMu.Unlock()
