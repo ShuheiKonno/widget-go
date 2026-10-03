@@ -32,6 +32,4 @@ jobs:
           files: system-widget.exe
           generate_release_notes: true
           draft: false
-          # v2.x は当面プレリリースとして公開する（Latest に含まれない）。正式版にするときに false へ戻し、
-          # 公開済みのリリースは gh release edit <タグ> --prerelease=false で外す。
-          prerelease: true
+          prerelease: false

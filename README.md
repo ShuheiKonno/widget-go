@@ -5,7 +5,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 ![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)
 
-> **v2.0 系 (v2.0.0 / v2.0.1) はプレリリースです。** Claude / Codex の使用量モニター（旧 [ClaudeMonitor](https://github.com/ShuheiKonno/ClaudeMonitor)）を取り込みました。正式版になるまで、GitHub の Releases では「プレリリース」として公開します（「Latest」には含まれません）。従来どおりの動作だけでよい場合は v1.9.3 を使えます。AI 使用量は既定で OFF なので、ON にしない限り、認証用の WebView2 の起動も、取得も行いません (画面には、区画の折りたたみボタン ▼ が加わります)。
+> **v2.0 で、Claude / Codex の使用量モニター（旧 [ClaudeMonitor](https://github.com/ShuheiKonno/ClaudeMonitor)）を取り込みました。** v2.0.0 はプレリリース、v2.0.1 から正式版です。従来どおりの動作だけでよい場合は v1.9.3 を使えます。AI 使用量は既定で OFF なので、ON にしない限り、認証用の WebView2 の起動も、取得も行いません (画面には、区画の折りたたみボタン ▼ が加わります)。
 
 ## 機能
 
@@ -193,7 +193,7 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` �
 
 ## 変更履歴
 
-### 2.0.1 (2026-10-03) — プレリリース
+### 2.0.1 (2026-10-03)
 
 - **トレイアイコンの左クリックを、表示と格納のトグルに変更** — 表示中ならトレイへ格納 (最小化)、格納中・最小化中なら表示して前面に出す。コンパクト表示で格納しても、戻すと元のモードに戻る。トレイ未登録のときは隠さない
 - **AI 使用量の取得が一律 "fetch timeout" になるのを修正** — 補助情報の bootstrap が返らないと、取得済みの使用量まで止まっていたため、使用量を先に確定させる。fetch ごとに打ち切り、どの API が何 ms で応答しなかったかを表示に出す (#19)
