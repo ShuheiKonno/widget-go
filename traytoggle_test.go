@@ -1,6 +1,7 @@
 package main
 
 import (
+	"runtime"
 	"syscall"
 	"testing"
 	"unsafe"
@@ -30,6 +31,10 @@ func TestWindowShown(t *testing.T) {
 // 実際の Win32 ウィンドウで、トレイアイコンの左クリックの動作（トグル）を確かめる。
 // 画面外の小さなウィンドウを作る。作れない環境（デスクトップが無い CI など）ではスキップする。
 func TestToggleWindowFromTray(t *testing.T) {
+	// ウィンドウは、作った OS スレッドからでないと、安全に操作できない。goroutine が別のスレッドへ
+	// 移ると、ShowWindow などが、メッセージを処理していない元のスレッドの応答を待って止まる
+	// （-cpu 1 で再現した）。作ってから破棄するまで、このスレッドに固定する。
+	runtime.LockOSThread()
 	class, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("toggle-test")
 	const wsPopup = 0x80000000
@@ -37,10 +42,15 @@ func TestToggleWindowFromTray(t *testing.T) {
 	hwnd, _, _ := procCreateWindowEx.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)),
 		wsPopup, off, off, 100, 100, 0, 0, 0, 0)
 	if hwnd == 0 {
+		runtime.UnlockOSThread()
 		t.Skip("テスト用のウィンドウを作れない環境")
 	}
 	destroy := user32.NewProc("DestroyWindow")
-	t.Cleanup(func() { destroy.Call(hwnd) })
+	// 最後に実行される（後から登録した復元処理が先）。破棄はスレッドを固定したままで行う。
+	t.Cleanup(func() {
+		destroy.Call(hwnd)
+		runtime.UnlockOSThread()
+	})
 
 	// グローバルな状態を差し替え、終了時に戻す。
 	prevHandle := windowHandle.Load()
