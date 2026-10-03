@@ -89,7 +89,7 @@
         .compact .wifi-compact-value { display: inline; }
         .compact .gpu-progress, .compact .npu-progress, .compact .accel-info { display: none; }
         .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
-        .section:last-child { margin-bottom: 0; }
+        .section:last-child, .section.last-visible { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
         .section-icon { font-size: 14px; margin-right: 6px; }
         /* 幅が足りないときはタイトル側を省略し、右端の数値は必ず出す。
@@ -154,7 +154,11 @@
         .wifi-section { background:transparent; border:none; padding:0; perspective:800px; }
         .flip-card { display:grid; transform-style:preserve-3d; transition:transform 0.55s; }
         .flip-card > .flip-face { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; background: var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:8px 10px; cursor:pointer; }
-        .flip-card > .flip-back { transform:rotateY(180deg); display:flex; flex-direction:column; }
+        /* 表裏は同じセルに重なるので、背面が高いと表面（Wi-Fi の 4 行）が引き伸ばされて下に余白が出る。
+           背面を size containment にして高さを表面に任せ、グラフ (canvas) が余った高さを埋める。
+           Ethernet のように表面が低いときは min-height で、グラフが潰れない下限を保つ。 */
+        .flip-card > .flip-back { transform:rotateY(180deg); display:flex; flex-direction:column; contain:size; min-height:104px; }
+        .compact .flip-card > .flip-back { contain:none; min-height:0; }
         .wifi-section.flipped .flip-card { transform:rotateY(180deg); }
         .wifi-section.ethernet-mode .wifi-wireless-only { display:none; }
         .wifi-ethernet-only { display:none; }
@@ -164,7 +168,7 @@
            数値の右端を CPU/メモリ/GPU の行と揃える */
         .compact .net-peak-toggle { margin-right:-4px; }
         .net-peak-toggle:hover { background: var(--btn-bg-hover); }
-        .net-canvas { width:100%; height:70px; display:block; margin-top:4px; background: var(--net-canvas-bg); border-radius:4px; }
+        .net-canvas { width:100%; flex:1 1 0; min-height:30px; display:block; margin-top:4px; background: var(--net-canvas-bg); border-radius:4px; }
         /* コンパクト時はグラフも rx/tx 数値も非表示にし、CPU/メモリと同じヘッダのみのサイズに揃える */
         .compact .net-canvas { display:none; }
         .net-legend { display:flex; justify-content:space-between; margin-top:4px; font-size:11px; font-family:'Consolas', monospace; }
@@ -204,8 +208,6 @@
         .wifi-section.collapsed .wifi-compact-value { display:inline; }
         .compact .chev { display:none; }
         .is-hidden { display:none !important; }
-        /* AI 区画が非表示のときは、直前の Wi-Fi 区画が最後の区画として下余白を持たないようにする */
-        .wifi-section:has(+ .ai-section.is-hidden) { margin-bottom:0; }
 
         /* ===== AI 使用量（Claude / Codex）===== */
         :root { --claude-a:#f0a27a; --claude-b:#d06b5b; --codex-a:#7be0c0; --codex-b:#34b3d6;
@@ -274,6 +276,14 @@
 
         /* 設定モーダルの AI 項目 */
         .modal-toggle.sub { margin-left:10px; font-size:10.5px; margin-top:4px; }
+        .order-row { display:flex; align-items:center; gap:4px; padding:3px 4px 3px 8px; margin-top:4px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; font-size:11px; }
+        .order-row:first-of-type { margin-top:0; }
+        .order-row > span { flex:1; min-width:0; }
+        .order-row label { flex:1; min-width:0; display:flex; align-items:center; gap:6px; cursor:pointer; }
+        .order-row input { margin:0; cursor:pointer; }
+        .order-row button { width:22px; height:20px; padding:0; border:0; border-radius:4px; background:var(--btn-bg); color:var(--btn-color); font-size:9px; line-height:1; cursor:pointer; }
+        .order-row button:hover { background:var(--btn-bg-hover); }
+        .order-row button:disabled { opacity:.3; pointer-events:none; }
         .ai-seg { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
         .ai-seg .modal-opt.disabled, .ai-sub.disabled, .modal-opt.disabled { opacity:.4; pointer-events:none; }
         .modal-hint { font-size:10px; color:var(--muted-color); margin:3px 0 0; line-height:1.4; }
@@ -307,12 +317,12 @@
                     <label class="modal-toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
                 </div>
                 <div class="modal-field">
-                    <span class="modal-label">GPU / NPU</span>
-                    <label class="modal-toggle"><span>GPU/NPU を表示</span><input type="checkbox" id="optShowGPU"></label>
+                    <span class="modal-label">区画の表示と順序</span>
+                    <div id="orderList"></div>
+                    <p class="modal-hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。</p>
                 </div>
                 <div class="modal-field" id="aiField">
                     <span class="modal-label">AI 使用量（Claude / Codex）</span>
-                    <label class="modal-toggle"><span>AI 使用量を表示</span><input type="checkbox" id="optAIEnabled"></label>
                     <div class="ai-sub" id="aiSub">
                         <label class="modal-toggle sub"><span>Claude</span><input type="checkbox" id="optAIClaude"></label>
                         <label class="modal-toggle sub"><span>Codex</span><input type="checkbox" id="optAICodex"></label>
@@ -320,6 +330,12 @@
                         <div class="ai-seg" id="aiResetFmt">
                             <button class="modal-opt" data-value="datetime">日時</button>
                             <button class="modal-opt" data-value="relative">残り時間</button>
+                        </div>
+                        <span class="modal-label" style="margin-top:8px" title="トレイアイコンの背景色（緑 / 琥珀 / 赤）を決める、7 日枠のペース基準">7 日枠のトレイ配色ペース</span>
+                        <div class="ai-seg" id="aiSplitDays">
+                            <button class="modal-opt" data-value="7" title="7 日按分（N/7 日で警告色）">7 日按分</button>
+                            <button class="modal-opt" data-value="5" title="5 日按分（N/5 日で警告色）">5 日按分</button>
+                            <button class="modal-opt" data-value="0" title="按分しない（固定 60% / 80%）">按分なし</button>
                         </div>
                         <span class="modal-label" style="margin-top:8px">トレイに出すサービス</span>
                         <div class="ai-seg" id="aiTrayProv">
@@ -336,7 +352,7 @@
                             <div class="ai-acct" id="aiAcctClaude"><span>Claude</span><button class="ai-act quiet" data-ai-logout="claude">ログアウト</button></div>
                             <div class="ai-acct" id="aiAcctCodex"><span>Codex</span><button class="ai-act quiet" data-ai-logout="codex">ログアウト</button></div>
                         </details>
-                        <p class="modal-hint">ON にすると、この画面の下に使用量が出ます。初回はログインが必要です。</p>
+                        <p class="modal-hint">上の一覧で「AI 使用量」を ON にすると使用量が出ます。初回はログインが必要です。</p>
                     </div>
                 </div>
                 <div class="modal-field">
@@ -497,7 +513,10 @@
             topmost: false,
             viewMode: 0,
             netUnit: 'byte',
-            showGPU: true,
+            // 非表示状態（Go 側の config.json の hidden と同じ）。true が非表示
+            hidden: { cpu: false, memory: false, gpu: false, npu: false, network: false },
+            // 区画の表示順（Go 側の config.json の order と同じ）
+            order: ['cpu', 'memory', 'gpu', 'npu', 'network', 'ai'],
             // 折りたたみ状態（Go 側の config.json の collapsed と同じ）。AI は既定で折りたたみ（D8）
             collapsed: { cpu: false, memory: false, gpu: false, npu: false, network: false, ai: true }
         };
@@ -725,12 +744,17 @@
         function adjustWindowHeight() {
             // height:100% / overflow:hidden の影響を避けるため
             // 一時的に auto にしてコンテンツの自然な高さを測定する
+            updateLastSection();
             const el = document.documentElement;
             const bd = document.body;
             const ct = document.getElementById('dragArea');
             el.style.height = 'auto'; bd.style.height = 'auto'; ct.style.height = 'auto';
-            const h = ct.scrollHeight;
+            let h = ct.scrollHeight;
             el.style.height = '100%'; bd.style.height = '100%'; ct.style.height = '100%';
+            // 区画が少なくて窓が低いと、設定画面（窓内に重ねて表示）が潰れてスクロールになる。
+            // 開いている間は設定画面が収まる高さを下限にする（.modal の max-height:92vh を逆算）。
+            const modalEl = document.querySelector('#settingsModal.show .modal');
+            if (modalEl) h = Math.max(h, Math.ceil((modalEl.scrollHeight + 2) / 0.92) + 4);
             apiFetch('/api/resize?h=' + h).catch(()=>{});
         }
 
@@ -872,7 +896,6 @@
                 });
             });
             document.getElementById('optTransparent').checked = !!settings.transparent;
-            document.getElementById('optShowGPU').checked = !!settings.showGPU;
             refreshAIModal();
         }
 
@@ -904,26 +927,128 @@
             apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
         });
 
-        document.getElementById('optShowGPU').addEventListener('change', function(e){
-            e.stopPropagation();
-            settings.showGPU = this.checked;
-            apiFetch('/api/setoption?key=showGPU&value=' + (settings.showGPU ? 'true' : 'false')).catch(()=>{});
-            // OFF はポーリングを待たずに即座に隠す。ON はサーバーの次回収集後に値が届いてから表示される
+        // ============ 区画の表示/非表示 ============
+        // CPU / メモリ / Wi-Fi は .is-hidden で隠す。GPU / NPU はデバイスの有無でも出し分けるので
+        // applyAccelData が settings.hidden を見て表示を決める。
+        const hideableSections = { cpu: 'cpu', memory: 'memory', network: 'wifiSection' };
+        function updateLastSection(){
+            // 最後に見えている区画だけ下余白を 0 にする（:last-child は非表示の区画も数えてしまう）
+            const secs = Array.from(document.querySelectorAll('#dragArea > .section')).filter(function(el){
+                return getComputedStyle(el).display !== 'none';
+            });
+            document.querySelectorAll('#dragArea > .section').forEach(function(el){ el.classList.remove('last-visible'); });
+            if (secs.length) secs[secs.length - 1].classList.add('last-visible');
+        }
+        function applyHidden(){
+            Object.keys(hideableSections).forEach(function(n){
+                const id = hideableSections[n];
+                const el = n === 'network' ? document.getElementById(id) : document.querySelector('.section[data-sec="' + id + '"]');
+                if (!el) return;
+                el.classList.toggle('is-hidden', !!settings.hidden[n]);
+                // 非表示の間は裏面（グラフ）の状態を持ち越さない
+                if (n === 'network' && settings.hidden[n]) el.classList.remove('flipped');
+            });
             applyAccelData(lastGPU, lastNPU);
-        });
+            updateLastSection();
+        }
+        // ============ 区画の表示順 ============
+        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量' };
+        function applyOrder(){
+            const area = document.getElementById('dragArea');
+            // appendChild は既存の要素を移動する。区画は #dragArea の末尾にまとまっているので、順に付け直せばよい
+            settings.order.forEach(function(n){
+                const el = area.querySelector(':scope > .section[data-sec="' + n + '"]');
+                if (el) area.appendChild(el);
+            });
+            updateLastSection();
+        }
+        function renderOrderList(){
+            const box = document.getElementById('orderList');
+            box.textContent = '';
+            settings.order.forEach(function(n, i){
+                const row = document.createElement('div');
+                row.className = 'order-row';
+                const lab = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                if (n === 'ai') {
+                    // AI 使用量の表示は、取得の ON/OFF と同じ設定（ai.enabled）
+                    cb.id = 'optAIEnabled';
+                    cb.checked = !!(ai.settings && ai.settings.enabled);
+                    cb.addEventListener('change', function(e){ e.stopPropagation(); aiSetOption({ enabled: cb.checked }); });
+                } else {
+                    cb.checked = !settings.hidden[n];
+                    cb.addEventListener('change', function(e){ e.stopPropagation(); setSectionVisible(n, cb.checked); });
+                }
+                const txt = document.createElement('span');
+                txt.textContent = sectionLabels[n] || n;
+                lab.appendChild(cb); lab.appendChild(txt);
+                row.appendChild(lab);
+                [['▲', -1, '上へ'], ['▼', 1, '下へ']].forEach(function(d){
+                    const b = document.createElement('button');
+                    b.type = 'button'; b.textContent = d[0]; b.title = d[2];
+                    b.disabled = (i + d[1] < 0 || i + d[1] >= settings.order.length);
+                    b.addEventListener('click', function(e){ e.stopPropagation(); moveSection(i, d[1]); });
+                    row.appendChild(b);
+                });
+                box.appendChild(row);
+            });
+        }
+        function setSectionVisible(n, visible){
+            settings.hidden[n] = !visible;
+            apiFetch('/api/setoption?key=hide.' + n + '&value=' + (settings.hidden[n] ? 'true' : 'false')).catch(function(){});
+            // 非表示はポーリングを待たず即座に反映する。GPU/NPU の再表示は、次回の収集後に値が届いてから
+            applyHidden();
+            scheduleHeightAdjust();
+            setTimeout(function(){ apiFetch('/api/persistwindow').catch(function(){}); }, 300);
+        }
+        function moveSection(i, delta){
+            const j = i + delta;
+            if (j < 0 || j >= settings.order.length) return;
+            const o = settings.order.slice();
+            const t = o[i]; o[i] = o[j]; o[j] = t;
+            settings.order = o;
+            apiFetch('/api/setoption?key=order&value=' + o.join(',')).catch(function(){});
+            applyOrder();
+            renderOrderList();
+        }
 
         const settingsModal = document.getElementById('settingsModal');
+        // 閉じたら、設定画面のために広げた高さを内容に合わせて戻して保存する
+        // 画面の上端で広がりきれず位置がずれた場合に備え、開く前の左端 x と下端 y を使って戻す
+        let modalRestore = null;
+        function closeSettingsModal(){
+            settingsModal.classList.remove('show');
+            scheduleHeightAdjust();
+            const saved = modalRestore;
+            modalRestore = null;
+            setTimeout(function(){
+                if (!saved) { apiFetch('/api/persistwindow').catch(function(){}); return; }
+                apiFetch('/api/windowgeometry').then(r => r.json()).then(g => {
+                    // setwindow は位置を保存まで行う（作業領域でクランプされる）
+                    return apiFetch('/api/setwindow?x=' + saved.x + '&y=' + (saved.bottom - g.height));
+                }).catch(function(){});
+            }, 300);
+        }
         document.getElementById('settingsBtn').addEventListener('click', function(e){
             e.stopPropagation();
             refreshModalUI();
+            renderOrderList();
+            // 設定画面のために窓が広がる。閉じたときに元の位置（下端）へ戻せるよう、先に覚える
+            if (!settingsModal.classList.contains('show')) {
+                apiFetch('/api/windowgeometry').then(r => r.json()).then(g => {
+                    if (!modalRestore) modalRestore = { x: g.x, bottom: g.y + g.height };
+                }).catch(function(){});
+            }
             settingsModal.classList.add('show');
+            scheduleHeightAdjust();
         });
         document.getElementById('modalCloseBtn').addEventListener('click', function(e){
             e.stopPropagation();
-            settingsModal.classList.remove('show');
+            closeSettingsModal();
         });
         settingsModal.addEventListener('click', function(e){
-            if (e.target === settingsModal) settingsModal.classList.remove('show');
+            if (e.target === settingsModal) closeSettingsModal();
         });
         // モーダル内の mousedown がドラッグ判定に回らないよう抑止
         settingsModal.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -1199,13 +1324,14 @@
             const s = ai.settings;
             if (!s) return;
             const u = ai.usage || {};
-            document.getElementById('optAIEnabled').checked = !!s.enabled;
+            const enCb = document.getElementById('optAIEnabled'); if (enCb) enCb.checked = !!s.enabled;
             // タスクバーの「AI 使用量」は、AI 使用量が ON のときだけ選べる（選んだまま OFF にしても保存値は保たれる）
             document.getElementById('optTrayUsage').classList.toggle('disabled', !s.enabled);
             document.getElementById('aiSub').classList.toggle('disabled', !s.enabled);
             document.getElementById('optAIClaude').checked = !!s.claudeEnabled;
             document.getElementById('optAICodex').checked = !!s.codexEnabled;
             document.querySelectorAll('#aiResetFmt .modal-opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.resetTimeFormat); });
+            document.querySelectorAll('#aiSplitDays .modal-opt').forEach(function(b){ b.classList.toggle('active', Number(b.dataset.value) === s.traySplitDays); });
             // トレイに出すサービス: 両方有効なときだけ選べる（片方だけなら有効な側に固定）
             const both = !!(s.claudeEnabled && s.codexEnabled);
             document.querySelectorAll('#aiTrayProv .modal-opt').forEach(function(b){
@@ -1221,7 +1347,7 @@
             document.getElementById('aiAcctClaude').style.display = (s.enabled && s.claudeEnabled && (u.claude || {}).authState === 'ok') ? '' : 'none';
             document.getElementById('aiAcctCodex').style.display = (s.enabled && s.codexEnabled && (u.codex || {}).authState === 'ok') ? '' : 'none';
         }
-        [['optAIEnabled', 'enabled'], ['optAIClaude', 'claudeEnabled'], ['optAICodex', 'codexEnabled'],
+        [['optAIClaude', 'claudeEnabled'], ['optAICodex', 'codexEnabled'],
          ['optAINotifyUsage', 'notifyUsage'], ['optAINotifyOverage', 'notifyOverage'], ['optAINotifyStatus', 'notifyStatus']].forEach(function(pair){
             document.getElementById(pair[0]).addEventListener('change', function(e){
                 e.stopPropagation();
@@ -1240,6 +1366,11 @@
             const b = e.target.closest('.modal-opt'); if (!b) return;
             e.stopPropagation();
             aiSetOption({ resetTimeFormat: b.dataset.value });
+        });
+        document.getElementById('aiSplitDays').addEventListener('click', function(e){
+            const b = e.target.closest('.modal-opt'); if (!b) return;
+            e.stopPropagation();
+            aiSetOption({ traySplitDays: Number(b.dataset.value) });
         });
         document.getElementById('aiTrayProv').addEventListener('click', function(e){
             const b = e.target.closest('.modal-opt'); if (!b || b.classList.contains('disabled')) return;
@@ -1265,7 +1396,9 @@
             if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
             if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
             if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
-            if (typeof s.showGPU === 'boolean') { settings.showGPU = s.showGPU; applyAccelData(lastGPU, lastNPU); }
+            if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
+            if (s.hidden) { Object.assign(settings.hidden, s.hidden); applyHidden(); }
+            applyOrder();
             if (s.collapsed) Object.assign(settings.collapsed, s.collapsed);
             // CPU 名は起動後に変わらないので、ここで一度だけ反映する
             if (s.cpuName) setModelName('cpu-model', s.cpuName);
@@ -1334,8 +1467,8 @@
 
         function applyAccelData(gpu, npu){
             lastGPU = gpu || null; lastNPU = npu || null;
-            const showG = !!(settings.showGPU && lastGPU);
-            const showN = !!(settings.showGPU && lastNPU);
+            const showG = !!(!settings.hidden.gpu && lastGPU);
+            const showN = !!(!settings.hidden.npu && lastNPU);
             document.getElementById('gpuSection').style.display = showG ? '' : 'none';
             document.getElementById('npuSection').style.display = showN ? '' : 'none';
             if (showG) {

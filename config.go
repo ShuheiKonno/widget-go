@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"widget-go/aiusage"
@@ -53,6 +54,99 @@ type Config struct {
 	AI aiusage.Settings `json:"ai"`
 	// Collapsed は各区画の折りたたみ状態（D10）。
 	Collapsed CollapsedConfig `json:"collapsed"`
+	// Hidden は各区画の非表示設定。true が非表示。既定はすべて表示。
+	// AI は既存の ai.enabled（取得の ON/OFF を兼ねる）で切り替えるのでここには含めない。
+	Hidden HiddenConfig `json:"hidden"`
+	// Order は区画の表示順（上から）。defaultOrder の並べ替えで、常に全区画を 1 回ずつ含む。
+	Order []string `json:"order"`
+}
+
+// defaultOrder は区画の既定の表示順。区画名は CollapsedConfig / HiddenConfig と同じ。
+var defaultOrder = []string{"cpu", "memory", "gpu", "npu", "network", "ai"}
+
+// normalizeOrder は保存された表示順を矯正する。未知・重複は捨て、欠けた区画は既定の順で末尾に足す。
+// 手編集や、区画が増えた将来のバージョンから戻ったときでも全区画が必ず含まれる。
+func normalizeOrder(in []string) []string {
+	known := map[string]bool{}
+	for _, n := range defaultOrder {
+		known[n] = true
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(defaultOrder))
+	for _, n := range in {
+		if known[n] && !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	for _, n := range defaultOrder {
+		if !seen[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// setOrder は区画の表示順を保存する。val はカンマ区切りで、全区画をちょうど 1 回ずつ含むこと。
+// それ以外はエラー（設定は変更しない）。
+func setOrder(val string) error {
+	parts := strings.Split(val, ",")
+	if len(parts) != len(defaultOrder) {
+		return fmt.Errorf("invalid order %q", val)
+	}
+	for i, n := range normalizeOrder(parts) {
+		if n != parts[i] {
+			return fmt.Errorf("invalid order %q", val)
+		}
+	}
+	mutateConfig(func(c *Config) { c.Order = parts })
+	return nil
+}
+
+// HiddenConfig は区画ごとの非表示状態。true が非表示。
+type HiddenConfig struct {
+	CPU     bool `json:"cpu"`
+	Memory  bool `json:"memory"`
+	GPU     bool `json:"gpu"`
+	NPU     bool `json:"npu"`
+	Network bool `json:"network"`
+}
+
+// field は区画名に対応するフィールドを返す。未知の名前は nil。
+func (h *HiddenConfig) field(name string) *bool {
+	switch name {
+	case "cpu":
+		return &h.CPU
+	case "memory":
+		return &h.Memory
+	case "gpu":
+		return &h.GPU
+	case "npu":
+		return &h.NPU
+	case "network":
+		return &h.Network
+	}
+	return nil
+}
+
+// syncShowGPU は GPU/NPU の収集可否（ShowGPU）を非表示設定に合わせる。
+// GPU と NPU の両方が非表示のときだけ収集を止める。
+func (c *Config) syncShowGPU() { c.ShowGPU = !c.Hidden.GPU || !c.Hidden.NPU }
+
+// setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / gpu / npu /
+// network）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+func setHidden(name, val string) error {
+	if val != "true" && val != "false" {
+		return fmt.Errorf("invalid hide value %q", val)
+	}
+	if (&HiddenConfig{}).field(name) == nil {
+		return fmt.Errorf("unknown hide section %q", name)
+	}
+	mutateConfig(func(c *Config) {
+		*c.Hidden.field(name) = val == "true"
+		c.syncShowGPU()
+	})
+	return nil
 }
 
 // CollapsedConfig は区画ごとの折りたたみ状態。true が折りたたみ。
@@ -126,6 +220,7 @@ func defaultConfig() Config {
 	c.AI = aiusage.DefaultSettings()
 	// 区画は既定で展開。AI だけは既定で折りたたみ（D8）。旧 config にキーが無くても残る。
 	c.Collapsed.AI = true
+	c.Order = append([]string(nil), defaultOrder...)
 	c.IME = IMEConfig{
 		Enabled:     true,
 		CooldownSec: 2,
@@ -153,6 +248,12 @@ func loadConfig() {
 	}
 	// 手編集や旧バージョンで範囲外・欠損になった値を安全な値へ矯正する。
 	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
+	// v2.0.1 以前は「GPU/NPU を表示」(showGPU) 1 つだけだった。OFF だった設定は両区画の非表示に引き継ぐ。
+	if !tmp.ShowGPU {
+		tmp.Hidden.GPU, tmp.Hidden.NPU = true, true
+	}
+	tmp.syncShowGPU()
+	tmp.Order = normalizeOrder(tmp.Order)
 	config = tmp
 }
 
