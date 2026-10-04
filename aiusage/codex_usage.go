@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -61,6 +62,12 @@ func applyCodexUsageIdentity(raw codexUsageResponse, email, name string) {
 	codexUsageMu.Unlock()
 	handleCodexUsageNotification(snap)
 	notifyChanged()
+}
+
+// formatCredits は Codex のクレジット残高を整数に丸めて返す。
+// クレジットはドルではなく OpenAI 独自の単位なので、通貨記号は付けない。
+func formatCredits(balance float64) string {
+	return strconv.FormatInt(int64(math.Round(balance)), 10)
 }
 
 func classifyCodexWindows(primary, secondary *codexRateWindow) (UsageWindow, UsageWindow) {
