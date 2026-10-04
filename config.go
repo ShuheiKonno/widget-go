@@ -50,6 +50,11 @@ type Config struct {
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
 	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
 	IME         IMEConfig `json:"ime"`
+	// PowerModeEnabled は電源モード（設定アプリの「電源モード」）の切替機能の ON/OFF。既定は OFF。
+	// OFF の間は電源モードの読み取りも書き込みも行わず、Windows の設定・制御のままにする。
+	// OS の電源状態を書き換える機能なので、利用者が設定で ON にしたときだけ働かせる。
+	// OS の状態そのものは保存しない（起動時に再適用して設定アプリでの変更を戻さないため）。
+	PowerModeEnabled bool `json:"powerModeEnabled"`
 	// AI は Claude / Codex の使用量モニター（旧 ClaudeMonitor）の設定。既定は OFF。
 	AI aiusage.Settings `json:"ai"`
 	// Collapsed は各区画の折りたたみ状態（D10）。
@@ -192,6 +197,16 @@ func setCollapsed(name, val string) error {
 	return nil
 }
 
+// setPowerModeEnabled は電源モードの切替機能の ON/OFF を保存する。val は "true" か "false" のみ。
+// それ以外はエラー（設定は変更しない）。
+func setPowerModeEnabled(val string) error {
+	if val != "true" && val != "false" {
+		return fmt.Errorf("invalid powerMode value %q", val)
+	}
+	mutateConfig(func(c *Config) { c.PowerModeEnabled = val == "true" })
+	return nil
+}
+
 // IMEConfig は IME Composition Window 検知・自動復旧機能の設定。
 type IMEConfig struct {
 	Enabled     bool  `json:"enabled"`
@@ -215,6 +230,9 @@ func defaultConfig() Config {
 	// v1.8.0 以前の config.json にはキーが無い。既定値を先に入れておくと
 	// loadConfig の Unmarshal で上書きされず ON のまま残る。
 	c.ShowGPU = true
+	// 電源モードの切替機能は既定 OFF（OS の電源状態を書き換える機能なので、利用者が ON にするまで
+	// 何もしない）。キーが無い旧バージョンの config.json でも OFF のまま残る（false はゼロ値）。
+	c.PowerModeEnabled = false
 	// v1.9.3 以前の config.json には "ai" が無い。既定値を先に入れておくと、
 	// loadConfig の Unmarshal で欠けたキーが上書きされず既定のまま残る。
 	c.AI = aiusage.DefaultSettings()

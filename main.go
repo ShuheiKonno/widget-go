@@ -270,7 +270,9 @@ type SystemData struct {
 	Network  *sysinfo.NetworkInfo  `json:"Network"`
 	GPU      *sysinfo.GPUInfo      `json:"GPU"`
 	NPU      *sysinfo.NPUInfo      `json:"NPU"`
-	ViewMode int                   `json:"ViewMode"`
+	// PowerMode は電源モード（設定アプリの「電源モード」）の状態。取得できない環境では null。
+	PowerMode *sysinfo.PowerModeInfo `json:"PowerMode"`
+	ViewMode  int                    `json:"ViewMode"`
 }
 
 // バックグラウンドで更新されるスナップショット。
@@ -285,6 +287,7 @@ var (
 	cachedNet      *sysinfo.NetworkInfo
 	cachedGPU      *sysinfo.GPUInfo
 	cachedNPU      *sysinfo.NPUInfo
+	cachedPower    *sysinfo.PowerModeInfo
 )
 
 // showGPU は「GPU/NPU を表示」設定の実行時状態。OFF の間は GPU/NPU の収集自体を止める。
@@ -383,7 +386,9 @@ func getSystemData() SystemData {
 		Network:  cachedNet,
 		GPU:      cachedGPU,
 		NPU:      cachedNPU,
-		ViewMode: vm,
+		// 設定アプリなど外部での変更にも追従するため、2 秒周期の収集で更新する。
+		PowerMode: cachedPower,
+		ViewMode:  vm,
 	}
 }
 
@@ -446,6 +451,21 @@ func refreshGPU() {
 	cacheMu.Unlock()
 }
 
+// refreshPowerMode は電源モードの状態を取得してキャッシュに反映し、その値を返す。
+// 取得できない環境（API が無い、読み取り失敗）では nil で上書きする。古い状態を見せ続けるより、
+// UI の行ごと隠す方が正確なため（電源プランの変更などで前提が変わりうる）。
+// 切替機能が OFF の間は、電源モードの API を一切呼ばずに nil にする（Windows の設定・制御のまま）。
+func refreshPowerMode() *sysinfo.PowerModeInfo {
+	var info *sysinfo.PowerModeInfo
+	if snapshotConfig().PowerModeEnabled {
+		info = sysinfo.GetPowerMode()
+	}
+	cacheMu.Lock()
+	cachedPower = info
+	cacheMu.Unlock()
+	return info
+}
+
 func clearGPUCache() {
 	cacheMu.Lock()
 	cachedGPU = nil
@@ -505,6 +525,7 @@ func startCollector() {
 	sysinfo.PrimeCPU()
 	sysinfo.InitCPUFreq()
 	refreshCPUAndMem()
+	refreshPowerMode()
 	refreshWiFi()
 	refreshEthernet()
 	// ネットワーク計測の基準値を仕込む（初回は差分計算できないので 0 を返す）
@@ -517,6 +538,7 @@ func startCollector() {
 		defer ticker.Stop()
 		for range ticker.C {
 			refreshCPUAndMem()
+			refreshPowerMode()
 			refreshNetwork()
 			refreshGPU()
 		}

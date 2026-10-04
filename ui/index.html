@@ -117,10 +117,48 @@
         .clock-value { color: var(--section-value); font-size:12px; font-weight:700; font-family:'Consolas', monospace; white-space:nowrap; }
         .clock-base { color: var(--muted-color); font-size:10px; font-family:'Consolas', monospace; white-space:nowrap; }
         .clock-fill { background: linear-gradient(90deg,#5ad0ff,#8a9cff); }
-        /* ベースクロックを超えた領域（ターボ）は橙で区別する */
-        .clock-fill.turbo { background: linear-gradient(90deg,#ffc46a,#ff7a3c); }
+        /* バーの色は、電源モードの切替機能が使えるとき（ON かつ API が使える）は電源モードで決める:
+           省電力 = 緑、バランス = 青（既定）、パフォーマンス = 橙。このときクロックの値では変えない。
+           使えないとき（設定で OFF、API が無い環境）は従来どおりクロックで決める:
+           ベースクロックを超えた領域（ターボ）は橙で区別する。 */
+        .clock-fill.pm-saver { background: linear-gradient(90deg,#7be0a0,#3cc47c); }
+        .clock-fill.pm-best, .clock-fill.turbo { background: linear-gradient(90deg,#ffc46a,#ff7a3c); }
         .clock-base-marker { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,0.55); }
         body.theme-light .clock-base-marker { background:rgba(0,0,0,0.35); }
+        /* 電源モード（設定アプリの「電源モード」）。3 段階のスライダー。取得できない環境では hidden。
+           コンパクト (130px) には収まらないので隠す。 */
+        .power-mode { margin-bottom:6px; --pm-color:#72b6ff; --pm-text:#72b6ff; --pm-fill:0%; }
+        /* スライダーの色も電源モードに合わせる（クロックのバーと同じ配色の中間色）:
+           省電力 = 緑、バランス = 青、パフォーマンス = 橙。--pm-fill は、つまみの位置までの塗りの幅 */
+        .power-mode.pm-saver { --pm-color:#5bd28e; --pm-text:#5bd28e; }
+        .power-mode.pm-balanced { --pm-color:#72b6ff; --pm-text:#72b6ff; }
+        .power-mode.pm-best { --pm-color:#ff9f53; --pm-text:#ff9f53; }
+        /* ライトテーマでは、ラベルの文字だけ濃くして読みやすくする */
+        body.theme-light .power-mode.pm-saver { --pm-text:#12905a; }
+        body.theme-light .power-mode.pm-balanced { --pm-text:#2f7fd0; }
+        body.theme-light .power-mode.pm-best { --pm-text:#d9650f; }
+        .power-mode[hidden] { display:none; }
+        .pm-slider { -webkit-appearance:none; appearance:none; display:block; width:100%; height:14px; margin:0; background:transparent; cursor:pointer; }
+        .pm-slider:focus { outline:none; }
+        .pm-slider::-webkit-slider-runnable-track { height:4px; border-radius:2px; background:linear-gradient(to right, var(--pm-color) var(--pm-fill), var(--bar-track) var(--pm-fill)); }
+        .pm-slider::-webkit-slider-thumb { -webkit-appearance:none; width:14px; height:14px; margin-top:-5px; border-radius:50%; background:var(--pm-color); border:2px solid var(--container-bg); box-shadow:0 0 0 1px var(--pm-color); transition:transform 0.15s; }
+        .pm-slider:hover:not(:disabled)::-webkit-slider-thumb { transform:scale(1.15); }
+        .pm-slider:focus-visible::-webkit-slider-thumb { box-shadow:0 0 0 2px #fff, 0 0 0 4px var(--pm-color); }
+        /* 電源プランがバランス以外のときは切り替えできない（サーバー側も 409 で拒否する） */
+        .pm-slider:disabled { opacity:.4; cursor:default; }
+        /* どの段階とも言えないとき（不明な電源モード、バランス以外のプラン）はつまみを隠す */
+        .pm-slider.pm-none::-webkit-slider-thumb { opacity:0; box-shadow:none; }
+        /* ラベルは両端を寄せ、中央は中央に置く（つまみの位置と合わせる） */
+        .pm-labels { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); margin-top:1px; }
+        .pm-labels span:first-child { justify-self:start; }
+        .pm-labels span:last-child { justify-self:end; }
+        /* ウィンドウを狭めたときは、両端のラベルを省略表示にして中央のラベルと重ならないようにする */
+        .pm-labels span { max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:10px; line-height:1.3; white-space:nowrap; color:var(--muted-color); cursor:pointer; }
+        .pm-labels span.active { color:var(--pm-text); font-weight:700; }
+        .power-mode.locked .pm-labels span { opacity:.4; cursor:default; }
+        /* 切替に失敗した直後の合図（理由はツールチップ） */
+        .power-mode.err .pm-slider::-webkit-slider-runnable-track { background:#ff6a6a; }
+        .compact .power-mode { display:none; }
         .compact .clock-row { display:none; }
         .compact .clock-progress { display:none; }
         .cores-container { display: grid; grid-template-columns: repeat(4,1fr); gap: 3px; margin-top: 5px; }
@@ -317,6 +355,11 @@
                     <label class="modal-toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
                 </div>
                 <div class="modal-field">
+                    <span class="modal-label">電源モードの切替</span>
+                    <label class="modal-toggle"><span>CPU 区画のスライダーで切り替える</span><input type="checkbox" id="optPowerMode"></label>
+                    <p class="modal-hint">ON にすると、CPU 区画に電源モードのスライダーが出て、Windows の電源モードを切り替えられます。OFF（既定）のときは、電源モードの読み取りも切り替えも行わず、Windows の設定・制御のままです。スライダーは非表示で、クロックのバーとトレイの帯の色は、電源モードではなくクロックで決まります（ターボ動作中はオレンジ）。</p>
+                </div>
+                <div class="modal-field">
                     <span class="modal-label">区画の表示と順序</span>
                     <div id="orderList"></div>
                     <p class="modal-hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。</p>
@@ -378,6 +421,14 @@
                 <div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" id="cpu-bar" style="width:0%"></div></div>
                 <div class="clock-row"><span class="clock-label">クロック</span><span class="clock-value" id="cpu-clock">--- GHz</span><span class="clock-base" id="cpu-clock-base">base ---</span></div>
                 <div class="progress-bar clock-progress"><div class="progress-fill clock-fill" id="clock-bar" style="width:0%"></div><div class="clock-base-marker" id="clock-base-marker" style="left:50%"></div></div>
+                <div class="power-mode" id="powerMode" hidden>
+                    <input type="range" class="pm-slider" id="pmSlider" min="0" max="2" step="1" value="1" aria-label="電源モード">
+                    <div class="pm-labels">
+                        <span data-mode="saver" title="最適な電力効率">省電力</span>
+                        <span data-mode="balanced" title="バランス">バランス</span>
+                        <span data-mode="best" title="最適なパフォーマンス">パフォーマンス</span>
+                    </div>
+                </div>
                 <div class="model-name cpu-model is-empty" id="cpu-model"></div>
                 <div class="cores-container" id="cores-container"></div>
             </div>
@@ -499,15 +550,131 @@
             const scaleMax = Math.max(base * 2, clockObservedMaxMHz * 1.05);
             bar.style.width = Math.min(100, cur / scaleMax * 100).toFixed(1) + '%';
             marker.style.left = (base / scaleMax * 100).toFixed(1) + '%';
-            // ベース超え（ターボ動作中）は橙で示す
-            bar.classList.toggle('turbo', cur > base * 1.02);
+            // 電源モードが取れているとき（lastPowerMode あり）は、色は電源モードで決まる（setClockColor）。
+            // 取れていない（切替機能が OFF、API が使えない）ときだけ、ベース超え（ターボ動作中）を橙で示す。
+            // トレイの帯（tray.go の trayAccentColor）も同じ規則で、しきい値を合わせること。
+            bar.classList.toggle('turbo', !lastPowerMode && cur > base * 1.02);
         }
+
+        // ============ 電源モード（設定アプリの「電源モード」）============
+        // 状態は /api/system の PowerMode（{planOK, active}、取得できない環境では null）。
+        // OS の状態なので config.json には保存しない。設定アプリでの変更も 2 秒周期の更新で追従する。
+        // 電源プランがバランス以外のときは、効かないので 3 ボタンとも無効にする（サーバー側も 409 で拒否する）。
+        // 3 段階のスライダー。つまみの位置 0 / 1 / 2 が POWER_MODES の添字に対応する。
+        // ドラッグ中は表示（ラベルの強調）だけを追従させ、指を離したとき（change）に切り替える。
+        const POWER_MODES = ['saver', 'balanced', 'best'];
+        const powerModeNames = { saver: '最適な電力効率', balanced: 'バランス', best: '最適なパフォーマンス' };
+        const powerPlanLockedTip = '電源プランが「バランス」以外のため切り替えできません';
+        const powerRow = document.getElementById('powerMode');
+        const powerSlider = document.getElementById('pmSlider');
+        let lastPowerMode = null;   // 直近にサーバーから得た状態（失敗時にここへ戻す）
+        let powerModeShown = false;
+        let powerModeBusy = false;  // 切替要求の処理中。二重操作と、途中の更新による表示の巻き戻りを防ぐ
+        let powerModeDragging = false;  // つまみの操作中。2 秒周期の更新でつまみが戻るのを防ぐ
+        let powerModeError = '';
+        let powerModeErrTimer = 0;
+        // 段階 mode（saver / balanced / best。それ以外は「どれでもない」）に合わせて、ラベルの強調と、
+        // スライダーの色（.power-mode.pm-*）・塗りの幅を決める。ドラッグ中の途中経過の表示にも使う。
+        function markPowerMode(mode){
+            powerRow.querySelectorAll('.pm-labels span').forEach(function(l){
+                l.classList.toggle('active', l.dataset.mode === mode);
+            });
+            POWER_MODES.forEach(function(m){ powerRow.classList.toggle('pm-' + m, m === mode); });
+            const i = POWER_MODES.indexOf(mode);
+            powerRow.style.setProperty('--pm-fill', i < 0 ? '0%' : (i * 50) + '%');
+        }
+        // クロックのバーの色を電源モードに合わせる（CSS の .clock-fill.pm-*）。
+        // 電源プランがバランス以外・不明な電源モード・取得不可のときは既定の色（青）に戻す。
+        const clockBar = document.getElementById('clock-bar');
+        function setClockColor(mode){
+            clockBar.classList.toggle('pm-saver', mode === 'saver');
+            clockBar.classList.toggle('pm-best', mode === 'best');
+        }
+        function renderPowerMode(pm){
+            setClockColor(pm && pm.planOK ? pm.active : '');
+            // 電源モードが取れているときはターボ色を使わない（切替機能を ON にした直後に、次の更新まで重ならないように）
+            if (pm) clockBar.classList.remove('turbo');
+            const show = !!pm;
+            if (show !== powerModeShown) {
+                powerModeShown = show;
+                powerRow.hidden = !show;
+                scheduleHeightAdjust();   // 行の出入りで区画の高さが変わる
+            }
+            if (!pm) return;
+            const idx = POWER_MODES.indexOf(pm.active);
+            const known = pm.planOK && idx >= 0;
+            powerSlider.disabled = !pm.planOK;
+            powerSlider.value = idx >= 0 ? idx : 1;
+            powerSlider.classList.toggle('pm-none', !known);
+            powerRow.classList.toggle('locked', !pm.planOK);
+            markPowerMode(known ? pm.active : '');
+            let tip = '電源モード: ' + (known ? powerModeNames[pm.active] : '不明');
+            if (!pm.planOK) tip = powerPlanLockedTip;
+            else if (pm.active === 'other') tip = '電源モード: 不明な電源モードです（どれかを選ぶと切り替わります）';
+            if (powerModeError) tip = powerModeError;
+            powerSlider.title = tip;
+        }
+        function updatePowerMode(pm){
+            lastPowerMode = pm || null;
+            if (!powerModeBusy && !powerModeDragging) renderPowerMode(lastPowerMode);
+        }
+        function showPowerModeError(msg){
+            powerModeError = '切り替えに失敗しました: ' + msg;
+            powerRow.classList.add('err');
+            clearTimeout(powerModeErrTimer);
+            powerModeErrTimer = setTimeout(function(){
+                powerModeError = '';
+                powerRow.classList.remove('err');
+                renderPowerMode(lastPowerMode);
+            }, 4000);
+        }
+        // 指を離した / キーで確定した / クリックしたときに切り替える。
+        async function commitPowerMode(mode){
+            if (powerModeBusy || !lastPowerMode || !lastPowerMode.planOK) { renderPowerMode(lastPowerMode); return; }
+            const prev = lastPowerMode;
+            if (prev.active === mode) { renderPowerMode(prev); return; }
+            powerModeBusy = true;
+            // 操作の結果を先に見せる。失敗したら実際の状態へ戻す。
+            renderPowerMode(Object.assign({}, prev, { active: mode }));
+            try {
+                const res = await apiFetch('/api/powermode?mode=' + encodeURIComponent(mode));
+                if (!res.ok) throw new Error((await res.text()).trim() || ('HTTP ' + res.status));
+                lastPowerMode = await res.json();
+            } catch (err) {
+                showPowerModeError(err && err.message ? err.message : String(err));
+            } finally {
+                powerModeBusy = false;
+                renderPowerMode(lastPowerMode);
+            }
+        }
+        // ドラッグ中はラベルの強調だけ追従させる（切り替えは change で行う）
+        powerSlider.addEventListener('input', function(){ markPowerMode(POWER_MODES[Number(powerSlider.value)]); });
+        powerSlider.addEventListener('change', function(){
+            powerModeDragging = false;
+            commitPowerMode(POWER_MODES[Number(powerSlider.value)]);
+        });
+        powerSlider.addEventListener('pointerdown', function(){ powerModeDragging = true; });
+        // 同じ位置で離したときは change が来ないので、操作中の印を外す（change は同じイベント処理内で先に走る）
+        ['pointerup', 'pointercancel'].forEach(function(t){
+            powerSlider.addEventListener(t, function(){ setTimeout(function(){ powerModeDragging = false; if (!powerModeBusy) renderPowerMode(lastPowerMode); }, 0); });
+        });
+        powerSlider.addEventListener('blur', function(){ powerModeDragging = false; });
+        // ラベルのクリックでもその段階へ切り替える
+        powerRow.querySelectorAll('.pm-labels span').forEach(function(l){
+            l.addEventListener('click', function(e){
+                e.stopPropagation();
+                if (powerSlider.disabled) return;
+                commitPowerMode(l.dataset.mode);
+            });
+        });
 
         // 設定は Go 側の config.json に永続化される。フロント側は API 経由で読み書きする。
         // ここで保持する settings オブジェクトは UI 反映のためのキャッシュ。
         const settings = {
             theme: 'system',
             transparent: false,
+            // 電源モードの切替機能の ON/OFF（Go 側の config.json の powerModeEnabled。既定 OFF）
+            powerMode: false,
             coreBase: 0,
             trayDisplay: 'icon',
             topmost: false,
@@ -666,7 +833,7 @@
             mouseDownX = e.screenX;
             mouseDownY = e.screenY;
             movedSinceDown = false;
-            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh')) return;
+            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh, .power-mode')) return;
             const rect = dragArea.getBoundingClientRect();
             const onRight = (rect.right - e.clientX) <= resizeMargin;
             const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
@@ -896,6 +1063,7 @@
                 });
             });
             document.getElementById('optTransparent').checked = !!settings.transparent;
+            document.getElementById('optPowerMode').checked = !!settings.powerMode;
             refreshAIModal();
         }
 
@@ -925,6 +1093,19 @@
             e.stopPropagation();
             settings.transparent = this.checked;
             apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
+        });
+
+        // 電源モードの切替機能の ON/OFF。OFF にすると Go 側が電源モードの API を呼ばなくなり、
+        // /api/system の PowerMode が null になってスライダーが隠れる。ここでは即座に反映するため、
+        // OFF のときは先に表示を隠し、ON のときは保存後に現在の状態を取得し直す。
+        document.getElementById('optPowerMode').addEventListener('change', function(e){
+            e.stopPropagation();
+            const on = this.checked;
+            settings.powerMode = on;
+            if (!on) updatePowerMode(null);
+            apiFetch('/api/setoption?key=powerMode&value=' + (on ? 'true' : 'false'))
+                .then(function(){ updateData(); })
+                .catch(function(){});
         });
 
         // ============ 区画の表示/非表示 ============
@@ -1391,6 +1572,7 @@
             if (!s) return;
             if (s.theme) settings.theme = s.theme;
             if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
+            if (typeof s.powerMode === 'boolean') settings.powerMode = s.powerMode;
             if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
             if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
             if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
@@ -1506,6 +1688,8 @@
             try{ const res=await apiFetch('/api/system'); const data=await res.json();
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
+                // 電源モードを先に更新する（updateClock が lastPowerMode を見てターボ色の要否を決める）
+                updatePowerMode(data.PowerMode);
                 updateClock(data.CPUFreq);
                 applyAccelData(data.GPU, data.NPU);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
