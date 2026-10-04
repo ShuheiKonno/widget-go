@@ -131,20 +131,29 @@ func premulARGB(a, r, g, b uint8) uint32 {
 // トレイアイコン背景: 半透明ダーク (α=200, RGB=(20,22,40))。
 var iconBgColor = premulARGB(200, 20, 22, 40)
 
-// アクセント色は ui/index.html の .clock-fill / .clock-fill.turbo に対応させる。
-// CSS 側は 2 色のグラデーションだが 16px のアイコンでは表現できないため、
-// それぞれの中間色を代表色として使う。
+// アクセント色は ui/index.html のクロックのバー（.clock-fill 系）に対応させる。CSS 側は 2 色の
+// グラデーションだが 16px のアイコンでは表現できないため、それぞれの中間色を代表色として使う。
 //
-//	通常  : #5ad0ff → #8a9cff の中点 = #72b6ff  (ui/index.html:93)
-//	ターボ: #ffc46a → #ff7a3c の中点 = #ff9f53  (ui/index.html:95)
+// 電源モードの切替機能が使えるとき（ON かつ API が使える）は電源モードで決める:
+//
+//	省電力        : #7be0a0 → #3cc47c の中点 = #5bd28e  (.clock-fill.pm-saver)
+//	バランス      : #5ad0ff → #8a9cff の中点 = #72b6ff  (.clock-fill)
+//	パフォーマンス: #ffc46a → #ff7a3c の中点 = #ff9f53  (.clock-fill.pm-best)
+//
+// 使えないとき（OFF、または API が無い環境）は従来どおりクロックで決める（通常 / ターボ）。
+// 通常はバランスと、ターボはパフォーマンスと同じ色。
 var (
-	clockAccentNormal = premulARGB(255, 0x72, 0xb6, 0xff)
-	clockAccentTurbo  = premulARGB(255, 0xff, 0x9f, 0x53)
+	clockAccentNormal = premulARGB(255, 0x72, 0xb6, 0xff) // .clock-fill
+	clockAccentTurbo  = premulARGB(255, 0xff, 0x9f, 0x53) // .clock-fill.turbo
+
+	powerAccentSaver    = premulARGB(255, 0x5b, 0xd2, 0x8e)
+	powerAccentBalanced = clockAccentNormal
+	powerAccentBest     = clockAccentTurbo
 )
 
 // clockTurboRatio はターボ動作とみなすベースクロック比。
-// ui/index.html:293 の `cur > base * 1.02` と必ず同じ値にすること。
-// ここがずれるとトレイアイコンとクロックグラフの色が境界で食い違う。
+// ui/index.html の updateClock の `cur > base * 1.02` と必ず同じ値にすること。
+// ここがずれるとトレイアイコンとクロックのバーの色が境界で食い違う（電源モードの切替が使えないとき）。
 const clockTurboRatio = 1.02
 
 // clockAccentColor は現在のクロック情報からアクセント色を決める。
@@ -160,12 +169,40 @@ func clockAccentColor(f *sysinfo.CPUFreqInfo) (uint32, bool) {
 	return clockAccentNormal, true
 }
 
+// trayAccentColor はトレイアイコンの帯の色を決める。電源モードが取得できていればその色、
+// 取得できていない（切替機能が OFF、API が使えない）ときは従来どおりクロックの色。
+// ui/index.html のクロックのバーの色の決め方と同じ規則。
+func trayAccentColor(p *sysinfo.PowerModeInfo, f *sysinfo.CPUFreqInfo) (uint32, bool) {
+	if p != nil {
+		return powerModeAccentColor(p)
+	}
+	return clockAccentColor(f)
+}
+
+// powerModeAccentColor は電源モードの状態からアクセント色を決める。
+// p が nil（取得できない）なら ok=false。通常は trayAccentColor 経由で呼び、nil のときはクロックの色へ落とす。
+// 電源プランがバランス以外・不明な電源モードのときは、クロックのバーと同じく既定色（バランスの青）にする。
+func powerModeAccentColor(p *sysinfo.PowerModeInfo) (uint32, bool) {
+	if p == nil {
+		return 0, false
+	}
+	if p.PlanOK {
+		switch p.Active {
+		case sysinfo.PowerModeSaver:
+			return powerAccentSaver, true
+		case sysinfo.PowerModeBest:
+			return powerAccentBest, true
+		}
+	}
+	return powerAccentBalanced, true
+}
+
 // accentStripHeight はアイコン下端に敷くアクセント帯の高さ (px)。
 const accentStripHeight = 2
 
 // buildCpuIcon は CPU 使用率 (0-100) を示すトレイアイコンを GDI で生成する。
 // 背景は半透明の角丸ダーク矩形、文字は白。hasAccent が真なら下端に accent 色の帯を敷く
-// (クロック周波数グラフと同じ配色)。背景を染めずに帯にするのは、16px で白文字の
+// (クロックのバーと同じ配色。trayAccentColor を参照)。背景を染めずに帯にするのは、16px で白文字の
 // コントラストを落とさないため。
 // 返値が 0 でない場合、呼び出し側は不要になったら procDestroyIcon.Call(hIcon) で解放する必要がある。
 func buildCpuIcon(percent int, accent uint32, hasAccent bool) uintptr {
@@ -616,7 +653,7 @@ func startTray() {
 		if cachedCPU != nil {
 			p = int(math.Round(cachedCPU.Overall))
 		}
-		accent, hasAccent := clockAccentColor(cachedCPUFreq)
+		accent, hasAccent := trayAccentColor(cachedPower, cachedCPUFreq)
 		cacheMu.RUnlock()
 		if h := buildCpuIcon(p, accent, hasAccent); h != 0 {
 			initialCpuIcon = h
@@ -744,7 +781,7 @@ func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
 				if cachedCPU != nil {
 					p = int(math.Round(cachedCPU.Overall))
 				}
-				accent, hasAccent := clockAccentColor(cachedCPUFreq)
+				accent, hasAccent := trayAccentColor(cachedPower, cachedCPUFreq)
 				cacheMu.RUnlock()
 				if newIcon := buildCpuIcon(p, accent, hasAccent); newIcon != 0 {
 					upd.UFlags |= NIF_ICON

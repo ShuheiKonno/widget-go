@@ -27,6 +27,7 @@ func TestPremulARGBOpaqueIsPassThrough(t *testing.T) {
 	}
 }
 
+// 電源モードの切替機能が使えないとき（OFF、API が無い環境）のトレイの帯は、従来どおりクロックで決まる。
 func TestClockAccentColor(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -50,6 +51,94 @@ func TestClockAccentColor(t *testing.T) {
 			}
 			if color != tt.wantColor {
 				t.Errorf("color = %#08x, want %#08x", color, tt.wantColor)
+			}
+		})
+	}
+}
+
+// 電源モードが取れているときはそれが優先され、クロックは見ない。取れていないときだけクロックで決まる。
+func TestTrayAccentColor(t *testing.T) {
+	turbo := &sysinfo.CPUFreqInfo{CurrentMHz: 3600, BaseMHz: 2400}
+	normal := &sysinfo.CPUFreqInfo{CurrentMHz: 1200, BaseMHz: 2400}
+	saver := &sysinfo.PowerModeInfo{PlanOK: true, Active: sysinfo.PowerModeSaver}
+	balanced := &sysinfo.PowerModeInfo{PlanOK: true, Active: sysinfo.PowerModeBalanced}
+	tests := []struct {
+		name      string
+		pm        *sysinfo.PowerModeInfo
+		freq      *sysinfo.CPUFreqInfo
+		wantColor uint32
+		wantOK    bool
+	}{
+		// 電源モードあり: クロックがターボでも通常でも電源モードの色
+		{"省電力 + ターボ", saver, turbo, powerAccentSaver, true},
+		{"バランス + ターボ", balanced, turbo, powerAccentBalanced, true},
+		{"省電力 + クロック取得不可", saver, nil, powerAccentSaver, true},
+		// 電源モードなし（切替機能が OFF、API が無い）: 従来どおりクロック
+		{"なし + ターボ", nil, turbo, clockAccentTurbo, true},
+		{"なし + 通常", nil, normal, clockAccentNormal, true},
+		{"なし + クロック取得不可", nil, nil, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color, ok := trayAccentColor(tt.pm, tt.freq)
+			if ok != tt.wantOK || color != tt.wantColor {
+				t.Errorf("= %#08x, %v; want %#08x, %v", color, ok, tt.wantColor, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestPowerModeAccentColor(t *testing.T) {
+	tests := []struct {
+		name      string
+		pm        *sysinfo.PowerModeInfo
+		wantColor uint32
+		wantOK    bool
+	}{
+		// 電源モードを取得できない環境では帯を描かない（従来の外観）
+		{"nil (API が使えない)", nil, 0, false},
+		{"省電力", &sysinfo.PowerModeInfo{PlanOK: true, Active: sysinfo.PowerModeSaver}, powerAccentSaver, true},
+		{"バランス", &sysinfo.PowerModeInfo{PlanOK: true, Active: sysinfo.PowerModeBalanced}, powerAccentBalanced, true},
+		{"パフォーマンス", &sysinfo.PowerModeInfo{PlanOK: true, Active: sysinfo.PowerModeBest}, powerAccentBest, true},
+		// 不明な電源モード、電源プランがバランス以外は既定色（クロックのバーと同じ）
+		{"不明な電源モード", &sysinfo.PowerModeInfo{PlanOK: true, Active: sysinfo.PowerModeOther}, powerAccentBalanced, true},
+		{"バランス以外のプラン", &sysinfo.PowerModeInfo{PlanOK: false, Active: sysinfo.PowerModeOther}, powerAccentBalanced, true},
+		// 電源プランがバランス以外のときは、active が 3 つのどれでも色を変えない
+		{"バランス以外のプラン + パフォーマンス", &sysinfo.PowerModeInfo{PlanOK: false, Active: sysinfo.PowerModeBest}, powerAccentBalanced, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			color, ok := powerModeAccentColor(tt.pm)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if color != tt.wantColor {
+				t.Errorf("color = %#08x, want %#08x", color, tt.wantColor)
+			}
+		})
+	}
+}
+
+// トレイの代表色が、ui/index.html のクロックのバーのグラデーション両端の中間色になっていることを
+// ピン留めする。CSS の色を変えたらここの端点も変え、トレイ側の定数を合わせること。
+func TestPowerAccentIsGradientMidpoint(t *testing.T) {
+	type rgb struct{ r, g, b uint8 }
+	mid := func(a, b rgb) uint32 {
+		return premulARGB(255, uint8((int(a.r)+int(b.r))/2), uint8((int(a.g)+int(b.g))/2), uint8((int(a.b)+int(b.b))/2))
+	}
+	tests := []struct {
+		name       string
+		from, to   rgb
+		wantAccent uint32
+	}{
+		{".clock-fill.pm-saver", rgb{0x7b, 0xe0, 0xa0}, rgb{0x3c, 0xc4, 0x7c}, powerAccentSaver},
+		{".clock-fill", rgb{0x5a, 0xd0, 0xff}, rgb{0x8a, 0x9c, 0xff}, powerAccentBalanced},
+		{".clock-fill.pm-best", rgb{0xff, 0xc4, 0x6a}, rgb{0xff, 0x7a, 0x3c}, powerAccentBest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mid(tt.from, tt.to); got != tt.wantAccent {
+				t.Errorf("中間色 = %#08x, トレイの定数 = %#08x", got, tt.wantAccent)
 			}
 		})
 	}

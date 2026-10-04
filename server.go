@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -60,6 +61,49 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// errPowerModeDisabled は電源モードの切替機能が設定で OFF のときに返す。
+// OFF の間は Windows の設定・制御のままにするため、書き込みは行わない。
+var errPowerModeDisabled = errors.New("電源モードの切替が設定で OFF になっています")
+
+// setPowerModeIfEnabled は切替機能が ON のときだけ電源モードを切り替える。
+func setPowerModeIfEnabled(mode string) error {
+	if !snapshotConfig().PowerModeEnabled {
+		return errPowerModeDisabled
+	}
+	return sysinfo.SetPowerMode(mode)
+}
+
+// powerModeHandler は /api/powermode のハンドラ。mode を許可リストで検証して電源モードを切り替え、
+// 成功したら refresh が返す最新の状態を JSON で返す（取得できない環境では null）。
+//
+// 設定と再取得は引数で受け取る。テストで Win32 を呼ばず、状態コードの対応だけを検証するため。
+//   - 400: mode が許可リスト外
+//   - 403: 切替機能が設定で OFF
+//   - 409: 電源プランがバランス以外（電源モードが効かない）
+//   - 503: 電源モードの API が使えない
+//   - 500: 設定に失敗（Win32 エラーコードを本文に含む）
+func powerModeHandler(set func(mode string) error, refresh func() *sysinfo.PowerModeInfo) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := set(r.URL.Query().Get("mode")); err != nil {
+			switch {
+			case errors.Is(err, sysinfo.ErrPowerModeInvalid):
+				http.Error(w, "invalid mode", http.StatusBadRequest)
+			case errors.Is(err, errPowerModeDisabled):
+				http.Error(w, err.Error(), http.StatusForbidden)
+			case errors.Is(err, sysinfo.ErrPowerPlanNotBalanced):
+				http.Error(w, err.Error(), http.StatusConflict)
+			case errors.Is(err, sysinfo.ErrPowerModeUnsupported):
+				http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			default:
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(refresh())
+	}
 }
 
 func startServer(ln net.Listener, token string) {
@@ -303,6 +347,15 @@ func startServer(ln net.Listener, token string) {
 		json.NewEncoder(w).Encode(map[string]int{"trayDisplay": m})
 	})
 
+	// 電源モード（設定アプリの「電源モード」）を切り替える (mode=saver|balanced|best)。
+	// OS の状態を書き換えるが、config には保存しない（起動時に再適用して設定アプリでの変更を戻さないため）。
+	// トレイアイコンの帯の色も電源モードで決まるので、切替後は次の周期を待たずに更新を促す。
+	mux.HandleFunc("/api/powermode", powerModeHandler(setPowerModeIfEnabled, func() *sysinfo.PowerModeInfo {
+		info := refreshPowerMode()
+		kickTray()
+		return info
+	}))
+
 	// theme / coreBase / netUnit などフロント向け設定を保存する。
 	// hide.gpu / hide.npu は Go 側の GPU/NPU 収集の ON/OFF にも使う。
 	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
@@ -328,6 +381,15 @@ func startServer(ln net.Listener, token string) {
 				return
 			}
 			mutateConfig(func(c *Config) { c.NetUnit = val })
+		case "powerMode":
+			// 電源モードの切替機能の ON/OFF。OFF にした直後に API 呼び出しと表示を止める
+			// （次の周期を待たない）。ON にしたときも即座に現在の状態を取得する。
+			if err := setPowerModeEnabled(val); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			refreshPowerMode()
+			kickTray()
 		case "order":
 			// 区画の表示順: value=cpu,memory,gpu,npu,network,ai を並べ替えたもの
 			if err := setOrder(val); err != nil {
@@ -379,6 +441,7 @@ func startServer(ln net.Listener, token string) {
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
 			"showGPU":     showGPU.Load(),
+			"powerMode":   c.PowerModeEnabled,
 			"collapsed":   c.Collapsed,
 			"hidden":      c.Hidden,
 			"order":       c.Order,
