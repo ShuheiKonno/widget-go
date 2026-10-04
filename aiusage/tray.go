@@ -75,7 +75,7 @@ func buildTrayInfo(cfg Settings, claude, codex UsageSnapshot, now time.Time) Tra
 		tip += fmt.Sprintf("短期: %d%%", pct5h)
 	}
 	if snap.CreditBalance != nil {
-		tip += fmt.Sprintf(" / Credit: $%.2f", *snap.CreditBalance)
+		tip += " / Credit: " + formatCredits(*snap.CreditBalance)
 	}
 	if ov := snap.Overage; ov != nil && (ov.AmountUsed > 0 || ov.SpendingLimit != nil) {
 		ovStr := fmt.Sprintf("$%.2f", ov.AmountUsed)

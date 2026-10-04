@@ -74,7 +74,7 @@ func TestBuildUsageTooltip(t *testing.T) {
 	}
 
 	// 長い AI の行（クレジットと追加利用枠つき）: 収まらない項目を末尾から落とす。切れ端は残さない。
-	long := "Claude モニター\n5時間: 100% / 7日: 100% / Credit: $203.70 / Eu: $12.50"
+	long := "Claude モニター\n5時間: 100% / 7日: 100% / Credit: 204 / Eu: $12.50"
 	got = buildUsageTooltip(long, sys)
 	if utf16Len(got) > tipMaxUnits {
 		t.Errorf("上限を超えた: %d 単位 %q", utf16Len(got), got)

@@ -1048,7 +1048,7 @@
             });
             const ov = u.overage;
             if (typeof u.creditBalance === 'number') {
-                h += '<div class="extra"><span>クレジット残高</span><span>$' + u.creditBalance.toFixed(2) + '</span></div>';
+                h += '<div class="extra"><span>クレジット残高</span><span>' + Math.round(u.creditBalance).toLocaleString('ja-JP') + ' credits</span></div>';
             } else if (ov && typeof ov.amountUsed === 'number' && !(ov.amountUsed === 0 && ov.spendingLimit == null)) {
                 const lim = (ov.spendingLimit != null && ov.spendingLimit > 0) ? ' / $' + ov.spendingLimit.toFixed(2) : '（上限なし）';
                 h += '<div class="extra"><span>追加利用枠</span><span>$' + ov.amountUsed.toFixed(2) + lim + '</span></div>';

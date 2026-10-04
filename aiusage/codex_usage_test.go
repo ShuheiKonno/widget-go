@@ -55,3 +55,12 @@ func TestCodexPlanLabel(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestFormatCredits(t *testing.T) {
+	cases := map[float64]string{0: "0", 203.7: "204", 1000: "1000", 12.4: "12"}
+	for in, want := range cases {
+		if got := formatCredits(in); got != want {
+			t.Errorf("formatCredits(%v) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -86,7 +86,7 @@ func TestBuildTrayInfoExtras(t *testing.T) {
 	cfg.TrayProvider = "codex"
 	codex := okSnap("codex", 4, 45, r)
 	codex.CreditBalance = &bal
-	if got := buildTrayInfo(cfg, UsageSnapshot{}, codex, now); !strings.HasSuffix(got.Tooltip, " / Credit: $203.70") {
+	if got := buildTrayInfo(cfg, UsageSnapshot{}, codex, now); !strings.HasSuffix(got.Tooltip, " / Credit: 204") {
 		t.Errorf("クレジット残高が出ていない: %q", got.Tooltip)
 	}
 
