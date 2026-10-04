@@ -1525,8 +1525,11 @@
             document.getElementById('optAINotifyUsage').checked = !!s.notifyUsage;
             document.getElementById('optAINotifyOverage').checked = !!s.notifyOverage;
             document.getElementById('optAINotifyStatus').checked = !!s.notifyStatus;
-            document.getElementById('aiAcctClaude').style.display = (s.enabled && s.claudeEnabled && (u.claude || {}).authState === 'ok') ? '' : 'none';
-            document.getElementById('aiAcctCodex').style.display = (s.enabled && s.codexEnabled && (u.codex || {}).authState === 'ok') ? '' : 'none';
+            // ログアウトは、未ログイン（ログインボタンが区画に出ている）のとき以外は常に出す。
+            // ok のときだけにすると、取得タイムアウト（network_error）や起動直後の init で
+            // 止まったときに、認証データを消して入れ直す手段が無くなる。
+            document.getElementById('aiAcctClaude').style.display = (s.enabled && s.claudeEnabled && (u.claude || {}).authState !== 'needs_login') ? '' : 'none';
+            document.getElementById('aiAcctCodex').style.display = (s.enabled && s.codexEnabled && (u.codex || {}).authState !== 'needs_login') ? '' : 'none';
         }
         [['optAIClaude', 'claudeEnabled'], ['optAICodex', 'codexEnabled'],
          ['optAINotifyUsage', 'notifyUsage'], ['optAINotifyOverage', 'notifyOverage'], ['optAINotifyStatus', 'notifyStatus']].forEach(function(pair){

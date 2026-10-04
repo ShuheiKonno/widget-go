@@ -39,6 +39,7 @@ func init() {
 		loginPos:    [2]int32{220, 100},
 		enabled:     func(c Settings) bool { return c.CodexEnabled },
 		reportError: updateCodexUsageError,
+		authState:   func() string { return getCodexUsageSnapshot().AuthState },
 		reset:       resetCodexSnapshot,
 		bind:        bindCodex,
 	})
