@@ -194,6 +194,10 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s` �
 
 ## 変更履歴
 
+### 2.1.1 (2026-10-04)
+
+- **Codex のクレジット残高の表示を修正** — クレジットはドルではなく OpenAI 独自の単位 (credits) なのに、`$203.70` とドル表記していた。UI は `204 credits`、トレイのツールチップは `Credit: 204` のように、整数に丸めた単位なしの数で表示する。Claude の追加利用枠 (`Eu: $12.50`) は実際のドル額なので変更なし
+
 ### 2.1.0 (2026-10-03)
 
 - **区画の表示と順序** — ⚙ の「区画の表示と順序」で、CPU・メモリ・GPU・NPU・Wi-Fi/Ethernet・AI 使用量を個別に表示/非表示にし、▲▼ で並べ替えられる。保存先は `config.json` の `hidden` / `order`。旧「GPU/NPU を表示」(`showGPU`) を OFF にしていた場合は、GPU と NPU の非表示に引き継ぐ。両方を非表示にしたときだけ GPU/NPU の収集を止める
