@@ -164,6 +164,7 @@ func init() {
 		loginPos:    [2]int32{200, 100},
 		enabled:     func(c Settings) bool { return c.ClaudeEnabled },
 		reportError: updateUsageError,
+		authState:   func() string { return getUsageSnapshot().AuthState },
 		reset:       resetClaudeSnapshot,
 		bind:        bindClaude,
 	})

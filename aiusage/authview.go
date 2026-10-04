@@ -27,6 +27,9 @@ type provider struct {
 	enabled    func(Settings) bool
 	// reportError は認証状態を更新する（updateUsageError / updateCodexUsageError）。
 	reportError func(state, msg string)
+	// authState は現在の認証状態（"init" | "ok" | "needs_login" | "network_error"）を返す。
+	// 起動直後に初回取得が来ないまま止まっていないか（init のまま）の確認に使う。
+	authState func() string
 	// reset は無効化時にスナップショットを初期状態へ戻す。
 	reset func()
 	bind  func(aw webview2.WebView)
@@ -43,8 +46,10 @@ type authView struct {
 	visible atomic.Bool // ログイン画面として画面内に出しているか
 
 	refreshMu sync.Mutex
-	notifyMu  sync.Mutex
-	notify    chan struct{}
+	// lastReload は、取得タイムアウトで補助ページを再読み込みした最後の時刻（refreshMu で保護）。
+	lastReload time.Time
+	notifyMu   sync.Mutex
+	notify     chan struct{}
 
 	loggingOut atomic.Bool
 }
@@ -179,6 +184,11 @@ func (v *authView) create() {
 	v.mu.Lock()
 	v.inst, v.hwnd = aw, hwnd
 	v.mu.Unlock()
+
+	// 補助ページが読み込めず、初回取得が来ないまま止まることがある（init のまま）。
+	// 通常の定期取得は 5 分後なので、それまで「取得中…」のままになる。一定時間たっても
+	// init なら、こちらから取得を依頼する（応答が無ければ refresh のタイムアウトで再読み込みする）。
+	time.AfterFunc(initStallCheckDelay, func() { v.refreshIfStillInit(aw) })
 
 	// 生成中（Embed の入れ子メッセージループの間）に積まれた Dispatch は、次に誰かが
 	// Dispatch を積むまで止まる（T0-1 で 433ms の遅延を確認）。空の Dispatch を 1 回積んで
@@ -315,7 +325,61 @@ func (v *authView) refresh() {
 		// ページ内の取得は timedFetch で個別に打ち切り、理由付きで返るようになっている。
 		// ここに落ちるのは取得スクリプトが注入されていない等、ページ側が応答できない場合。
 		v.p.reportError("network_error", "fetch timeout (ページが応答しません)")
+		// ページが応答しないままだと、以後の取得も同じ理由で失敗し続ける（Eval するだけで、
+		// ページを読み込み直す経路が無かった）。使用量ページを開き直せば、初期化スクリプトが
+		// 注入され直し、ページ側の初回取得（読み込み後に自動で走る）で復帰できる。
+		if shouldReloadAfterTimeout(time.Now(), v.lastReload, v.visible.Load()) {
+			v.lastReload = time.Now()
+			notifyLog("%s: 取得がタイムアウトしました。補助ページを再読み込みします", v.p.id)
+			hostDispatch(func() { v.reloadUsagePage() })
+		}
 	}
+}
+
+// reloadUsagePage は補助ページを使用量ページへ開き直す。UI スレッドで呼ぶこと。
+// 開き直したら true を返す。
+//
+// 呼ぶ時点でもログイン画面の表示状態を確認する。hostDispatch は非同期なので、再読み込みを予約した
+// 時点では出ていなくても、実行までの間に showLogin がログイン画面へ遷移させていることがある。
+// 確認しないと、ログイン画面を出した直後に使用量ページへ遷移させて、操作中のページを奪ってしまう。
+func (v *authView) reloadUsagePage() bool {
+	if v.visible.Load() {
+		return false
+	}
+	inst := v.instance()
+	if inst == nil {
+		return false
+	}
+	inst.Navigate(v.p.usageURL)
+	return true
+}
+
+// initStallCheckDelay は、補助ページ生成から、初回取得が来ているか（init のままでないか）を
+// 確認するまでの時間。通常は数秒で最初の取得が済むので、それより十分長く取る。
+const initStallCheckDelay = 45 * time.Second
+
+// refreshIfStillInit は、補助ページ inst の生成から時間がたっても認証状態が init のままなら、
+// 取得を依頼する。その間にページが作り直された・破棄された場合や、状態が進んでいる場合は何もしない。
+// どの goroutine からでも呼べる（refresh は待つので UI スレッドからは呼ばないこと）。
+func (v *authView) refreshIfStillInit(inst webview2.WebView) {
+	if v.instance() != inst || v.p.authState == nil || v.p.authState() != "init" {
+		return
+	}
+	notifyLog("%s: 起動から %v たっても初回取得が来ないため、取得を依頼します", v.p.id, initStallCheckDelay)
+	v.refresh()
+}
+
+// reloadMinInterval は、取得タイムアウト後の再読み込みの最小間隔。
+const reloadMinInterval = time.Minute
+
+// shouldReloadAfterTimeout は、取得がタイムアウトしたときに補助ページを再読み込みするかを返す。
+// ログイン画面を出している間は、操作中のページを奪わないので再読み込みしない。
+// 短時間に繰り返さない（ログイン待ちの監視などで refresh が続けて呼ばれても連打にならない）。
+func shouldReloadAfterTimeout(now, last time.Time, loginVisible bool) bool {
+	if loginVisible {
+		return false
+	}
+	return last.IsZero() || now.Sub(last) >= reloadMinInterval
 }
 
 // signalDone は Bind コールバックの完了を refresh に伝える。
