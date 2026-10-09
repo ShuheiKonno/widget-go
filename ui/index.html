@@ -237,6 +237,10 @@
         .chev { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:9px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:transform .2s, background .15s; padding:0; }
         .chev:hover { background: var(--btn-bg-hover); }
         .section.collapsed .section-header { margin-bottom:0; }
+        /* 折りたたみ時は見出し 1 行だけなので、上下の余白を詰めて高さを約 3 割抑える */
+        .section.collapsed:not(.wifi-section) { padding-top:2.5px; padding-bottom:2.5px; }
+        .wifi-section.collapsed .flip-card > .flip-face { padding-top:2.5px; padding-bottom:2.5px; }
+        .compact .ai-section.collapsed { padding:0; }
         .section.collapsed .chev { transform:rotate(-90deg); }
         .section.collapsed > .sec-body { display:none; }
         /* Wi-Fi/ネットワークは flip-card の中にあるので、本体を個別に隠し、表面へ戻す。
@@ -254,17 +258,19 @@
         body.theme-light { --claude-a:#e58f63; --claude-b:#c4553f; --codex-a:#2fbf94; --codex-b:#1f8fb3;
                 --warn:#d9a400; --crit:#d33; --ok:#1aa86b; --chip-warn-bg:rgba(217,164,0,.16); --chip-warn-fg:#8a6500;
                 --chip-login-bg:rgba(30,100,220,.12); --chip-login-fg:#1d5fc2; }
-        .ai-sum { display:none; color:var(--text-color); font-size:11px; white-space:nowrap; }
-        .ai-section.collapsed .ai-sum { display:inline; }
-        /* コンパクト表示: 「C 42% · X 18%」の 1 行サマリでは何の数字か読み取れないので、
-           プロバイダごとに「ドット + 名前 + 使用率」の行に分け、CPU/メモリ/GPU と同じ
-           見た目に揃える。AI 区画のヘッダは名前が出れば冗長なので隠し、区画の枠も外して
-           各行を独立した区画として見せる。 */
+        /* 折りたたみ時: 「C 42% · X 18%」の 1 行サマリでは何の数字か読み取れないので、
+           見出しの下にプロバイダごとの「ドット + 名前 + 使用率」を 2 行（Claude / Codex）で出す。
+           区画の枠の中なので、行自体の枠・背景は付けない。 */
+        .ai-compact { display:none; }
+        .ai-section.collapsed .ai-compact { display:flex; flex-direction:column; gap:2px; margin-top:4px; }
+        .ai-section.collapsed .ai-crow { background:transparent; border:none; padding:1px 0; }
+        /* コンパクト表示: 同じ行を CPU/メモリ/GPU と同じ見た目に揃える。AI 区画のヘッダは
+           名前が出れば冗長なので隠し、区画の枠も外して各行を独立した区画として見せる。 */
         .compact .ai-section { background:transparent; border:none; padding:0; }
         .compact .ai-section > .section-header { display:none; }
         .compact .ai-section .sec-body { display:none; }
-        .ai-compact { display:none; }
-        .compact .ai-compact { display:flex; flex-direction:column; gap:3px; }
+        .compact .ai-section .ai-compact { display:flex; flex-direction:column; gap:3px; margin-top:0; }
+        .compact .ai-section .ai-crow { background:var(--section-bg); border:1px solid var(--section-border); padding:4px 6px; }
         .ai-crow { display:flex; align-items:center; background:var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:4px 6px; }
         .ai-crow i { width:8px; height:8px; border-radius:50%; flex:none; margin-right:6px; }
         .ai-crow.claude i { background:linear-gradient(135deg,var(--claude-a),var(--claude-b)); }
@@ -279,10 +285,8 @@
         .ai-refresh.busy { animation: ai-spin 0.9s linear infinite; pointer-events:none; }
         @keyframes ai-spin { to { transform: rotate(360deg); } }
         .compact .ai-refresh { display:none; }
-        .ai-dot { margin:0 1px; color:var(--muted-color); }
-        .sum-c { color:var(--claude-b); } .sum-x { color:var(--codex-b); }
-        .sum-v.warn, .pct.warn { color:var(--warn); } .sum-v.crit, .pct.crit { color:var(--crit); }
-        .sum-v.na, .pct.na { color:var(--muted-color); }
+        .pct.warn { color:var(--warn); } .pct.crit { color:var(--crit); }
+        .pct.na { color:var(--muted-color); }
         .prov + .prov { margin-top:9px; padding-top:8px; border-top:1px dashed var(--section-border); }
         .prov-head { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
         .prov-name { font-size:12px; font-weight:700; display:flex; align-items:center; gap:5px; cursor:pointer; }
@@ -483,7 +487,7 @@
         </div>
         <!-- AI 使用量（Claude / Codex）。既定は OFF なので非表示。既存の区画の下に置く（D8） -->
         <div class="section ai-section is-hidden" id="aiSection" data-sec="ai">
-            <div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><span class="section-value ai-sum" id="ai-sum"></span><button class="ai-refresh" id="aiRefreshBtn" type="button" title="今すぐ更新">↻</button><button class="chev" data-sec="ai" title="折りたたむ">▼</button></div>
+            <div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><button class="ai-refresh" id="aiRefreshBtn" type="button" title="今すぐ更新">↻</button><button class="chev" data-sec="ai" title="折りたたむ">▼</button></div>
             <div class="ai-compact" id="ai-compact"></div>
             <div class="sec-body" id="ai-body"></div>
         </div>
@@ -1361,26 +1365,7 @@
             }
             return h;
         }
-        // 折りたたみ時・コンパクト時の 1 行サマリ: C 42% · X 18%
-        function aiSummaryHtml(){
-            const s = ai.settings, u = ai.usage || {};
-            if (!s) return '';
-            const parts = [];
-            AI_PROVIDERS.forEach(function(p){
-                if (!s[p.flag]) return;
-                const x = u[p.id] || {};
-                let v;
-                if (x.authState === 'needs_login') v = '<span class="sum-v na">?</span>';
-                else if (!x.authState || x.authState === 'init') v = '<span class="sum-v na">…</span>';
-                else {
-                    const pc = aiPrimaryPct(x);
-                    v = pc === null ? '<span class="sum-v na">—</span>' : '<span class="sum-v ' + aiBand(pc) + '">' + pc + '%</span>';
-                }
-                parts.push('<span class="sum-' + p.letter.toLowerCase() + '">' + p.letter + '</span> ' + v);
-            });
-            return parts.join(' <span class="ai-dot">·</span> ');
-        }
-        // コンパクト表示用。プロバイダごとに 1 行。状態は記号ではなく短い語で出す
+        // 折りたたみ時・コンパクト時用。プロバイダごとに 1 行。状態は記号ではなく短い語で出す
         // （? や … では何が起きているか分からないため）。
         function aiCompactHtml(){
             const s = ai.settings, u = ai.usage || {};
@@ -1407,16 +1392,11 @@
             const html = AI_PROVIDERS.filter(function(p){ return s[p.flag]; }).map(function(p){
                 return '<div class="prov ' + p.cls + '">' + aiProviderHtml(p, u[p.id] || {}, ai.status && ai.status[p.id]) + '</div>';
             }).join('');
-            const sum = aiSummaryHtml();
             const comp = aiCompactHtml();
             if (html !== ai.html) {
                 document.getElementById('ai-body').innerHTML = html;
                 ai.html = html;
                 scheduleHeightAdjust();
-            }
-            if (sum !== ai.sum) {
-                document.getElementById('ai-sum').innerHTML = sum;
-                ai.sum = sum;
             }
             if (comp !== ai.comp) {
                 document.getElementById('ai-compact').innerHTML = comp;
@@ -1459,7 +1439,7 @@
             document.getElementById('aiSection').classList.toggle('is-hidden', !on);
             if (!on) {
                 clearTimeout(ai.timer); clearTimeout(ai.statusTimer);
-                ai.usage = null; ai.status = null; ai.html = ''; ai.sum = ''; ai.comp = '';
+                ai.usage = null; ai.status = null; ai.html = ''; ai.comp = '';
             } else {
                 aiFetchUsage().then(aiLoop);
                 aiFetchStatus().then(aiStatusLoop);
