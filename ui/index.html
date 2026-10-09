@@ -245,8 +245,11 @@
         .section.collapsed > .sec-body { display:none; }
         /* Wi-Fi/ネットワークは flip-card の中にあるので、本体を個別に隠し、表面へ戻す。
            表裏の 2 面は同じセルに重なっており、裏面が残ると高さが縮まない。 */
-        .wifi-section.collapsed .wifi-info, .wifi-section.collapsed .flip-back { display:none; }
-        .wifi-section.collapsed .flip-card { transform:none !important; }
+        .wifi-section.collapsed .wifi-info { display:none; }
+        /* 折りたたみ中でも、区画のクリックで裏面（トラフィック）へ反転できるようにする。裏面もヘッダ 1 行
+           （合計スループット）だけにし、グラフと凡例は隠す。高さは表面と揃うので size containment は外す。 */
+        .wifi-section.collapsed .flip-card > .flip-back { contain:none; min-height:0; }
+        .wifi-section.collapsed .net-canvas, .wifi-section.collapsed .net-legend { display:none; }
         .wifi-section.collapsed .wifi-compact-value { display:inline; }
         .compact .chev { display:none; }
         .is-hidden { display:none !important; }
@@ -271,6 +274,36 @@
         .compact .ai-section .sec-body { display:none; }
         .compact .ai-section .ai-compact { display:flex; flex-direction:column; gap:3px; margin-top:0; }
         .compact .ai-section .ai-crow { background:var(--section-bg); border:1px solid var(--section-border); padding:4px 6px; }
+        /* 「反転で交互表示」: 2 行を同じセルに重ね、一定間隔で横回転（Wi-Fi 区画と同じ rotateY）して入れ替える。
+           行の高さは同じなので、区画の高さは変わらない。 */
+        .ai-section.collapsed .ai-compact.rotate, .compact .ai-section .ai-compact.rotate { display:grid; perspective:800px; }
+        .ai-section.click-flip.collapsed, .compact .ai-section.click-flip { cursor:pointer; }
+        .ai-compact.rotate .ai-crow { grid-area:1 / 1; backface-visibility:hidden; -webkit-backface-visibility:hidden; transition:transform .55s; }
+        .ai-compact.rotate .ai-crow:nth-child(2) { transform:rotateY(180deg); }
+        .ai-compact.rotate.flip .ai-crow:nth-child(1) { transform:rotateY(180deg); }
+        .ai-compact.rotate.flip .ai-crow:nth-child(2) { transform:rotateY(0); }
+        /* 折りたたみ + 反転表示: 見出しとは別の行を作らず、見出しの 1 行の中（名称とシェブロンの間）に
+           交互表示の行を置く。見出しを display:contents にして、アイコン・名称・行・シェブロンを同じ行に並べる。
+           コンパクト表示は見出しを隠して行だけを出すので対象外。 */
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot { display:flex; align-items:center; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot > .section-header { display:contents; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .section-title { white-space:nowrap; flex:none; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-refresh { display:none; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .chev { order:3; }
+        /* 折りたたみ + 反転表示は、Wi-Fi 区画と同じく「枠ごと」回す。行だけを回すと枠（背景・ボーダー）が
+           止まったままになるので、区画そのものを 90° まで回し（ai-flip-out）、真横を向いた瞬間に
+           Claude / Codex を差し替え（ai-flip-snap で -90° に置く）、0° まで回し戻す（ai-flip-in）。
+           行は重ねず、.flip でどちらか一方だけを出す（回転は区画側が担う）。 */
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot { transform:perspective(800px) rotateY(0deg); }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot.ai-flip-out { transform:perspective(800px) rotateY(90deg); transition:transform .275s ease-in; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot.ai-flip-snap { transform:perspective(800px) rotateY(-90deg); transition:none; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot.ai-flip-in { transform:perspective(800px) rotateY(0deg); transition:transform .275s ease-out; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-compact.rotate { display:flex; perspective:none; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-compact.rotate .ai-crow { transform:none; transition:none; backface-visibility:visible; -webkit-backface-visibility:visible; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-compact.rotate .ai-crow:nth-child(2),
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-compact.rotate.flip .ai-crow:nth-child(1) { display:none; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-compact.rotate.flip .ai-crow:nth-child(2) { display:flex; }
+        #dragArea:not(.compact) .ai-section.collapsed.ai-rot .ai-compact { order:2; flex:1 1 0; min-width:0; margin:0 0 0 8px; }
         .ai-crow { display:flex; align-items:center; background:var(--section-bg); border:1px solid var(--section-border); border-radius:8px; padding:4px 6px; }
         .ai-crow i { width:8px; height:8px; border-radius:50%; flex:none; margin-right:6px; }
         .ai-crow.claude i { background:linear-gradient(135deg,var(--claude-a),var(--claude-b)); }
@@ -377,6 +410,12 @@
                         <div class="ai-seg" id="aiResetFmt">
                             <button class="modal-opt" data-value="datetime">日時</button>
                             <button class="modal-opt" data-value="relative">残り時間</button>
+                        </div>
+                        <span class="modal-label" style="margin-top:8px" title="区画を折りたたんだときと、コンパクト表示のときの Claude / Codex の見せ方">折りたたみ / コンパクト時の表示</span>
+                        <div class="ai-seg" id="aiCompactDisp">
+                            <button class="modal-opt" data-value="both" title="Claude と Codex を 2 行で並べて表示">並べて表示</button>
+                            <button class="modal-opt" data-value="rotate" title="1 行ずつ、約 4 秒ごとに自動で反転して交互に表示">自動で反転</button>
+                            <button class="modal-opt" data-value="click" title="1 行ずつ表示し、クリックで反転して入れ替え">クリックで反転</button>
                         </div>
                         <span class="modal-label" style="margin-top:8px" title="トレイアイコンの背景色（緑 / 琥珀 / 赤）を決める、7 日枠のペース基準">7 日枠のトレイ配色ペース</span>
                         <div class="ai-seg" id="aiSplitDays">
@@ -959,7 +998,7 @@
         // net-peak の中身はモードで変える。
         // フル表示: グラフの縦軸スケールとしての直近 60 サンプルのピーク。現在値は
         //           グラフ下の凡例 (↓rx ↑tx) が出す。
-        // コンパクト表示: グラフも凡例も隠れるので、現在の合計スループット (rx+tx)。
+        // コンパクト表示 / Wi-Fi 区画の折りたたみ中: グラフも凡例も隠れるので、現在の合計スループット (rx+tx)。
         // 表示中のレイアウトと必ず一致させるため、判定は class を直接見る。
         // 履歴中の最大スループット (rx / tx の大きい方)。
         // グラフの縦軸スケールと、フル表示の net-peak 表示の両方が使う。
@@ -975,7 +1014,9 @@
             if (netHistory.length === 0) return;
             const el = document.getElementById('net-peak');
             const unitHint = ' / クリックで単位切替 (B ⇔ bit)';
-            if (document.getElementById('dragArea').classList.contains('compact')){
+            // 折りたたみ中もグラフ・凡例は隠れるので、コンパクト表示と同じく合計スループットを出す
+            if (document.getElementById('dragArea').classList.contains('compact')
+                || document.getElementById('wifiSection').classList.contains('collapsed')){
                 const last = netHistory[netHistory.length - 1];
                 el.textContent = formatRate(last.rx + last.tx);
                 el.title = '現在の合計スループット (↓+↑)' + unitHint;
@@ -1252,6 +1293,8 @@
                 // Wi-Fi は折りたたむと表面に戻す。展開後は表面から始まる（裏面のグラフは再描画される）。
                 if (n === 'network' && c) el.classList.remove('flipped');
             });
+            // net-peak の中身は折りたたみ状態でも変わるので、次の周期を待たずに付け替える
+            updateNetValue();
         }
         let heightTimer = 0;
         function scheduleHeightAdjust(){
@@ -1272,7 +1315,7 @@
         });
 
         // ============ AI 使用量（Claude / Codex）============
-        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0 };
+        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0, rotateTimer: 0 };
         const AI_PROVIDERS = [
             { id: 'claude', name: 'Claude', letter: 'C', cls: 'claude', flag: 'claudeEnabled' },
             { id: 'codex',  name: 'Codex',  letter: 'X', cls: 'codex',  flag: 'codexEnabled' }
@@ -1403,8 +1446,65 @@
                 ai.comp = comp;
                 scheduleHeightAdjust();
             }
+            applyAICompactDisplay();
             refreshAIModal();
         }
+        // 折りたたみ / コンパクト表示の見せ方。"rotate"（自動）と "click"（クリック）は 2 行を重ねて、
+        // それぞれ一定間隔 / クリックで反転させる。
+        // 行が 1 つだけのときは入れ替える相手がいないので、反転させず普通に出す。
+        const AI_ROTATE_MS = 4000;
+        function applyAICompactDisplay(){
+            const box = document.getElementById('ai-compact');
+            const mode = ai.settings && ai.settings.enabled ? ai.settings.compactDisplay : '';
+            const flippable = (mode === 'rotate' || mode === 'click') && box.children.length >= 2;
+            const rotate = flippable;          // 重ねて反転させるレイアウトか
+            const auto = flippable && mode === 'rotate';   // 自動で回すか（click はクリックだけ）
+            box.classList.toggle('rotate', rotate);
+            document.getElementById('aiSection').classList.toggle('click-flip', flippable && mode === 'click');
+            document.getElementById('aiSection').classList.toggle('ai-rot', rotate);
+            if (!rotate) box.classList.remove('flip');
+            if (auto && !ai.rotateTimer) {
+                ai.rotateTimer = setInterval(function(){
+                    // 見えていない間（フル表示で展開中）は回さない
+                    if (box.offsetParent !== null) aiFlip();
+                }, AI_ROTATE_MS);
+            } else if (!auto && ai.rotateTimer) {
+                clearInterval(ai.rotateTimer);
+                ai.rotateTimer = 0;
+            }
+        }
+        // 行を入れ替える。折りたたみ（フル表示）では Wi-Fi 区画と同じく枠ごと横回転させ、
+        // コンパクト表示は各行が枠を持つので、行の CSS 回転（.flip の切替）だけで足りる。
+        let aiFlipBusy = false;
+        function aiFlip(){
+            const box = document.getElementById('ai-compact');
+            const sec = document.getElementById('aiSection');
+            if (aiFlipBusy) return;
+            const frame = !document.getElementById('dragArea').classList.contains('compact')
+                && sec.classList.contains('collapsed') && sec.classList.contains('ai-rot');
+            if (!frame) { box.classList.toggle('flip'); return; }
+            aiFlipBusy = true;
+            sec.classList.add('ai-flip-out');
+            setTimeout(function(){
+                sec.classList.remove('ai-flip-out');
+                sec.classList.add('ai-flip-snap');
+                box.classList.toggle('flip');
+                void sec.offsetWidth;   // -90° を確定させてから、0° への遷移を始める
+                sec.classList.remove('ai-flip-snap');
+                sec.classList.add('ai-flip-in');
+                setTimeout(function(){ sec.classList.remove('ai-flip-in'); aiFlipBusy = false; }, 285);
+            }, 285);
+        }
+        // クリックで反転（"click" のとき）。Wi-Fi と同じく区画のどこをクリックしても反転し、
+        // ドラッグ後のクリックや、シェブロン・ボタン類のクリックは無視する。
+        document.getElementById('aiSection').addEventListener('click', function(e){
+            if (!this.classList.contains('click-flip') || movedSinceDown) return;
+            const compact = document.getElementById('dragArea').classList.contains('compact');
+            if (!compact && !this.classList.contains('collapsed')) return;
+            if (e.target.closest('.chev, .ai-refresh, .ai-act, [data-ai-open], [data-ai-login]')) return;
+            e.stopPropagation();
+            aiFlip();
+        });
         // ログイン待ち・取得中は短い間隔で、安定したら長い間隔で見る（Go 側の取得は既定 5 分ごと）
         function aiNeedsFast(){
             const s = ai.settings, u = ai.usage;
@@ -1445,6 +1545,7 @@
                 aiFetchStatus().then(aiStatusLoop);
             }
             applyCollapsed();
+            applyAICompactDisplay();
             scheduleHeightAdjust();
             refreshAIModal();
         }
@@ -1492,6 +1593,7 @@
             document.getElementById('optAIClaude').checked = !!s.claudeEnabled;
             document.getElementById('optAICodex').checked = !!s.codexEnabled;
             document.querySelectorAll('#aiResetFmt .modal-opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.resetTimeFormat); });
+            document.querySelectorAll('#aiCompactDisp .modal-opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.compactDisplay); });
             document.querySelectorAll('#aiSplitDays .modal-opt').forEach(function(b){ b.classList.toggle('active', Number(b.dataset.value) === s.traySplitDays); });
             // トレイに出すサービス: 両方有効なときだけ選べる（片方だけなら有効な側に固定）
             const both = !!(s.claudeEnabled && s.codexEnabled);
@@ -1530,6 +1632,11 @@
             const b = e.target.closest('.modal-opt'); if (!b) return;
             e.stopPropagation();
             aiSetOption({ resetTimeFormat: b.dataset.value });
+        });
+        document.getElementById('aiCompactDisp').addEventListener('click', function(e){
+            const b = e.target.closest('.modal-opt'); if (!b) return;
+            e.stopPropagation();
+            aiSetOption({ compactDisplay: b.dataset.value });
         });
         document.getElementById('aiSplitDays').addEventListener('click', function(e){
             const b = e.target.closest('.modal-opt'); if (!b) return;

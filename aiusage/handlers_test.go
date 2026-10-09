@@ -122,6 +122,21 @@ func TestSetOptionPartialUpdateAndNormalize(t *testing.T) {
 	if c.TraySplitDays != 7 {
 		t.Errorf("TraySplitDays = %d, want 7（不正値は既定へ）", c.TraySplitDays)
 	}
+	if c.CompactDisplay != "both" {
+		t.Errorf("CompactDisplay = %q, want both（未指定は既定のまま）", c.CompactDisplay)
+	}
+	do(mux, http.MethodPost, "/api/ai/setoption", `{"compactDisplay":"rotate"}`)
+	if got := snapshotConfig().CompactDisplay; got != "rotate" {
+		t.Errorf("CompactDisplay = %q, want rotate", got)
+	}
+	do(mux, http.MethodPost, "/api/ai/setoption", `{"compactDisplay":"click"}`)
+	if got := snapshotConfig().CompactDisplay; got != "click" {
+		t.Errorf("CompactDisplay = %q, want click", got)
+	}
+	do(mux, http.MethodPost, "/api/ai/setoption", `{"compactDisplay":"bogus"}`)
+	if got := snapshotConfig().CompactDisplay; got != "both" {
+		t.Errorf("CompactDisplay = %q, want both（不正値は既定へ）", got)
+	}
 	if c.StatusPollSeconds != defaultPollSeconds || !c.NotifyUsage {
 		t.Errorf("指定していないフィールドが変わった: %+v", c)
 	}
