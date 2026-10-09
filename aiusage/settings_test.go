@@ -38,6 +38,21 @@ func TestNormalizeResetTimeFormat(t *testing.T) {
 	}
 }
 
+func TestNormalizeCompactDisplay(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", "both"}, // 旧 config・欠損キー → 既定（従来どおり 2 行を並べる）
+		{"both", "both"},
+		{"rotate", "rotate"},
+		{"click", "click"},
+		{"bogus", "both"},
+	}
+	for _, c := range cases {
+		if got := normalizeCompactDisplay(c.in); got != c.want {
+			t.Errorf("normalizeCompactDisplay(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestNormalizeTraySplitDays(t *testing.T) {
 	for in, want := range map[int]int{0: 0, 5: 5, 7: 7, 3: 7, -1: 7, 99: 7} {
 		if got := normalizeTraySplitDays(in); got != want {

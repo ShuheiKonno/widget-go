@@ -107,6 +107,7 @@ type settingsPayload struct {
 	NotifyStatus      *bool   `json:"notifyStatus"`
 	OverageTipFormat  *string `json:"overageTipFormat"`
 	ResetTimeFormat   *string `json:"resetTimeFormat"`
+	CompactDisplay    *string `json:"compactDisplay"`
 	TraySplitDays     *int    `json:"traySplitDays"`
 	UsagePollSeconds  *int    `json:"usagePollSeconds"`
 	StatusPollSeconds *int    `json:"statusPollSeconds"`
@@ -123,6 +124,7 @@ type settingsView struct {
 	NotifyStatus      bool   `json:"notifyStatus"`
 	OverageTipFormat  string `json:"overageTipFormat"`
 	ResetTimeFormat   string `json:"resetTimeFormat"`
+	CompactDisplay    string `json:"compactDisplay"`
 	TraySplitDays     int    `json:"traySplitDays"`
 	UsagePollSeconds  int    `json:"usagePollSeconds"`
 	StatusPollSeconds int    `json:"statusPollSeconds"`
@@ -134,7 +136,7 @@ func currentPayload() settingsView {
 		Enabled: c.Enabled, ClaudeEnabled: c.ClaudeEnabled, CodexEnabled: c.CodexEnabled,
 		TrayProvider: c.TrayProvider, NotifyUsage: c.NotifyUsage, NotifyOverage: c.NotifyOverage,
 		NotifyStatus: c.NotifyStatus, OverageTipFormat: c.OverageTipFormat,
-		ResetTimeFormat: c.ResetTimeFormat, TraySplitDays: c.TraySplitDays,
+		ResetTimeFormat: c.ResetTimeFormat, CompactDisplay: c.CompactDisplay, TraySplitDays: c.TraySplitDays,
 		UsagePollSeconds: c.UsagePollSeconds, StatusPollSeconds: c.StatusPollSeconds,
 	}
 }
@@ -173,6 +175,9 @@ func handleSetOption(w http.ResponseWriter, r *http.Request) {
 		}
 		if p.ResetTimeFormat != nil {
 			c.ResetTimeFormat = *p.ResetTimeFormat
+		}
+		if p.CompactDisplay != nil {
+			c.CompactDisplay = *p.CompactDisplay
 		}
 		if p.TraySplitDays != nil {
 			c.TraySplitDays = *p.TraySplitDays

@@ -22,6 +22,11 @@ type Settings struct {
 	// ResetTimeFormat は 5 時間枠のリセット時刻の表示形式。"datetime"（既定）| "relative"。
 	ResetTimeFormat string `json:"resetTimeFormat"`
 
+	// CompactDisplay は折りたたみ時・コンパクト表示での Claude / Codex の見せ方。
+	// "both"（既定: 2 行を並べる）| "rotate"（1 行ずつ、一定間隔で自動的に反転）|
+	// "click"（1 行ずつ、クリックで反転）。
+	CompactDisplay string `json:"compactDisplay"`
+
 	// TraySplitDays は 7 日ウィンドウ配色のペース基準日数。7（既定）| 5 | 0（固定 60/80%）。
 	TraySplitDays int `json:"traySplitDays"`
 
@@ -64,6 +69,7 @@ func DefaultSettings() Settings {
 		NotifyStatus:      true,
 		OverageTipFormat:  "dollar",
 		ResetTimeFormat:   "datetime",
+		CompactDisplay:    "both",
 		TraySplitDays:     7,
 		UsagePollSeconds:  defaultPollSeconds,
 		StatusPollSeconds: defaultPollSeconds,
@@ -78,6 +84,7 @@ func NormalizeSettings(s Settings) Settings {
 	s.TraySplitDays = normalizeTraySplitDays(s.TraySplitDays)
 	s.ResetTimeFormat = normalizeResetTimeFormat(s.ResetTimeFormat)
 	s.OverageTipFormat = normalizeOverageTipFormat(s.OverageTipFormat)
+	s.CompactDisplay = normalizeCompactDisplay(s.CompactDisplay)
 	s.ClaudeEnabled, s.CodexEnabled, s.TrayProvider = normalizeProviderSelection(
 		s.ClaudeEnabled, s.CodexEnabled, s.TrayProvider)
 	return s
@@ -111,6 +118,16 @@ func normalizeResetTimeFormat(v string) string {
 		return v
 	default:
 		return "datetime"
+	}
+}
+
+// normalizeCompactDisplay は "both"/"rotate"/"click" 以外の値（旧バージョンの欠損値など）を既定の "both" に丸める。
+func normalizeCompactDisplay(v string) string {
+	switch v {
+	case "both", "rotate", "click":
+		return v
+	default:
+		return "both"
 	}
 }
 
