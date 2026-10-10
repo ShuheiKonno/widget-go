@@ -16,12 +16,13 @@ var (
 )
 
 const (
-	wmClose      = 0x0010
-	wmDestroy    = 0x0002
-	wmNCDestroy  = 0x0082
-	swShow       = 5
-	swpNoZOrder  = 0x0004
-	swpFrameChgd = 0x0020
+	wmClose          = 0x0010
+	wmDestroy        = 0x0002
+	wmNCDestroy      = 0x0082
+	swShow           = 5
+	swShowNoActivate = 4
+	swpNoZOrder      = 0x0004
+	swpFrameChgd     = 0x0020
 
 	wsExAppWindow  = 0x00040000
 	wsExToolWindow = 0x00000080
