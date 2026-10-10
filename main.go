@@ -1064,6 +1064,18 @@ func main() {
 		})
 	}
 
+	// WebView2 は最初のページを描画するまで、既定の背景（白）を画面に出す。起動直後に白い四角が
+	// 一瞬見えるので、既定背景をウィジェットの背景色に近い色（テーマに合わせて暗色／明色）にしておく。
+	// WebView2 の環境変数（ARGB の 16 進）で、ブラウザプロセスの起動前に設定する必要がある。
+	// 利用者が自分で指定している場合は、それを尊重する。
+	if os.Getenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR") == "" {
+		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR",
+			startupBackground(c.Theme, systemUsesLightTheme()).argbHex())
+	}
+
+	// ウィンドウは非表示で作る（go-webview2 は既定で作成直後に表示し、位置・中身が決まる前の
+	// 白や中央の窓が見えてしまう）。位置とフレームを整え、フロントの準備完了（/api/ready）か
+	// フォールバックのタイマーで、完成した状態を 1 回だけ表示する。
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:     false,
 		AutoFocus: true,
@@ -1073,6 +1085,7 @@ func main() {
 			Width:  windowWidth,
 			Height: windowHeight,
 			Center: true,
+			Hidden: true,
 		},
 	})
 	if w == nil {
@@ -1087,6 +1100,9 @@ func main() {
 	windowHandle.Store(uintptr(w.Window()))
 	removeWindowFrame(windowHandle.Load())
 	applyStartupGeometry(true)
+	// 位置が決まったので、完全な透明のまま表示状態にして描画させる（見せるのは /api/ready か
+	// フォールバックのタイマー）。
+	beginMainWindowStealth()
 	// go-webview2 の SetSize(HintFixed) が後段で幅と位置をリセットするため、
 	// 初期化が落ち着いたあとに再適用する。このときフロント側は既に実測値で
 	// 高さを詰めているので、高さには触れない。
@@ -1113,6 +1129,9 @@ func main() {
 	// 設定が OFF（既定）のうちは、認証 WebView2 を作らず、取得もしない。
 	setMainWebView(w)
 	aiusage.Start(aiHost{})
+
+	// フロントの準備完了が来なくても、一定時間後には必ず表示する。
+	time.AfterFunc(startupShowTimeout, func() { showMainWindowOnce("timeout") })
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
 	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))

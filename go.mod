@@ -19,3 +19,5 @@ require (
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 )
+
+replace github.com/jchv/go-webview2 => ./third_party/go-webview2

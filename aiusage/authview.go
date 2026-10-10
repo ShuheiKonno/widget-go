@@ -164,6 +164,9 @@ func (v *authView) create() {
 			Width:  500,
 			Height: 700,
 			Center: false,
+			// 既定では作成直後に画面内で SW_SHOW され、初期化（約 250ms）の間見えてしまう。
+			// 非表示で作り、画面外へ置いてから表示する。
+			Hidden: true,
 		},
 	})
 	if aw == nil {
@@ -176,6 +179,9 @@ func (v *authView) create() {
 	authWins.Store(hwnd, w)
 	w.orig, _, _ = procSetWindowLongPtr.Call(hwnd, uintptr(gwlpWndProc), authWndProcCallback)
 	moveOffscreen(hwnd)
+	// 画面外のまま表示状態にする。SW_HIDE にしないのは、隠し窓だと WebView2 が
+	// タイマーや描画をスロットルするため（moveOffscreen と同じ理由）。
+	procShowWindow.Call(hwnd, swShowNoActivate)
 
 	v.p.bind(aw)
 	aw.Init(v.p.script)

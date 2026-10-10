@@ -965,7 +965,7 @@
             // 開いている間は設定画面が収まる高さを下限にする（.modal の max-height:92vh を逆算）。
             const modalEl = document.querySelector('#settingsModal.show .modal');
             if (modalEl) h = Math.max(h, Math.ceil((modalEl.scrollHeight + 2) / 0.92) + 4);
-            apiFetch('/api/resize?h=' + h).catch(()=>{});
+            return apiFetch('/api/resize?h=' + h).catch(()=>{});
         }
 
         // ネットワーク履歴（直近 N サンプル分のスループット）
@@ -1658,7 +1658,7 @@
         // Go 側の永続設定を起動時に取得して UI に反映する。
         // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
         // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
-        apiFetch('/api/settings').then(r => r.json()).then(s => {
+        const settingsLoaded = apiFetch('/api/settings').then(r => r.json()).then(s => {
             if (!s) return;
             if (s.theme) settings.theme = s.theme;
             if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
@@ -1856,10 +1856,14 @@
         updateData().then(async ()=>{
             await ensureMinWidth();
             // コア別バーは初回データ受信時に生成されるので、ここで初めて自然高さが確定する
-            adjustWindowHeight();
+            const firstAdjust = adjustWindowHeight();
             setTimeout(adjustWindowHeight, 300);
             setTimeout(()=>apiFetch('/api/persistwindow').catch(()=>{}), 500);
             heightAdjusted = true;
+            // テーマ（設定の取得）と初回の高さが済んだら、Go 側が非表示で作った窓を出す。
+            // 失敗しても、Go 側のタイマーで一定時間後に必ず表示される。
+            try{ await settingsLoaded; await firstAdjust; }catch(e){}
+            apiFetch('/api/ready').catch(()=>{});
         });
         setInterval(updateData,2000);
         window.addEventListener('load', function() {

@@ -130,6 +130,12 @@ func startServer(ln net.Listener, token string) {
 		}()
 	})
 
+	// フロントの初回レイアウト（テーマ・高さ）が済んだ合図。非表示で作ったメインウィンドウを出す。
+	mux.HandleFunc("/api/ready", func(w http.ResponseWriter, r *http.Request) {
+		showMainWindowOnce("ready")
+		w.WriteHeader(http.StatusOK)
+	})
+
 	mux.HandleFunc("/api/entertray", func(w http.ResponseWriter, r *http.Request) {
 		hideWindowToTray()
 		w.WriteHeader(http.StatusOK)
