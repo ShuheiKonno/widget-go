@@ -3,7 +3,10 @@ package shortcut
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 )
 
 func testLocations(t *testing.T) Locations {
@@ -104,6 +107,33 @@ func TestDisableLeavesOtherFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(other); err != nil {
 		t.Errorf("他のショートカットが消えた: %v", err)
+	}
+}
+
+// 8.3 形式の短い名前と長い名前は、同じファイルとして扱う（CI の実行環境のように、os.Executable が
+// C:\Users\RUNNER~1\... を返し、ショートカットのリンク先は長い名前で返ってくる場合に、誤って
+// 「リンク先が違う」と警告しないため）。
+func TestSamePathTreatsShortAndLongNamesAsSame(t *testing.T) {
+	dir := t.TempDir()
+	long := filepath.Join(dir, "a-long-file-name-for-testing.exe")
+	if err := os.WriteFile(long, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	from, _ := windows.UTF16PtrFromString(long)
+	buf := make([]uint16, windows.MAX_PATH)
+	n, err := windows.GetShortPathName(from, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 {
+		t.Skipf("短い名前を取得できない: %v", err)
+	}
+	short := windows.UTF16ToString(buf[:n])
+	if strings.EqualFold(short, long) {
+		t.Skip("この環境では 8.3 形式の短い名前が無効（長い名前と同じ）")
+	}
+	if !samePath(short, long) || !samePath(long, short) {
+		t.Errorf("短い名前 %q と長い名前 %q が違うと判定された", short, long)
+	}
+	if samePath(long, filepath.Join(dir, "other.exe")) {
+		t.Error("別のファイルが同じと判定された")
 	}
 }
 

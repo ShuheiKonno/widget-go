@@ -126,7 +126,27 @@ func samePath(a, b string) bool {
 	if a == "" || b == "" {
 		return false
 	}
-	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+	return strings.EqualFold(filepath.Clean(longPath(a)), filepath.Clean(longPath(b)))
+}
+
+// longPath は 8.3 形式の短い名前（C:\Users\RUNNER~1\...）を、長い名前に直す。
+// ショートカットのリンク先（WScript.Shell が返す）は長い名前で、os.Executable は短い名前のことがあり、
+// そのまま比べると、同じファイルなのに「リンク先が違う」と誤って警告してしまう。直せなければ元のまま返す。
+func longPath(p string) string {
+	from, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return p
+	}
+	n, err := windows.GetLongPathName(from, nil, 0)
+	if err != nil || n == 0 {
+		return p
+	}
+	buf := make([]uint16, n)
+	n, err = windows.GetLongPathName(from, &buf[0], uint32(len(buf)))
+	if err != nil || n == 0 || int(n) > len(buf) {
+		return p
+	}
+	return windows.UTF16ToString(buf[:n])
 }
 
 // withCOM は専用のスレッドで COM を初期化して f を実行する。WebView2 が UI スレッドで COM を

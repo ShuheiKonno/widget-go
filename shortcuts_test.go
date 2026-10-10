@@ -81,6 +81,23 @@ func TestShortcutsSetValidation(t *testing.T) {
 	}
 }
 
+// ショートカットを作れなかったときは、成功として返さず 500 を返す（以前は、内側の err が外の err を
+// 隠していて、Enable の失敗が握りつぶされていた）。保存先のフォルダが、ファイルの下にあって作れない状態で試す。
+func TestShortcutsSetReportsCreateFailure(t *testing.T) {
+	s, _ := testShortcutService(t)
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bad := shortcut.Locations{Programs: filepath.Join(blocker, "Programs"), Startup: filepath.Join(blocker, "Startup")}
+	s.locations = func() (shortcut.Locations, error) { return bad, nil }
+
+	rec, _ := doReq(s.handleSet, http.MethodPost, "/api/shortcuts/set?kind=startup&enable=true")
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("作成に失敗したのに code=%d（500 のはず）", rec.Code)
+	}
+}
+
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil

@@ -90,9 +90,10 @@ func (s *shortcutService) handleSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if enable {
-		exe, err := s.exe()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		// 内側の := で err を隠すと、Enable のエラーが外の err に届かず、失敗が成功として返ってしまう。
+		exe, exeErr := s.exe()
+		if exeErr != nil {
+			http.Error(w, exeErr.Error(), http.StatusInternalServerError)
 			return
 		}
 		err = shortcut.Enable(l, kind, exe)
