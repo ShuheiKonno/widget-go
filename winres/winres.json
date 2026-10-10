@@ -9,7 +9,7 @@
       "0409": {
         "identity": {
           "name": "SystemWidget",
-          "version": "2.3.0.0"
+          "version": "2.4.0.0"
         },
         "description": "システムモニター ウィジェット",
         "minimum-os": "win7",
@@ -33,18 +33,18 @@
     "#1": {
       "0000": {
         "fixed": {
-          "file_version": "2.3.0.0",
-          "product_version": "2.3.0.0"
+          "file_version": "2.4.0.0",
+          "product_version": "2.4.0.0"
         },
         "info": {
           "0411": {
             "CompanyName": "",
             "FileDescription": "システムモニター ウィジェット",
-            "FileVersion": "2.3.0.0",
+            "FileVersion": "2.4.0.0",
             "InternalName": "system-widget",
             "OriginalFilename": "system-widget.exe",
             "ProductName": "システムモニター",
-            "ProductVersion": "2.3.0.0"
+            "ProductVersion": "2.4.0.0"
           }
         }
       }
