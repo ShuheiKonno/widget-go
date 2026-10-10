@@ -134,67 +134,45 @@ var iconBgColor = premulARGB(200, 20, 22, 40)
 // アクセント色は ui/index.html のクロックのバー（.clock-fill 系）に対応させる。CSS 側は 2 色の
 // グラデーションだが 16px のアイコンでは表現できないため、それぞれの中間色を代表色として使う。
 //
-// 電源モードの切替機能が使えるとき（ON かつ API が使える）は電源モードで決める:
+// 色は電源モードではなく、ベースクロックとの差で決める（バーと同じ規則。clockPercentDiff を参照）:
 //
-//	省電力        : #7be0a0 → #3cc47c の中点 = #5bd28e  (.clock-fill.pm-saver)
-//	バランス      : #5ad0ff → #8a9cff の中点 = #72b6ff  (.clock-fill)
-//	パフォーマンス: #ffc46a → #ff7a3c の中点 = #ff9f53  (.clock-fill.pm-best)
-//
-// 使えないとき（OFF、または API が無い環境）は従来どおりクロックで決める（通常 / ターボ）。
-// 通常はバランスと、ターボはパフォーマンスと同じ色。
+//	ベース -11% 以下      : #7be0a0 → #3cc47c の中点 = #5bd28e  (.clock-fill.clk-low)
+//	ベース -10% 〜 +20%   : #5ad0ff → #8a9cff の中点 = #72b6ff  (.clock-fill)
+//	ベース +21% 以上      : #ffc46a → #ff7a3c の中点 = #ff9f53  (.clock-fill.clk-high)
 var (
+	clockAccentLow    = premulARGB(255, 0x5b, 0xd2, 0x8e) // .clock-fill.clk-low
 	clockAccentNormal = premulARGB(255, 0x72, 0xb6, 0xff) // .clock-fill
-	clockAccentTurbo  = premulARGB(255, 0xff, 0x9f, 0x53) // .clock-fill.turbo
-
-	powerAccentSaver    = premulARGB(255, 0x5b, 0xd2, 0x8e)
-	powerAccentBalanced = clockAccentNormal
-	powerAccentBest     = clockAccentTurbo
+	clockAccentHigh   = premulARGB(255, 0xff, 0x9f, 0x53) // .clock-fill.clk-high
 )
 
-// clockTurboRatio はターボ動作とみなすベースクロック比。
-// ui/index.html の updateClock の `cur > base * 1.02` と必ず同じ値にすること。
-// ここがずれるとトレイアイコンとクロックのバーの色が境界で食い違う（電源モードの切替が使えないとき）。
-const clockTurboRatio = 1.02
+// クロックの色の境界（ベースクロックとの差を整数 % に丸めた値）。
+// ui/index.html の CLOCK_LOW_MAX_PCT / CLOCK_HIGH_MIN_PCT と必ず同じ値にすること。
+// ここがずれると、トレイアイコンとクロックのバーの色が境界で食い違う。
+const (
+	clockLowMaxPct  = -11
+	clockHighMinPct = 21
+)
 
-// clockAccentColor は現在のクロック情報からアクセント色を決める。
+// clockPercentDiff はベースクロックとの差（%）を整数に丸めた値。
+// ui/index.html の Math.round((cur / base - 1) * 100) と同じく、.5 は +∞ 方向へ丸める（math.Round は 0 から遠い方へ丸めるので使わない）。
+func clockPercentDiff(f *sysinfo.CPUFreqInfo) int {
+	return int(math.Floor((f.CurrentMHz/f.BaseMHz-1)*100 + 0.5))
+}
+
+// trayAccentColor は現在のクロック情報からトレイアイコンの帯の色を決める。
 // 取得できていない場合 (PDH 初期化失敗など) は ok=false を返し、
 // 呼び出し側は従来どおりアクセント無しで描画する。
-func clockAccentColor(f *sysinfo.CPUFreqInfo) (uint32, bool) {
+func trayAccentColor(f *sysinfo.CPUFreqInfo) (uint32, bool) {
 	if f == nil || f.BaseMHz <= 0 {
 		return 0, false
 	}
-	if f.CurrentMHz > f.BaseMHz*clockTurboRatio {
-		return clockAccentTurbo, true
+	switch pct := clockPercentDiff(f); {
+	case pct <= clockLowMaxPct:
+		return clockAccentLow, true
+	case pct >= clockHighMinPct:
+		return clockAccentHigh, true
 	}
 	return clockAccentNormal, true
-}
-
-// trayAccentColor はトレイアイコンの帯の色を決める。電源モードが取得できていればその色、
-// 取得できていない（切替機能が OFF、API が使えない）ときは従来どおりクロックの色。
-// ui/index.html のクロックのバーの色の決め方と同じ規則。
-func trayAccentColor(p *sysinfo.PowerModeInfo, f *sysinfo.CPUFreqInfo) (uint32, bool) {
-	if p != nil {
-		return powerModeAccentColor(p)
-	}
-	return clockAccentColor(f)
-}
-
-// powerModeAccentColor は電源モードの状態からアクセント色を決める。
-// p が nil（取得できない）なら ok=false。通常は trayAccentColor 経由で呼び、nil のときはクロックの色へ落とす。
-// 電源プランがバランス以外・不明な電源モードのときは、クロックのバーと同じく既定色（バランスの青）にする。
-func powerModeAccentColor(p *sysinfo.PowerModeInfo) (uint32, bool) {
-	if p == nil {
-		return 0, false
-	}
-	if p.PlanOK {
-		switch p.Active {
-		case sysinfo.PowerModeSaver:
-			return powerAccentSaver, true
-		case sysinfo.PowerModeBest:
-			return powerAccentBest, true
-		}
-	}
-	return powerAccentBalanced, true
 }
 
 // accentStripHeight はアイコン下端に敷くアクセント帯の高さ (px)。
@@ -653,7 +631,7 @@ func startTray() {
 		if cachedCPU != nil {
 			p = int(math.Round(cachedCPU.Overall))
 		}
-		accent, hasAccent := trayAccentColor(cachedPower, cachedCPUFreq)
+		accent, hasAccent := trayAccentColor(cachedCPUFreq)
 		cacheMu.RUnlock()
 		if h := buildCpuIcon(p, accent, hasAccent); h != 0 {
 			initialCpuIcon = h
@@ -781,7 +759,7 @@ func runTrayTicker(stopCh chan struct{}, currentCpuIcon uintptr) {
 				if cachedCPU != nil {
 					p = int(math.Round(cachedCPU.Overall))
 				}
-				accent, hasAccent := trayAccentColor(cachedPower, cachedCPUFreq)
+				accent, hasAccent := trayAccentColor(cachedCPUFreq)
 				cacheMu.RUnlock()
 				if newIcon := buildCpuIcon(p, accent, hasAccent); newIcon != 0 {
 					upd.UFlags |= NIF_ICON

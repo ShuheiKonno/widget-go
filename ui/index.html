@@ -113,18 +113,16 @@
         .clock-value { color: var(--section-value); font-size:12px; font-weight:700; font-family:'Consolas', monospace; white-space:nowrap; }
         .clock-base { color: var(--muted-color); font-size:10px; font-family:'Consolas', monospace; white-space:nowrap; }
         .clock-fill { background: linear-gradient(90deg,#5ad0ff,#8a9cff); }
-        /* バーの色は、電源モードの切替機能が使えるとき（ON かつ API が使える）は電源モードで決める:
-           省電力 = 緑、バランス = 青（既定）、パフォーマンス = 橙。このときクロックの値では変えない。
-           使えないとき（設定で OFF、API が無い環境）は従来どおりクロックで決める:
-           ベースクロックを超えた領域（ターボ）は橙で区別する。 */
-        .clock-fill.pm-saver { background: linear-gradient(90deg,#7be0a0,#3cc47c); }
-        .clock-fill.pm-best, .clock-fill.turbo { background: linear-gradient(90deg,#ffc46a,#ff7a3c); }
+        /* バーの色は、電源モードではなく、ベースクロックとの差で決める（updateClock）:
+           ベース -10% 〜 +20% = 青（既定）、-11% 以下 = 緑（ベースより明確に低い）、+21% 以上 = 橙（ターボ）。 */
+        .clock-fill.clk-low { background: linear-gradient(90deg,#7be0a0,#3cc47c); }
+        .clock-fill.clk-high { background: linear-gradient(90deg,#ffc46a,#ff7a3c); }
         .clock-base-marker { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,0.55); }
         body.theme-light .clock-base-marker { background:rgba(0,0,0,0.35); }
         /* 電源モード（設定アプリの「電源モード」）。3 段階のスライダー。取得できない環境では hidden。
            コンパクト (130px) には収まらないので隠す。 */
         .power-mode { margin-bottom:6px; --pm-color:#72b6ff; --pm-text:#72b6ff; --pm-fill:0%; }
-        /* スライダーの色も電源モードに合わせる（クロックのバーと同じ配色の中間色）:
+        /* スライダーの色は電源モードで決める（クロックのバーの色とは別。バーはベースクロックとの差で決まる）:
            省電力 = 緑、バランス = 青、パフォーマンス = 橙。--pm-fill は、つまみの位置までの塗りの幅 */
         .power-mode.pm-saver { --pm-color:#5bd28e; --pm-text:#5bd28e; }
         .power-mode.pm-balanced { --pm-color:#72b6ff; --pm-text:#72b6ff; }
@@ -448,6 +446,9 @@
         // （タスクマネージャーの「速度」と同じ）。ターボ時はベースを超える。
         // バーのスケール上限は「ベース×2」を基準にし、観測した最大がそれを超えた場合のみ追随する。
         let clockObservedMaxMHz = 0;
+        // バーの色の境界（ベースクロックとの差を整数 % に丸めた値）。-10〜+20 は青、これ以下は緑、これ以上は橙。
+        const CLOCK_LOW_MAX_PCT = -11;
+        const CLOCK_HIGH_MIN_PCT = 21;
         function formatClock(mhz){
             if(!mhz || mhz <= 0) return '--- GHz';
             if(mhz >= 1000) return (mhz/1000).toFixed(2) + ' GHz';
@@ -462,6 +463,7 @@
                 valueEl.textContent = '--- GHz';
                 baseEl.textContent = 'base ---';
                 bar.style.width = '0%';
+                bar.classList.remove('clk-low', 'clk-high');
                 return;
             }
             const cur = f.CurrentMHz || 0;
@@ -473,10 +475,12 @@
             const scaleMax = Math.max(base * 2, clockObservedMaxMHz * 1.05);
             bar.style.width = Math.min(100, cur / scaleMax * 100).toFixed(1) + '%';
             marker.style.left = (base / scaleMax * 100).toFixed(1) + '%';
-            // 電源モードが取れているとき（lastPowerMode あり）は、色は電源モードで決まる（setClockColor）。
-            // 取れていない（切替機能が OFF、API が使えない）ときだけ、ベース超え（ターボ動作中）を橙で示す。
-            // トレイの帯（tray.go の trayAccentColor）も同じ規則で、しきい値を合わせること。
-            bar.classList.toggle('turbo', !lastPowerMode && cur > base * 1.02);
+            // 色は電源モードではなく、ベースクロックとの差で決める。
+            // トレイの帯（tray.go の trayAccentColor）も同じ規則。CLOCK_*_PCT と同じ値にすること
+            // （tray_test.go の TestClockThresholdsMatchFrontend が一致を確かめる）。
+            const pct = Math.round((cur / base - 1) * 100);
+            bar.classList.toggle('clk-low', pct <= CLOCK_LOW_MAX_PCT);
+            bar.classList.toggle('clk-high', pct >= CLOCK_HIGH_MIN_PCT);
         }
 
         // ============ 電源モード（設定アプリの「電源モード」）============
@@ -506,17 +510,7 @@
             const i = POWER_MODES.indexOf(mode);
             powerRow.style.setProperty('--pm-fill', i < 0 ? '0%' : (i * 50) + '%');
         }
-        // クロックのバーの色を電源モードに合わせる（CSS の .clock-fill.pm-*）。
-        // 電源プランがバランス以外・不明な電源モード・取得不可のときは既定の色（青）に戻す。
-        const clockBar = document.getElementById('clock-bar');
-        function setClockColor(mode){
-            clockBar.classList.toggle('pm-saver', mode === 'saver');
-            clockBar.classList.toggle('pm-best', mode === 'best');
-        }
         function renderPowerMode(pm){
-            setClockColor(pm && pm.planOK ? pm.active : '');
-            // 電源モードが取れているときはターボ色を使わない（切替機能を ON にした直後に、次の更新まで重ならないように）
-            if (pm) clockBar.classList.remove('turbo');
             const show = !!pm;
             if (show !== powerModeShown) {
                 powerModeShown = show;
@@ -1450,7 +1444,6 @@
             try{ const res=await apiFetch('/api/system'); const data=await res.json();
                 if(data.CPU){ const o=Math.round(data.CPU.Overall); document.getElementById('cpu-overall').textContent=o+'%'; document.getElementById('cpu-bar').style.width=o+'%'; const c=document.getElementById('cores-container'); if(c.children.length===0 && data.CPU.Cores){ data.CPU.Cores.forEach((_,i)=>{ const d=document.createElement('div'); d.className='core-item'; d.innerHTML='<span class="core-label" data-core-index="'+i+'">Core '+(i+settings.coreBase)+'</span><div class="core-bar-container"><div class="core-bar" id="core-bar-'+i+'"></div></div><span class="core-value" id="core-value-'+i+'">0%</span>'; c.appendChild(d);}); applyCoreBase(); }
                     if(data.CPU.Cores){ data.CPU.Cores.forEach((load,i)=>{ const bar=document.getElementById('core-bar-'+i); const val=document.getElementById('core-value-'+i); if(bar&&val){ const r=Math.round(load); bar.style.height=r+'%'; val.textContent=r+'%'; } }); }}
-                // 電源モードを先に更新する（updateClock が lastPowerMode を見てターボ色の要否を決める）
                 updatePowerMode(data.PowerMode);
                 updateClock(data.CPUFreq);
                 applyAccelData(data.GPU, data.NPU);
