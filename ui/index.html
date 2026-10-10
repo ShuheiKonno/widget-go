@@ -20,8 +20,6 @@
             --btn-bg: rgba(255,255,255,0.12);
             --btn-bg-hover: rgba(255,255,255,0.22);
             --btn-color: #bbb;
-            --modal-bg: rgba(20,20,28,0.98);
-            --modal-border: rgba(255,255,255,0.12);
             --input-bg: rgba(255,255,255,0.05);
             --input-border: rgba(255,255,255,0.14);
         }
@@ -40,8 +38,6 @@
             --btn-bg: rgba(0,0,0,0.08);
             --btn-bg-hover: rgba(0,0,0,0.16);
             --btn-color: #444;
-            --modal-bg: rgba(250,250,255,0.99);
-            --modal-border: rgba(0,0,0,0.1);
             --input-bg: rgba(0,0,0,0.04);
             --input-border: rgba(0,0,0,0.15);
         }
@@ -216,23 +212,6 @@
         body:not(.theme-light) .net-leg-tx { color:#ffa3ff; }
         .compact .net-legend { display:none; }
 
-        /* 設定モーダル */
-        .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:200; cursor:default; }
-        .modal-overlay.show { display:flex; }
-        .modal { background: var(--modal-bg); border:1px solid var(--modal-border); border-radius:10px; padding:14px 14px 10px 14px; width:92%; max-width:260px; max-height:92vh; overflow-y:auto; box-shadow:0 8px 24px rgba(0,0,0,0.4); }
-        .modal h2 { font-size:13px; font-weight:600; margin-bottom:10px; color: var(--section-title); display:flex; align-items:center; justify-content:space-between; }
-        .modal h2 .modal-close { background:none; border:none; color: var(--muted-color); cursor:pointer; font-size:14px; line-height:1; padding:2px 4px; }
-        .modal h2 .modal-close:hover { color: var(--text-color); }
-        .modal-field { margin-bottom:10px; }
-        .modal-field:last-child { margin-bottom:4px; }
-        .modal-label { font-size:11px; color: var(--muted-color); display:block; margin-bottom:4px; }
-        .modal-options { display:flex; gap:4px; flex-wrap:wrap; }
-        .modal-opt { flex:1 1 auto; min-width:46px; text-align:center; padding:5px 6px; font-size:11px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; color: var(--text-color); transition:all 0.15s; }
-        .modal-opt:hover { background: var(--btn-bg-hover); }
-        .modal-opt.active { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
-        .modal-toggle { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; cursor:pointer; font-size:11px; }
-        .modal-toggle input { margin:0; cursor:pointer; }
-
         /* ===== 区画の折りたたみ（D10）。シェブロンのクリックだけで開閉し、折りたたむと見出しだけが残る ===== */
         .chev { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:9px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:transform .2s, background .15s; padding:0; }
         .chev:hover { background: var(--btn-bg-hover); }
@@ -349,23 +328,6 @@
         .ai-act.quiet { background: var(--btn-bg); color: var(--text-color); }
         .ai-act.quiet:hover { background: var(--btn-bg-hover); }
 
-        /* 設定モーダルの AI 項目 */
-        .modal-toggle.sub { margin-left:10px; font-size:10.5px; margin-top:4px; }
-        .order-row { display:flex; align-items:center; gap:4px; padding:3px 4px 3px 8px; margin-top:4px; background: var(--input-bg); border:1px solid var(--input-border); border-radius:5px; font-size:11px; }
-        .order-row:first-of-type { margin-top:0; }
-        .order-row > span { flex:1; min-width:0; }
-        .order-row label { flex:1; min-width:0; display:flex; align-items:center; gap:6px; cursor:pointer; }
-        .order-row input { margin:0; cursor:pointer; }
-        .order-row button { width:22px; height:20px; padding:0; border:0; border-radius:4px; background:var(--btn-bg); color:var(--btn-color); font-size:9px; line-height:1; cursor:pointer; }
-        .order-row button:hover { background:var(--btn-bg-hover); }
-        .order-row button:disabled { opacity:.3; pointer-events:none; }
-        .ai-seg { display:flex; gap:4px; flex-wrap:wrap; margin-top:4px; }
-        .ai-seg .modal-opt.disabled, .ai-sub.disabled, .modal-opt.disabled { opacity:.4; pointer-events:none; }
-        .modal-hint { font-size:10px; color:var(--muted-color); margin:3px 0 0; line-height:1.4; }
-        .ai-num { width:58px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:4px; color:var(--text-color); font:inherit; font-size:11px; padding:2px 4px; text-align:right; }
-        details.ai-adv { margin-top:6px; }
-        details.ai-adv summary { font-size:11px; color:var(--muted-color); cursor:pointer; margin-bottom:6px; }
-        .ai-acct { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:5px 8px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:5px; font-size:11px; margin-top:4px; }
     </style>
 </head>
 <body>
@@ -375,88 +337,6 @@
             <button class="top-btn settings-btn" id="settingsBtn" title="表示オプション">⚙</button>
             <button class="top-btn compact-btn" id="compactBtn" title="コンパクト表示">▬</button>
             <button class="top-btn tray-btn" id="closeBtn" title="タスクバーに格納">_</button>
-        </div>
-        <div class="modal-overlay" id="settingsModal">
-            <div class="modal">
-                <h2>表示オプション<button class="modal-close" id="modalCloseBtn" title="閉じる">✕</button></h2>
-                <div class="modal-field">
-                    <span class="modal-label">テーマ</span>
-                    <div class="modal-options" data-group="theme">
-                        <button class="modal-opt" data-value="dark">ダーク</button>
-                        <button class="modal-opt" data-value="light">ライト</button>
-                        <button class="modal-opt" data-value="system">システム</button>
-                    </div>
-                </div>
-                <div class="modal-field">
-                    <span class="modal-label">透過モード</span>
-                    <label class="modal-toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
-                </div>
-                <div class="modal-field">
-                    <span class="modal-label">電源モードの切替</span>
-                    <label class="modal-toggle"><span>CPU 区画のスライダーで切り替える</span><input type="checkbox" id="optPowerMode"></label>
-                    <p class="modal-hint">ON にすると、CPU 区画に電源モードのスライダーが出て、Windows の電源モードを切り替えられます。OFF（既定）のときは、電源モードの読み取りも切り替えも行わず、Windows の設定・制御のままです。スライダーは非表示で、クロックのバーとトレイの帯の色は、電源モードではなくクロックで決まります（ターボ動作中はオレンジ）。</p>
-                </div>
-                <div class="modal-field">
-                    <span class="modal-label">区画の表示と順序</span>
-                    <div id="orderList"></div>
-                    <p class="modal-hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。</p>
-                </div>
-                <div class="modal-field" id="aiField">
-                    <span class="modal-label">AI 使用量（Claude / Codex）</span>
-                    <div class="ai-sub" id="aiSub">
-                        <label class="modal-toggle sub"><span>Claude</span><input type="checkbox" id="optAIClaude"></label>
-                        <label class="modal-toggle sub"><span>Codex</span><input type="checkbox" id="optAICodex"></label>
-                        <span class="modal-label" style="margin-top:8px">5 時間枠のリセット表示</span>
-                        <div class="ai-seg" id="aiResetFmt">
-                            <button class="modal-opt" data-value="datetime">日時</button>
-                            <button class="modal-opt" data-value="relative">残り時間</button>
-                        </div>
-                        <span class="modal-label" style="margin-top:8px" title="区画を折りたたんだときと、コンパクト表示のときの Claude / Codex の見せ方">折りたたみ / コンパクト時の表示</span>
-                        <div class="ai-seg" id="aiCompactDisp">
-                            <button class="modal-opt" data-value="both" title="Claude と Codex を 2 行で並べて表示">並べて表示</button>
-                            <button class="modal-opt" data-value="rotate" title="1 行ずつ、約 4 秒ごとに自動で反転して交互に表示">自動で反転</button>
-                            <button class="modal-opt" data-value="click" title="1 行ずつ表示し、クリックで反転して入れ替え">クリックで反転</button>
-                        </div>
-                        <span class="modal-label" style="margin-top:8px" title="トレイアイコンの背景色（緑 / 琥珀 / 赤）を決める、7 日枠のペース基準">7 日枠のトレイ配色ペース</span>
-                        <div class="ai-seg" id="aiSplitDays">
-                            <button class="modal-opt" data-value="7" title="7 日按分（N/7 日で警告色）">7 日按分</button>
-                            <button class="modal-opt" data-value="5" title="5 日按分（N/5 日で警告色）">5 日按分</button>
-                            <button class="modal-opt" data-value="0" title="按分しない（固定 60% / 80%）">按分なし</button>
-                        </div>
-                        <span class="modal-label" style="margin-top:8px">トレイに出すサービス</span>
-                        <div class="ai-seg" id="aiTrayProv">
-                            <button class="modal-opt" data-value="claude">Claude</button>
-                            <button class="modal-opt" data-value="codex">Codex</button>
-                        </div>
-                        <details class="ai-adv">
-                            <summary>取得間隔・通知・アカウント</summary>
-                            <label class="modal-toggle"><span>使用量の取得間隔 (秒)</span><input class="ai-num" type="number" min="60" max="3600" step="60" id="optAIUsagePoll"></label>
-                            <label class="modal-toggle" style="margin-top:4px"><span>障害監視の間隔 (秒)</span><input class="ai-num" type="number" min="60" max="3600" step="60" id="optAIStatusPoll"></label>
-                            <label class="modal-toggle" style="margin-top:4px"><span>使用量しきい値の通知</span><input type="checkbox" id="optAINotifyUsage"></label>
-                            <label class="modal-toggle" style="margin-top:4px"><span>追加利用枠の通知</span><input type="checkbox" id="optAINotifyOverage"></label>
-                            <label class="modal-toggle" style="margin-top:4px"><span>障害の通知</span><input type="checkbox" id="optAINotifyStatus"></label>
-                            <div class="ai-acct" id="aiAcctClaude"><span>Claude</span><button class="ai-act quiet" data-ai-logout="claude">ログアウト</button></div>
-                            <div class="ai-acct" id="aiAcctCodex"><span>Codex</span><button class="ai-act quiet" data-ai-logout="codex">ログアウト</button></div>
-                        </details>
-                        <p class="modal-hint">上の一覧で「AI 使用量」を ON にすると使用量が出ます。初回はログインが必要です。</p>
-                    </div>
-                </div>
-                <div class="modal-field">
-                    <span class="modal-label">CPU Core 番号</span>
-                    <div class="modal-options" data-group="coreBase">
-                        <button class="modal-opt" data-value="0">0 から</button>
-                        <button class="modal-opt" data-value="1">1 から</button>
-                    </div>
-                </div>
-                <div class="modal-field">
-                    <span class="modal-label">タスクバー (最小化時)</span>
-                    <div class="modal-options" data-group="trayDisplay">
-                        <button class="modal-opt" data-value="icon">アイコンのみ</button>
-                        <button class="modal-opt" data-value="cpu">CPU 使用率</button>
-                        <button class="modal-opt" data-value="usage" id="optTrayUsage" title="AI 使用量を ON にすると選べます">AI 使用量</button>
-                    </div>
-                </div>
-            </div>
         </div>
         <div class="section" data-sec="cpu">
             <div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value" id="cpu-overall">0%</span><button class="chev" data-sec="cpu" title="折りたたむ">▼</button></div>
@@ -961,10 +841,6 @@
             el.style.height = 'auto'; bd.style.height = 'auto'; ct.style.height = 'auto';
             let h = ct.scrollHeight;
             el.style.height = '100%'; bd.style.height = '100%'; ct.style.height = '100%';
-            // 区画が少なくて窓が低いと、設定画面（窓内に重ねて表示）が潰れてスクロールになる。
-            // 開いている間は設定画面が収まる高さを下限にする（.modal の max-height:92vh を逆算）。
-            const modalEl = document.querySelector('#settingsModal.show .modal');
-            if (modalEl) h = Math.max(h, Math.ceil((modalEl.scrollHeight + 2) / 0.92) + 4);
             return apiFetch('/api/resize?h=' + h).catch(()=>{});
         }
 
@@ -1100,59 +976,6 @@
             });
         }
 
-        function refreshModalUI(){
-            document.querySelectorAll('.modal-options').forEach(group => {
-                const key = group.dataset.group;
-                group.querySelectorAll('.modal-opt').forEach(btn => {
-                    btn.classList.toggle('active', String(settings[key]) === btn.dataset.value);
-                });
-            });
-            document.getElementById('optTransparent').checked = !!settings.transparent;
-            document.getElementById('optPowerMode').checked = !!settings.powerMode;
-            refreshAIModal();
-        }
-
-        // モーダル選択肢: Go 側 API に保存してから UI 反映
-        document.querySelectorAll('.modal-options').forEach(group => {
-            const key = group.dataset.group;
-            group.addEventListener('click', (e) => {
-                const btn = e.target.closest('.modal-opt');
-                if (!btn) return;
-                e.stopPropagation();
-                const val = btn.dataset.value;
-                settings[key] = (key === 'coreBase') ? Number(val) : val;
-                refreshModalUI();
-                if (key === 'theme') {
-                    applyTheme();
-                    apiFetch('/api/setoption?key=theme&value=' + val).catch(()=>{});
-                } else if (key === 'coreBase') {
-                    applyCoreBase();
-                    apiFetch('/api/setoption?key=coreBase&value=' + val).catch(()=>{});
-                } else if (key === 'trayDisplay') {
-                    apiFetch('/api/traydisplay?mode=' + val).catch(()=>{});
-                }
-            });
-        });
-
-        document.getElementById('optTransparent').addEventListener('change', function(e){
-            e.stopPropagation();
-            settings.transparent = this.checked;
-            apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).catch(()=>{});
-        });
-
-        // 電源モードの切替機能の ON/OFF。OFF にすると Go 側が電源モードの API を呼ばなくなり、
-        // /api/system の PowerMode が null になってスライダーが隠れる。ここでは即座に反映するため、
-        // OFF のときは先に表示を隠し、ON のときは保存後に現在の状態を取得し直す。
-        document.getElementById('optPowerMode').addEventListener('change', function(e){
-            e.stopPropagation();
-            const on = this.checked;
-            settings.powerMode = on;
-            if (!on) updatePowerMode(null);
-            apiFetch('/api/setoption?key=powerMode&value=' + (on ? 'true' : 'false'))
-                .then(function(){ updateData(); })
-                .catch(function(){});
-        });
-
         // ============ 区画の表示/非表示 ============
         // CPU / メモリ / Wi-Fi は .is-hidden で隠す。GPU / NPU はデバイスの有無でも出し分けるので
         // applyAccelData が settings.hidden を見て表示を決める。
@@ -1178,7 +1001,6 @@
             updateLastSection();
         }
         // ============ 区画の表示順 ============
-        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量' };
         function applyOrder(){
             const area = document.getElementById('dragArea');
             // appendChild は既存の要素を移動する。区画は #dragArea の末尾にまとまっているので、順に付け直せばよい
@@ -1188,96 +1010,12 @@
             });
             updateLastSection();
         }
-        function renderOrderList(){
-            const box = document.getElementById('orderList');
-            box.textContent = '';
-            settings.order.forEach(function(n, i){
-                const row = document.createElement('div');
-                row.className = 'order-row';
-                const lab = document.createElement('label');
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                if (n === 'ai') {
-                    // AI 使用量の表示は、取得の ON/OFF と同じ設定（ai.enabled）
-                    cb.id = 'optAIEnabled';
-                    cb.checked = !!(ai.settings && ai.settings.enabled);
-                    cb.addEventListener('change', function(e){ e.stopPropagation(); aiSetOption({ enabled: cb.checked }); });
-                } else {
-                    cb.checked = !settings.hidden[n];
-                    cb.addEventListener('change', function(e){ e.stopPropagation(); setSectionVisible(n, cb.checked); });
-                }
-                const txt = document.createElement('span');
-                txt.textContent = sectionLabels[n] || n;
-                lab.appendChild(cb); lab.appendChild(txt);
-                row.appendChild(lab);
-                [['▲', -1, '上へ'], ['▼', 1, '下へ']].forEach(function(d){
-                    const b = document.createElement('button');
-                    b.type = 'button'; b.textContent = d[0]; b.title = d[2];
-                    b.disabled = (i + d[1] < 0 || i + d[1] >= settings.order.length);
-                    b.addEventListener('click', function(e){ e.stopPropagation(); moveSection(i, d[1]); });
-                    row.appendChild(b);
-                });
-                box.appendChild(row);
-            });
-        }
-        function setSectionVisible(n, visible){
-            settings.hidden[n] = !visible;
-            apiFetch('/api/setoption?key=hide.' + n + '&value=' + (settings.hidden[n] ? 'true' : 'false')).catch(function(){});
-            // 非表示はポーリングを待たず即座に反映する。GPU/NPU の再表示は、次回の収集後に値が届いてから
-            applyHidden();
-            scheduleHeightAdjust();
-            setTimeout(function(){ apiFetch('/api/persistwindow').catch(function(){}); }, 300);
-        }
-        function moveSection(i, delta){
-            const j = i + delta;
-            if (j < 0 || j >= settings.order.length) return;
-            const o = settings.order.slice();
-            const t = o[i]; o[i] = o[j]; o[j] = t;
-            settings.order = o;
-            apiFetch('/api/setoption?key=order&value=' + o.join(',')).catch(function(){});
-            applyOrder();
-            renderOrderList();
-        }
-
-        const settingsModal = document.getElementById('settingsModal');
-        // 閉じたら、設定画面のために広げた高さを内容に合わせて戻して保存する
-        // 画面の上端で広がりきれず位置がずれた場合に備え、開く前の左端 x と下端 y を使って戻す
-        let modalRestore = null;
-        function closeSettingsModal(){
-            settingsModal.classList.remove('show');
-            scheduleHeightAdjust();
-            const saved = modalRestore;
-            modalRestore = null;
-            setTimeout(function(){
-                if (!saved) { apiFetch('/api/persistwindow').catch(function(){}); return; }
-                apiFetch('/api/windowgeometry').then(r => r.json()).then(g => {
-                    // setwindow は位置を保存まで行う（作業領域でクランプされる）
-                    return apiFetch('/api/setwindow?x=' + saved.x + '&y=' + (saved.bottom - g.height));
-                }).catch(function(){});
-            }, 300);
-        }
+        // 設定は別ウィンドウ（/settings）で開く。変更は /api/settingschanged 経由で
+        // window.__settingsChanged に届き、applyServerSettings で反映する。
         document.getElementById('settingsBtn').addEventListener('click', function(e){
             e.stopPropagation();
-            refreshModalUI();
-            renderOrderList();
-            // 設定画面のために窓が広がる。閉じたときに元の位置（下端）へ戻せるよう、先に覚える
-            if (!settingsModal.classList.contains('show')) {
-                apiFetch('/api/windowgeometry').then(r => r.json()).then(g => {
-                    if (!modalRestore) modalRestore = { x: g.x, bottom: g.y + g.height };
-                }).catch(function(){});
-            }
-            settingsModal.classList.add('show');
-            scheduleHeightAdjust();
+            apiFetch('/api/opensettings').catch(function(){});
         });
-        document.getElementById('modalCloseBtn').addEventListener('click', function(e){
-            e.stopPropagation();
-            closeSettingsModal();
-        });
-        settingsModal.addEventListener('click', function(e){
-            if (e.target === settingsModal) closeSettingsModal();
-        });
-        // モーダル内の mousedown がドラッグ判定に回らないよう抑止
-        settingsModal.addEventListener('mousedown', (e) => e.stopPropagation());
 
         // ============ 区画の折りたたみ（D10）============
         // 開閉は各見出しのシェブロン（▼）のクリックだけ。Wi-Fi は区画のどこをクリックしても表裏が
@@ -1447,7 +1185,6 @@
                 scheduleHeightAdjust();
             }
             applyAICompactDisplay();
-            refreshAIModal();
         }
         // 折りたたみ / コンパクト表示の見せ方。"rotate"（自動）と "click"（クリック）は 2 行を重ねて、
         // それぞれ一定間隔 / クリックで反転させる。
@@ -1547,19 +1284,12 @@
             applyCollapsed();
             applyAICompactDisplay();
             scheduleHeightAdjust();
-            refreshAIModal();
         }
         async function aiLoadSettings(){
             try { const r = await apiFetch('/api/ai/settings'); ai.settings = await r.json(); applyAISettings(); } catch (e) {}
         }
         function aiPost(path, obj){
             return apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj || {}) });
-        }
-        async function aiSetOption(obj){
-            try {
-                const r = await aiPost('/api/ai/setoption', obj);
-                if (r.ok) { ai.settings = await r.json(); applyAISettings(); }
-            } catch (e) {}
         }
         // 区画内のボタン（ログイン、使用量・ステータスページを開く）
         document.getElementById('ai-body').addEventListener('click', function(e){
@@ -1581,85 +1311,13 @@
             } catch (err) {}
             btn.classList.remove('busy');
         });
-        // 設定モーダルの AI 項目
-        function refreshAIModal(){
-            const s = ai.settings;
-            if (!s) return;
-            const u = ai.usage || {};
-            const enCb = document.getElementById('optAIEnabled'); if (enCb) enCb.checked = !!s.enabled;
-            // タスクバーの「AI 使用量」は、AI 使用量が ON のときだけ選べる（選んだまま OFF にしても保存値は保たれる）
-            document.getElementById('optTrayUsage').classList.toggle('disabled', !s.enabled);
-            document.getElementById('aiSub').classList.toggle('disabled', !s.enabled);
-            document.getElementById('optAIClaude').checked = !!s.claudeEnabled;
-            document.getElementById('optAICodex').checked = !!s.codexEnabled;
-            document.querySelectorAll('#aiResetFmt .modal-opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.resetTimeFormat); });
-            document.querySelectorAll('#aiCompactDisp .modal-opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.compactDisplay); });
-            document.querySelectorAll('#aiSplitDays .modal-opt').forEach(function(b){ b.classList.toggle('active', Number(b.dataset.value) === s.traySplitDays); });
-            // トレイに出すサービス: 両方有効なときだけ選べる（片方だけなら有効な側に固定）
-            const both = !!(s.claudeEnabled && s.codexEnabled);
-            document.querySelectorAll('#aiTrayProv .modal-opt').forEach(function(b){
-                b.classList.toggle('active', b.dataset.value === s.trayProvider);
-                b.classList.toggle('disabled', !both);
-            });
-            const setNum = function(id, v){ const el = document.getElementById(id); if (document.activeElement !== el) el.value = v; };
-            setNum('optAIUsagePoll', s.usagePollSeconds);
-            setNum('optAIStatusPoll', s.statusPollSeconds);
-            document.getElementById('optAINotifyUsage').checked = !!s.notifyUsage;
-            document.getElementById('optAINotifyOverage').checked = !!s.notifyOverage;
-            document.getElementById('optAINotifyStatus').checked = !!s.notifyStatus;
-            // ログアウトは、未ログイン（ログインボタンが区画に出ている）のとき以外は常に出す。
-            // ok のときだけにすると、取得タイムアウト（network_error）や起動直後の init で
-            // 止まったときに、認証データを消して入れ直す手段が無くなる。
-            document.getElementById('aiAcctClaude').style.display = (s.enabled && s.claudeEnabled && (u.claude || {}).authState !== 'needs_login') ? '' : 'none';
-            document.getElementById('aiAcctCodex').style.display = (s.enabled && s.codexEnabled && (u.codex || {}).authState !== 'needs_login') ? '' : 'none';
-        }
-        [['optAIClaude', 'claudeEnabled'], ['optAICodex', 'codexEnabled'],
-         ['optAINotifyUsage', 'notifyUsage'], ['optAINotifyOverage', 'notifyOverage'], ['optAINotifyStatus', 'notifyStatus']].forEach(function(pair){
-            document.getElementById(pair[0]).addEventListener('change', function(e){
-                e.stopPropagation();
-                const o = {}; o[pair[1]] = this.checked;
-                aiSetOption(o);
-            });
-        });
-        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds']].forEach(function(pair){
-            document.getElementById(pair[0]).addEventListener('change', function(e){
-                e.stopPropagation();
-                const o = {}; o[pair[1]] = Number(this.value) || 0;
-                aiSetOption(o);   // 範囲外はサーバー側で矯正され、応答で表示が戻る
-            });
-        });
-        document.getElementById('aiResetFmt').addEventListener('click', function(e){
-            const b = e.target.closest('.modal-opt'); if (!b) return;
-            e.stopPropagation();
-            aiSetOption({ resetTimeFormat: b.dataset.value });
-        });
-        document.getElementById('aiCompactDisp').addEventListener('click', function(e){
-            const b = e.target.closest('.modal-opt'); if (!b) return;
-            e.stopPropagation();
-            aiSetOption({ compactDisplay: b.dataset.value });
-        });
-        document.getElementById('aiSplitDays').addEventListener('click', function(e){
-            const b = e.target.closest('.modal-opt'); if (!b) return;
-            e.stopPropagation();
-            aiSetOption({ traySplitDays: Number(b.dataset.value) });
-        });
-        document.getElementById('aiTrayProv').addEventListener('click', function(e){
-            const b = e.target.closest('.modal-opt'); if (!b || b.classList.contains('disabled')) return;
-            e.stopPropagation();
-            aiPost('/api/ai/provider', { provider: b.dataset.value }).then(aiLoadSettings).catch(function(){});
-        });
-        document.querySelectorAll('[data-ai-logout]').forEach(function(b){
-            b.addEventListener('click', function(e){
-                e.stopPropagation();
-                aiPost('/api/ai/logout?provider=' + b.dataset.aiLogout).then(function(){ setTimeout(aiFetchUsage, 1500); }).catch(function(){});
-            });
-        });
-
-        // Go 側の永続設定を起動時に取得して UI に反映する。
+        // Go 側の永続設定を UI に反映する。起動時（initial）と、設定ウィンドウで変更されたとき
+        // （window.__settingsChanged）に呼ぶ。
         // ウィンドウ位置・サイズ・透過・トレイ表示・前面表示は Go 側で既に復元済み。
         // ここでは UI 表示 (テーマ / Core 番号 / ボタン active 状態) だけを同期する。
-        const settingsLoaded = apiFetch('/api/settings').then(r => r.json()).then(s => {
+        function applyServerSettings(s, initial){
             if (!s) return;
+            const pmBefore = settings.powerMode;
             if (s.theme) settings.theme = s.theme;
             if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
             if (typeof s.powerMode === 'boolean') settings.powerMode = s.powerMode;
@@ -1677,8 +1335,14 @@
 
             applyTheme();
             applyCoreBase();
-            if (settings.topmost) document.getElementById('pinBtn').classList.add('active');
-            if (settings.viewMode === 1) {
+            document.getElementById('pinBtn').classList.toggle('active', !!settings.topmost);
+            // 電源モードの切替機能の ON/OFF が変わったら、スライダーの表示を即座に合わせる
+            // （OFF のときは先に隠し、ON のときは現在の状態を取得し直す）
+            if (!initial && pmBefore !== settings.powerMode) {
+                if (!settings.powerMode) updatePowerMode(null);
+                updateData();
+            }
+            if (initial && settings.viewMode === 1) {
                 currentViewMode = 1;
                 document.getElementById('dragArea').classList.add('compact');
                 // 保存された幅がフル表示のもの (旧バージョンの config など) でも
@@ -1691,8 +1355,16 @@
             applyCompactBtn();
             applyCollapsed();
             scheduleHeightAdjust();
+            // 区画の表示/非表示・並び順が変わると高さが変わるので、落ち着いてから位置とサイズを保存する
+            if (!initial) setTimeout(function(){ apiFetch('/api/persistwindow').catch(function(){}); }, 300);
             aiLoadSettings();
-        }).catch(()=>{ applyTheme(); });
+        }
+        const settingsLoaded = apiFetch('/api/settings').then(r => r.json()).then(s => applyServerSettings(s, true))
+            .catch(()=>{ applyTheme(); });
+        // 設定ウィンドウで変更されたとき、Go 側が呼ぶ（/api/settingschanged）。
+        window.__settingsChanged = function(){
+            apiFetch('/api/settings').then(r => r.json()).then(s => applyServerSettings(s, false)).catch(function(){});
+        };
 
         // ============ GPU / NPU ============
         // 表示用の % は 0〜100 にクランプする（Go 側は生値を保持している）。null は '---'。

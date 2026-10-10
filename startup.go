@@ -43,12 +43,26 @@ func beginMainWindowStealth() {
 	if hwnd == 0 {
 		return
 	}
+	mainStealth.Store(true)
+	showTransparent(hwnd)
+}
+
+// showTransparent は、非表示で作ったウィンドウを、完全な透明（alpha 0）のまま表示状態にする。
+// WebView2 に実際に描画させるための状態で、見せるときは clearLayered で戻す。UI スレッドで呼ぶこと。
+func showTransparent(hwnd uintptr) {
 	gwlExStyle := int32(GWL_EXSTYLE)
 	ex, _, _ := procGetWindowLong.Call(hwnd, uintptr(gwlExStyle))
 	procSetWindowLong.Call(hwnd, uintptr(gwlExStyle), ex|WS_EX_LAYERED)
 	procSetLayeredWindowAttributes.Call(hwnd, 0, 0, LWA_ALPHA)
-	mainStealth.Store(true)
 	procShowWindow.Call(hwnd, swShowNoActivate)
+}
+
+// clearLayered は、showTransparent で付けたレイヤードウィンドウの指定を外し、不透明に戻す。
+func clearLayered(hwnd uintptr) {
+	gwlExStyle := int32(GWL_EXSTYLE)
+	ex, _, _ := procGetWindowLong.Call(hwnd, uintptr(gwlExStyle))
+	procSetWindowLong.Call(hwnd, uintptr(gwlExStyle), ex&^WS_EX_LAYERED)
+	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED|SWP_NOMOVE|SWP_NOZORDER|SWP_NOSIZE)
 }
 
 // endMainWindowStealth は、透明にしていたメインウィンドウを元の状態（設定の透過か、不透明）へ戻す。
@@ -68,10 +82,7 @@ func endMainWindowStealth() {
 		return
 	}
 	// 設定の透過が OFF なら、起動前と同じく、レイヤードウィンドウでない状態に戻す。
-	gwlExStyle := int32(GWL_EXSTYLE)
-	ex, _, _ := procGetWindowLong.Call(hwnd, uintptr(gwlExStyle))
-	procSetWindowLong.Call(hwnd, uintptr(gwlExStyle), ex&^WS_EX_LAYERED)
-	procSetWindowPos.Call(hwnd, 0, 0, 0, 0, 0, SWP_FRAMECHANGED|SWP_NOMOVE|SWP_NOZORDER|SWP_NOSIZE)
+	clearLayered(hwnd)
 }
 
 // showMainWindowOnce は、透明にしておいたメインウィンドウを、初回に 1 回だけ見せる。

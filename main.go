@@ -1049,6 +1049,8 @@ func main() {
 
 	apiToken := generateToken()
 	ln, port := listenLocal()
+	serverPort = port
+	webviewDataPath = dataPath
 	startCollector()
 	go startServer(ln, apiToken)
 

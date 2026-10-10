@@ -49,7 +49,7 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
-		if r.URL.Path == "/" {
+		if r.URL.Path == "/" || r.URL.Path == "/settings" {
 			w.Header().Set("Content-Security-Policy", scriptCSP)
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			next.ServeHTTP(w, r)
@@ -116,6 +116,34 @@ func startServer(ln net.Listener, token string) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(getHTML(token)))
 	})
+
+	// 設定ウィンドウ（別ウィンドウ）のページ。"/" と同じく、トークンなしで読める（トークンは HTML に入る）。
+	mux.HandleFunc("/settings", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(getSettingsHTML(token)))
+	})
+	mux.HandleFunc("/api/opensettings", func(w http.ResponseWriter, r *http.Request) {
+		openSettingsWindow()
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/closesettings", func(w http.ResponseWriter, r *http.Request) {
+		closeSettingsWindow()
+		w.WriteHeader(http.StatusOK)
+	})
+	// 設定ページの初回の描画が済んだ合図。非表示で作った設定ウィンドウを見せる。
+	mux.HandleFunc("/api/settingsready", func(w http.ResponseWriter, r *http.Request) {
+		settingsWin.reveal()
+		w.WriteHeader(http.StatusOK)
+	})
+	// 設定ウィンドウで設定が変わった合図。ウィジェット本体に反映させる。
+	mux.HandleFunc("/api/settingschanged", func(w http.ResponseWriter, r *http.Request) {
+		notifyMainSettingsChanged()
+		w.WriteHeader(http.StatusOK)
+	})
+	// スタートメニュー / スタートアップのショートカット（チェックで作成、外すと削除）。
+	shortcuts := defaultShortcutService()
+	mux.HandleFunc("/api/shortcuts", shortcuts.handleStatus)
+	mux.HandleFunc("/api/shortcuts/set", shortcuts.handleSet)
 
 	mux.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -501,4 +529,12 @@ var indexHTML string
 // セッショントークンに差し替える（<script> の CSP nonce と JS の WIDGET_TOKEN 定数）。
 func getHTML(token string) string {
 	return strings.ReplaceAll(indexHTML, "__WIDGET_TOKEN__", token)
+}
+
+//go:embed ui/settings.html
+var settingsHTML string
+
+// getSettingsHTML は設定ウィンドウの HTML（/settings）。トークンの差し替えは getHTML と同じ。
+func getSettingsHTML(token string) string {
+	return strings.ReplaceAll(settingsHTML, "__WIDGET_TOKEN__", token)
 }

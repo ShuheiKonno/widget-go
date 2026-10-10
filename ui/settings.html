@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>設定 - システムモニター</title>
+    <style>
+        :root {
+            --bg: #101016;
+            --nav-bg: #15151d;
+            --card-bg: rgba(255,255,255,0.05);
+            --card-border: rgba(255,255,255,0.10);
+            --text-color: #f0f0f5;
+            --muted-color: #a8a8b8;
+            --title-color: #d8d8e8;
+            --btn-bg: rgba(255,255,255,0.12);
+            --btn-bg-hover: rgba(255,255,255,0.22);
+            --btn-color: #bbb;
+            --input-bg: rgba(255,255,255,0.05);
+            --input-border: rgba(255,255,255,0.14);
+            --accent: #5aa0ff;
+            --warn-bg: rgba(255,190,60,0.14);
+            --warn-fg: #ffd27a;
+            --danger-fg: #ff9a9a;
+            --ok-fg: #7fffaa;
+        }
+        body.theme-light {
+            --bg: #eef0f8;
+            --nav-bg: #e2e6f3;
+            --card-bg: rgba(255,255,255,0.75);
+            --card-border: rgba(0,0,0,0.10);
+            --text-color: #24263a;
+            --muted-color: #606078;
+            --title-color: #3b3b5a;
+            --btn-bg: rgba(0,0,0,0.08);
+            --btn-bg-hover: rgba(0,0,0,0.16);
+            --btn-color: #444;
+            --input-bg: rgba(0,0,0,0.04);
+            --input-border: rgba(0,0,0,0.15);
+            --warn-bg: rgba(220,140,0,0.14);
+            --warn-fg: #8a5a00;
+            --danger-fg: #b3261e;
+            --ok-fg: #0a7f48;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        body { font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; background: var(--bg); color: var(--text-color); font-size: 13px; display: flex; }
+
+        nav { width: 188px; flex: none; background: var(--nav-bg); padding: 18px 10px; display: flex; flex-direction: column; gap: 4px; border-right: 1px solid var(--card-border); }
+        nav h1 { font-size: 14px; font-weight: 600; color: var(--title-color); padding: 2px 10px 12px; }
+        .nav-item { text-align: left; padding: 9px 12px; border: 0; border-radius: 6px; background: none; color: var(--text-color); font: inherit; cursor: pointer; }
+        .nav-item:hover { background: var(--btn-bg); }
+        .nav-item.active { background: var(--accent); color: #fff; }
+
+        main { flex: 1; min-width: 0; overflow-y: auto; padding: 22px 28px 40px; }
+        .panel { display: none; max-width: 640px; margin: 0 auto; }
+        .panel.active { display: block; }
+        .panel > h2 { font-size: 17px; font-weight: 600; color: var(--title-color); margin-bottom: 14px; }
+
+        .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+        .card > .label { display: block; font-size: 12px; color: var(--muted-color); margin-bottom: 8px; }
+        .hint { font-size: 11.5px; color: var(--muted-color); margin-top: 8px; line-height: 1.55; }
+
+        .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+        .opt { flex: 0 1 auto; min-width: 84px; text-align: center; padding: 7px 14px; font: inherit; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; cursor: pointer; color: var(--text-color); transition: background .15s; }
+        .opt:hover { background: var(--btn-bg-hover); }
+        .opt.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .opt.disabled, .sub.disabled { opacity: .4; pointer-events: none; }
+
+        .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; cursor: pointer; }
+        .toggle + .toggle { margin-top: 6px; }
+        .toggle input { margin: 0; width: 16px; height: 16px; cursor: pointer; flex: none; }
+        .toggle input.num { width: 84px; height: auto; margin: 0; cursor: text; }
+        .toggle .sub-text { display: block; font-size: 11px; color: var(--muted-color); margin-top: 2px; }
+        .toggle.disabled { opacity: .4; pointer-events: none; }
+
+        .order-row { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
+        .order-row + .order-row { margin-top: 6px; }
+        .order-row label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+        .order-row input { margin: 0; width: 16px; height: 16px; cursor: pointer; }
+        .order-row button { width: 30px; height: 26px; border: 0; border-radius: 5px; background: var(--btn-bg); color: var(--btn-color); font-size: 11px; cursor: pointer; }
+        .order-row button:hover { background: var(--btn-bg-hover); }
+        .order-row button:disabled { opacity: .3; pointer-events: none; }
+
+        .field { margin-top: 12px; }
+        .field:first-child { margin-top: 0; }
+        .field > .label { display: block; font-size: 12px; color: var(--muted-color); margin-bottom: 6px; }
+        .num { width: 80px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; color: var(--text-color); font: inherit; padding: 4px 6px; text-align: right; }
+        .acct { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
+        .acct + .acct { margin-top: 6px; }
+        .quiet { border: 0; border-radius: 5px; background: var(--btn-bg); color: var(--text-color); font: inherit; padding: 5px 12px; cursor: pointer; }
+        .quiet:hover { background: var(--btn-bg-hover); }
+
+        .path { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 11.5px; color: var(--muted-color); word-break: break-all; margin-top: 4px; }
+        .note { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 11.5px; line-height: 1.5; }
+        .note.warn { background: var(--warn-bg); color: var(--warn-fg); display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+        .note.warn[hidden] { display: none; }
+        .note.warn .quiet { flex: none; font-size: 11.5px; padding: 4px 10px; }
+        .note.err { background: var(--warn-bg); color: var(--danger-fg); }
+        .state-on { color: var(--ok-fg); }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1>設定</h1>
+        <button class="nav-item active" data-panel="display">表示</button>
+        <button class="nav-item" data-panel="sections">区画</button>
+        <button class="nav-item" data-panel="ai">AI 使用量</button>
+        <button class="nav-item" data-panel="system">起動とショートカット</button>
+    </nav>
+    <main>
+        <section class="panel active" id="panel-display">
+            <h2>表示</h2>
+            <div class="card">
+                <span class="label">テーマ</span>
+                <div class="opts" data-group="theme">
+                    <button class="opt" data-value="dark">ダーク</button>
+                    <button class="opt" data-value="light">ライト</button>
+                    <button class="opt" data-value="system">システム</button>
+                </div>
+            </div>
+            <div class="card">
+                <span class="label">透過モード</span>
+                <label class="toggle"><span>背景を半透明にする</span><input type="checkbox" id="optTransparent"></label>
+            </div>
+            <div class="card">
+                <span class="label">CPU Core 番号</span>
+                <div class="opts" data-group="coreBase">
+                    <button class="opt" data-value="0">0 から</button>
+                    <button class="opt" data-value="1">1 から</button>
+                </div>
+            </div>
+            <div class="card">
+                <span class="label">タスクバー (最小化時)</span>
+                <div class="opts" data-group="trayDisplay">
+                    <button class="opt" data-value="icon">アイコンのみ</button>
+                    <button class="opt" data-value="cpu">CPU 使用率</button>
+                    <button class="opt" data-value="usage" id="optTrayUsage" title="AI 使用量を ON にすると選べます">AI 使用量</button>
+                </div>
+                <p class="hint">「AI 使用量」は、AI 使用量を ON にしたときだけ選べます。</p>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-sections">
+            <h2>区画</h2>
+            <div class="card">
+                <span class="label">区画の表示と順序</span>
+                <div id="orderList"></div>
+                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。</p>
+            </div>
+            <div class="card">
+                <span class="label">電源モードの切替</span>
+                <label class="toggle"><span>CPU 区画のスライダーで切り替える</span><input type="checkbox" id="optPowerMode"></label>
+                <p class="hint">ON にすると、CPU 区画に電源モードのスライダーが出て、Windows の電源モードを切り替えられます。OFF（既定）のときは、電源モードの読み取りも切り替えも行わず、Windows の設定・制御のままです。スライダーは非表示で、クロックのバーとトレイの帯の色は、電源モードではなくクロックで決まります（ターボ動作中はオレンジ）。</p>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-ai">
+            <h2>AI 使用量（Claude / Codex）</h2>
+            <div class="card">
+                <label class="toggle"><span>AI 使用量を表示して取得する<span class="sub-text">初回はログインが必要です。OFF の間は、取得も認証用のブラウザも動かしません。</span></span><input type="checkbox" id="optAIEnabled"></label>
+            </div>
+            <div class="sub" id="aiSub">
+                <div class="card">
+                    <span class="label">取得するサービス</span>
+                    <label class="toggle"><span>Claude</span><input type="checkbox" id="optAIClaude"></label>
+                    <label class="toggle"><span>Codex</span><input type="checkbox" id="optAICodex"></label>
+                </div>
+                <div class="card">
+                    <div class="field">
+                        <span class="label">5 時間枠のリセット表示</span>
+                        <div class="opts" id="aiResetFmt">
+                            <button class="opt" data-value="datetime">日時</button>
+                            <button class="opt" data-value="relative">残り時間</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <span class="label" title="区画を折りたたんだときと、コンパクト表示のときの Claude / Codex の見せ方">折りたたみ / コンパクト時の表示</span>
+                        <div class="opts" id="aiCompactDisp">
+                            <button class="opt" data-value="both" title="Claude と Codex を 2 行で並べて表示">並べて表示</button>
+                            <button class="opt" data-value="rotate" title="1 行ずつ、約 4 秒ごとに自動で反転して交互に表示">自動で反転</button>
+                            <button class="opt" data-value="click" title="1 行ずつ表示し、クリックで反転して入れ替え">クリックで反転</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <span class="label" title="トレイアイコンの背景色（緑 / 琥珀 / 赤）を決める、7 日枠のペース基準">7 日枠のトレイ配色ペース</span>
+                        <div class="opts" id="aiSplitDays">
+                            <button class="opt" data-value="7" title="7 日按分（N/7 日で警告色）">7 日按分</button>
+                            <button class="opt" data-value="5" title="5 日按分（N/5 日で警告色）">5 日按分</button>
+                            <button class="opt" data-value="0" title="按分しない（固定 60% / 80%）">按分なし</button>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <span class="label">トレイに出すサービス</span>
+                        <div class="opts" id="aiTrayProv">
+                            <button class="opt" data-value="claude">Claude</button>
+                            <button class="opt" data-value="codex">Codex</button>
+                        </div>
+                        <p class="hint">Claude と Codex の両方を取得しているときだけ選べます。</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <span class="label">取得間隔と通知</span>
+                    <label class="toggle"><span>使用量の取得間隔 (秒)</span><input class="num" type="number" min="60" max="3600" step="60" id="optAIUsagePoll"></label>
+                    <label class="toggle"><span>障害監視の間隔 (秒)</span><input class="num" type="number" min="60" max="3600" step="60" id="optAIStatusPoll"></label>
+                    <label class="toggle"><span>使用量しきい値の通知</span><input type="checkbox" id="optAINotifyUsage"></label>
+                    <label class="toggle"><span>追加利用枠の通知</span><input type="checkbox" id="optAINotifyOverage"></label>
+                    <label class="toggle"><span>障害の通知</span><input type="checkbox" id="optAINotifyStatus"></label>
+                </div>
+                <div class="card" id="aiAcctCard">
+                    <span class="label">アカウント</span>
+                    <div class="acct" id="aiAcctClaude"><span>Claude</span><button class="quiet" data-ai-logout="claude">ログアウト</button></div>
+                    <div class="acct" id="aiAcctCodex"><span>Codex</span><button class="quiet" data-ai-logout="codex">ログアウト</button></div>
+                    <p class="hint">ログアウトすると、認証データを消して未ログインに戻ります。再びログインするには、ウィジェットの AI 使用量の区画から行います。</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-system">
+            <h2>起動とショートカット</h2>
+            <div class="card">
+                <span class="label">スタートメニュー</span>
+                <label class="toggle"><span>スタートメニューにショートカットを登録する<span class="sub-text" id="scStartMenuState"></span></span><input type="checkbox" id="optScStartMenu"></label>
+                <div class="note warn" id="scStartMenuWarn" hidden><span class="warn-text"></span><button class="quiet" type="button" data-sc-update="startmenu">今のアプリに更新</button></div>
+            </div>
+            <div class="card">
+                <span class="label">スタートアップ</span>
+                <label class="toggle"><span>Windows の起動時に自動で起動する<span class="sub-text" id="scStartupState"></span></span><input type="checkbox" id="optScStartup"></label>
+                <div class="note warn" id="scStartupWarn" hidden><span class="warn-text"></span><button class="quiet" type="button" data-sc-update="startup">今のアプリに更新</button></div>
+            </div>
+            <div class="card">
+                <span class="label">登録されるリンク先（今動いているアプリ）</span>
+                <div class="path" id="scExe">---</div>
+                <p class="hint">チェックを入れるとショートカット（system-widget.lnk）を保存し、外すと削除します。リンク先が今動いているアプリと違うときは警告を出します（自動では書き換えません）。チェックを入れ直すと、リンク先が今のアプリに更新されます。</p>
+                <div class="note err" id="scError" hidden></div>
+            </div>
+        </section>
+    </main>
+
+    <script nonce="__WIDGET_TOKEN__">
+        const WIDGET_TOKEN = '__WIDGET_TOKEN__';
+        function apiFetch(url, opts){
+            opts = opts || {};
+            opts.headers = Object.assign({}, opts.headers, { 'X-Widget-Token': WIDGET_TOKEN });
+            return fetch(url, opts);
+        }
+        const $ = function(id){ return document.getElementById(id); };
+
+        const settings = { theme: 'system', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon',
+            hidden: {}, order: ['cpu', 'memory', 'gpu', 'npu', 'network', 'ai'] };
+        const ai = { settings: null, usage: null };
+        let shortcuts = null;
+        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量' };
+
+        // こちらで設定を変える操作の最初に呼ぶ。読み込み中の古い結果を捨てるための版番号（reloadAll）。
+        let rev = 0;
+        function touch(){ rev++; }
+
+        // 設定を変えたら、ウィジェット本体へ知らせて反映させる（まとめて 1 回）
+        let notifyTimer = 0;
+        function changed(){
+            clearTimeout(notifyTimer);
+            notifyTimer = setTimeout(function(){ apiFetch('/api/settingschanged').catch(function(){}); }, 30);
+        }
+
+        // ---------- テーマ ----------
+        const systemThemeMql = window.matchMedia('(prefers-color-scheme: light)');
+        function applyTheme(){
+            let effective = settings.theme;
+            if (effective === 'system') effective = systemThemeMql.matches ? 'light' : 'dark';
+            document.body.classList.toggle('theme-light', effective === 'light');
+        }
+        systemThemeMql.addEventListener('change', function(){ if (settings.theme === 'system') applyTheme(); });
+
+        // ---------- 画面の状態を設定に合わせる ----------
+        function render(){
+            applyTheme();
+            document.querySelectorAll('.opts[data-group]').forEach(function(group){
+                const key = group.dataset.group;
+                group.querySelectorAll('.opt').forEach(function(b){ b.classList.toggle('active', String(settings[key]) === b.dataset.value); });
+            });
+            $('optTransparent').checked = !!settings.transparent;
+            $('optPowerMode').checked = !!settings.powerMode;
+            renderOrderList();
+            renderAI();
+            renderShortcuts();
+        }
+
+        function renderOrderList(){
+            const box = $('orderList');
+            box.textContent = '';
+            settings.order.forEach(function(n, i){
+                const row = document.createElement('div');
+                row.className = 'order-row';
+                const lab = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                if (n === 'ai') {
+                    // AI 使用量の表示は、取得の ON/OFF と同じ設定（ai.enabled）
+                    cb.checked = !!(ai.settings && ai.settings.enabled);
+                    cb.addEventListener('change', function(){ aiSetOption({ enabled: cb.checked }); });
+                } else {
+                    cb.checked = !settings.hidden[n];
+                    cb.addEventListener('change', function(){ setSectionVisible(n, cb.checked); });
+                }
+                const txt = document.createElement('span');
+                txt.textContent = sectionLabels[n] || n;
+                lab.appendChild(cb); lab.appendChild(txt);
+                row.appendChild(lab);
+                [['▲', -1, '上へ'], ['▼', 1, '下へ']].forEach(function(d){
+                    const b = document.createElement('button');
+                    b.type = 'button'; b.textContent = d[0]; b.title = d[2];
+                    b.disabled = (i + d[1] < 0 || i + d[1] >= settings.order.length);
+                    b.addEventListener('click', function(){ moveSection(i, d[1]); });
+                    row.appendChild(b);
+                });
+                box.appendChild(row);
+            });
+        }
+        function setSectionVisible(n, visible){
+            touch();
+            settings.hidden[n] = !visible;
+            apiFetch('/api/setoption?key=hide.' + n + '&value=' + (settings.hidden[n] ? 'true' : 'false'))
+                .then(changed).catch(function(){});
+        }
+        function moveSection(i, delta){
+            const j = i + delta;
+            if (j < 0 || j >= settings.order.length) return;
+            touch();
+            const o = settings.order.slice();
+            const t = o[i]; o[i] = o[j]; o[j] = t;
+            settings.order = o;
+            renderOrderList();
+            apiFetch('/api/setoption?key=order&value=' + o.join(',')).then(changed).catch(function(){});
+        }
+
+        // ---------- 選択肢・チェック ----------
+        document.querySelectorAll('.opts[data-group]').forEach(function(group){
+            const key = group.dataset.group;
+            group.addEventListener('click', function(e){
+                const btn = e.target.closest('.opt');
+                if (!btn || btn.classList.contains('disabled')) return;
+                const val = btn.dataset.value;
+                touch();
+                settings[key] =(key === 'coreBase') ? Number(val) : val;
+                render();
+                let req = null;
+                if (key === 'theme') req = apiFetch('/api/setoption?key=theme&value=' + val);
+                else if (key === 'coreBase') req = apiFetch('/api/setoption?key=coreBase&value=' + val);
+                else if (key === 'trayDisplay') req = apiFetch('/api/traydisplay?mode=' + val);
+                if (req) req.then(changed).catch(function(){});
+            });
+        });
+        $('optTransparent').addEventListener('change', function(){
+            touch();
+            settings.transparent = this.checked;
+            apiFetch('/api/transparent?enable=' + (settings.transparent ? 'true' : 'false')).then(changed).catch(function(){});
+        });
+        $('optPowerMode').addEventListener('change', function(){
+            touch();
+            settings.powerMode = this.checked;
+            apiFetch('/api/setoption?key=powerMode&value=' + (settings.powerMode ? 'true' : 'false')).then(changed).catch(function(){});
+        });
+
+        // ---------- AI 使用量 ----------
+        function aiPost(path, obj){
+            return apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj || {}) });
+        }
+        async function aiSetOption(obj){
+            touch();
+            try {
+                const r = await aiPost('/api/ai/setoption', obj);
+                if (r.ok) { ai.settings = await r.json(); render(); changed(); }
+            } catch (e) {}
+        }
+        async function loadAI(){
+            try { const r = await apiFetch('/api/ai/settings'); if (r.ok) ai.settings = await r.json(); } catch (e) {}
+            try { const r = await apiFetch('/api/ai/usage'); if (r.ok) ai.usage = await r.json(); } catch (e) {}
+        }
+        function renderAI(){
+            const s = ai.settings;
+            if (!s) return;
+            const u = ai.usage || {};
+            $('optAIEnabled').checked = !!s.enabled;
+            // タスクバーの「AI 使用量」は、AI 使用量が ON のときだけ選べる（選んだまま OFF にしても保存値は保たれる）
+            $('optTrayUsage').classList.toggle('disabled', !s.enabled);
+            $('aiSub').classList.toggle('disabled', !s.enabled);
+            $('optAIClaude').checked = !!s.claudeEnabled;
+            $('optAICodex').checked = !!s.codexEnabled;
+            document.querySelectorAll('#aiResetFmt .opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.resetTimeFormat); });
+            document.querySelectorAll('#aiCompactDisp .opt').forEach(function(b){ b.classList.toggle('active', b.dataset.value === s.compactDisplay); });
+            document.querySelectorAll('#aiSplitDays .opt').forEach(function(b){ b.classList.toggle('active', Number(b.dataset.value) === s.traySplitDays); });
+            // トレイに出すサービス: 両方有効なときだけ選べる（片方だけなら有効な側に固定）
+            const both = !!(s.claudeEnabled && s.codexEnabled);
+            document.querySelectorAll('#aiTrayProv .opt').forEach(function(b){
+                b.classList.toggle('active', b.dataset.value === s.trayProvider);
+                b.classList.toggle('disabled', !both);
+            });
+            const setNum = function(id, v){ const el = $(id); if (document.activeElement !== el) el.value = v; };
+            setNum('optAIUsagePoll', s.usagePollSeconds);
+            setNum('optAIStatusPoll', s.statusPollSeconds);
+            $('optAINotifyUsage').checked = !!s.notifyUsage;
+            $('optAINotifyOverage').checked = !!s.notifyOverage;
+            $('optAINotifyStatus').checked = !!s.notifyStatus;
+            // ログアウトは、未ログイン（ログインボタンが区画に出ている）のとき以外は常に出す。
+            // ok のときだけにすると、取得タイムアウト（network_error）や起動直後の init で
+            // 止まったときに、認証データを消して入れ直す手段が無くなる。
+            const showClaude = s.enabled && s.claudeEnabled && (u.claude || {}).authState !== 'needs_login';
+            const showCodex = s.enabled && s.codexEnabled && (u.codex || {}).authState !== 'needs_login';
+            $('aiAcctClaude').style.display = showClaude ? '' : 'none';
+            $('aiAcctCodex').style.display = showCodex ? '' : 'none';
+            $('aiAcctCard').style.display = (showClaude || showCodex) ? '' : 'none';
+        }
+        [['optAIEnabled', 'enabled'], ['optAIClaude', 'claudeEnabled'], ['optAICodex', 'codexEnabled'],
+         ['optAINotifyUsage', 'notifyUsage'], ['optAINotifyOverage', 'notifyOverage'], ['optAINotifyStatus', 'notifyStatus']].forEach(function(pair){
+            $(pair[0]).addEventListener('change', function(){
+                const o = {}; o[pair[1]] = this.checked;
+                aiSetOption(o);
+            });
+        });
+        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds']].forEach(function(pair){
+            $(pair[0]).addEventListener('change', function(){
+                const o = {}; o[pair[1]] = Number(this.value) || 0;
+                aiSetOption(o);   // 範囲外はサーバー側で矯正され、応答で表示が戻る
+            });
+        });
+        [['aiResetFmt', 'resetTimeFormat', false], ['aiCompactDisp', 'compactDisplay', false], ['aiSplitDays', 'traySplitDays', true]].forEach(function(t){
+            $(t[0]).addEventListener('click', function(e){
+                const b = e.target.closest('.opt'); if (!b) return;
+                const o = {}; o[t[1]] = t[2] ? Number(b.dataset.value) : b.dataset.value;
+                aiSetOption(o);
+            });
+        });
+        $('aiTrayProv').addEventListener('click', function(e){
+            const b = e.target.closest('.opt'); if (!b || b.classList.contains('disabled')) return;
+            touch();
+            aiPost('/api/ai/provider', { provider: b.dataset.value }).then(function(){ return loadAI(); }).then(function(){ render(); changed(); }).catch(function(){});
+        });
+        document.querySelectorAll('[data-ai-logout]').forEach(function(b){
+            b.addEventListener('click', function(){
+                touch();
+                aiPost('/api/ai/logout?provider=' + b.dataset.aiLogout).then(function(){
+                    changed();
+                    setTimeout(function(){ loadAI().then(render); }, 1500);
+                }).catch(function(){});
+            });
+        });
+
+        // ---------- スタートメニュー / スタートアップ ----------
+        const scKinds = [
+            { kind: 'startmenu', field: 'startMenu', cb: 'optScStartMenu', state: 'scStartMenuState', warn: 'scStartMenuWarn', place: 'スタートメニュー' },
+            { kind: 'startup', field: 'startup', cb: 'optScStartup', state: 'scStartupState', warn: 'scStartupWarn', place: 'スタートアップ' }
+        ];
+        async function loadShortcuts(){
+            try {
+                const r = await apiFetch('/api/shortcuts');
+                if (r.ok) { shortcuts = await r.json(); showShortcutError(shortcuts.error || ''); }
+                else showShortcutError(await r.text());
+            } catch (e) { showShortcutError('ショートカットの状態を取得できません'); }
+        }
+        function showShortcutError(msg){
+            const el = $('scError');
+            el.textContent = msg || '';
+            el.hidden = !msg;
+        }
+        function renderShortcuts(){
+            if (!shortcuts) return;
+            $('scExe').textContent = shortcuts.exe || '---';
+            scKinds.forEach(function(k){
+                const st = shortcuts[k.field] || {};
+                $(k.cb).checked = !!st.exists;
+                const stateEl = $(k.state);
+                stateEl.textContent = st.exists ? '登録されています' : '登録されていません';
+                stateEl.className = 'sub-text' + (st.exists ? ' state-on' : '');
+                const warn = $(k.warn);
+                if (st.exists && st.mismatch) {
+                    warn.querySelector('.warn-text').textContent = st.target
+                        ? 'リンク先が今動いているアプリと違います: ' + st.target
+                        : 'ショートカットのリンク先を読み取れません';
+                    warn.hidden = false;
+                } else {
+                    warn.hidden = true;
+                }
+            });
+        }
+        // ショートカットを作成（上書き）または削除して、実際のファイルの状態に合わせて画面を直す。
+        // 失敗したらチェックも元に戻り、理由を出す。
+        async function setShortcut(k, enable, busyEl){
+            const verb = enable ? '作成' : '削除';
+            touch();
+            busyEl.disabled = true;
+            let errMsg = '';
+            try {
+                const r = await apiFetch('/api/shortcuts/set?kind=' + k.kind + '&enable=' + (enable ? 'true' : 'false'), { method: 'POST' });
+                if (!r.ok) errMsg = k.place + 'のショートカットを' + verb + 'できません: ' + (await r.text()).trim();
+            } catch (e) {
+                errMsg = k.place + 'のショートカットを' + verb + 'できません';
+            }
+            await loadShortcuts();
+            renderShortcuts();
+            showShortcutError(errMsg);
+            busyEl.disabled = false;
+        }
+        scKinds.forEach(function(k){
+            $(k.cb).addEventListener('change', function(){ setShortcut(k, this.checked, this); });
+            // リンク先が違うショートカットを、今動いているアプリを指すように上書きする
+            document.querySelector('[data-sc-update="' + k.kind + '"]').addEventListener('click', function(){ setShortcut(k, true, this); });
+        });
+
+        // ---------- ページ切り替え ----------
+        document.querySelectorAll('.nav-item').forEach(function(b){
+            b.addEventListener('click', function(){
+                document.querySelectorAll('.nav-item').forEach(function(x){ x.classList.toggle('active', x === b); });
+                document.querySelectorAll('.panel').forEach(function(p){ p.classList.toggle('active', p.id === 'panel-' + b.dataset.panel); });
+                $('panel-' + b.dataset.panel).scrollIntoView({ block: 'start' });
+                document.querySelector('main').scrollTop = 0;
+            });
+        });
+        // Esc で閉じる
+        document.addEventListener('keydown', function(e){
+            if (e.key === 'Escape') apiFetch('/api/closesettings').catch(function(){});
+        });
+
+        // ---------- 読み込み ----------
+        function applySettings(s){
+            if (!s) return;
+            if (s.theme) settings.theme = s.theme;
+            if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
+            if (typeof s.powerMode === 'boolean') settings.powerMode = s.powerMode;
+            if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
+            if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
+            if (s.hidden) Object.assign(settings.hidden, s.hidden);
+            if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
+        }
+        async function fetchJSON(url){
+            try { const r = await apiFetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; }
+        }
+        // サーバーの状態を読み直して画面に反映する。読み込んでいる間にこちらで変更していたら、
+        // 古い値で上書きしないよう、結果を捨てる（フォーカスの mousedown で読み込みが始まり、続く
+        // クリックの変更より後に古い値が届くと、チェックが元に戻って見えるため）。
+        async function reloadAll(){
+            const r0 = rev;
+            const res = await Promise.all([fetchJSON('/api/settings'), fetchJSON('/api/ai/settings'), fetchJSON('/api/ai/usage'), fetchJSON('/api/shortcuts')]);
+            if (r0 !== rev) return;
+            applySettings(res[0]);
+            if (res[1]) ai.settings = res[1];
+            if (res[2]) ai.usage = res[2];
+            if (res[3]) { shortcuts = res[3]; showShortcutError(res[3].error || ''); }
+            render();
+        }
+        // ウィジェット本体で変えたもの（ピン留めなど）や、手で消したショートカットに追従するため、
+        // フォーカスを得るたびに読み直す
+        window.addEventListener('focus', function(){ reloadAll(); });
+
+        reloadAll().then(function(){
+            // 初回の描画が済んだ合図。Go 側が、非表示で作った窓をここで見せる。
+            apiFetch('/api/settingsready').catch(function(){});
+        });
+    </script>
+</body>
+</html>

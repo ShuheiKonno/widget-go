@@ -1,0 +1,87 @@
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"widget-go/shortcut"
+)
+
+func testShortcutService(t *testing.T) (*shortcutService, shortcut.Locations) {
+	t.Helper()
+	d := t.TempDir()
+	l := shortcut.Locations{Programs: filepath.Join(d, "Programs"), Startup: filepath.Join(d, "Programs", "Startup")}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &shortcutService{
+		locations: func() (shortcut.Locations, error) { return l, nil },
+		exe:       func() (string, error) { return exe, nil },
+	}, l
+}
+
+func doReq(h http.HandlerFunc, method, target string) (*httptest.ResponseRecorder, shortcutsResponse) {
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(method, target, nil))
+	var res shortcutsResponse
+	_ = json.NewDecoder(rec.Body).Decode(&res)
+	return rec, res
+}
+
+func TestShortcutsSetEnableDisable(t *testing.T) {
+	s, l := testShortcutService(t)
+
+	rec, res := doReq(s.handleStatus, http.MethodGet, "/api/shortcuts")
+	if rec.Code != http.StatusOK || res.StartMenu.Exists || res.Startup.Exists || res.Exe == "" {
+		t.Fatalf("最初は両方とも未登録のはず: code=%d %+v", rec.Code, res)
+	}
+
+	rec, res = doReq(s.handleSet, http.MethodPost, "/api/shortcuts/set?kind=startup&enable=true")
+	if rec.Code != http.StatusOK || !res.Startup.Exists || res.Startup.Mismatch || res.StartMenu.Exists {
+		t.Fatalf("startup だけ作られるはず: code=%d %+v", rec.Code, res)
+	}
+	if p, _ := l.Path(shortcut.Startup); !fileExists(p) {
+		t.Errorf("ファイルが無い: %s", p)
+	}
+
+	rec, res = doReq(s.handleSet, http.MethodPost, "/api/shortcuts/set?kind=startmenu&enable=true")
+	if rec.Code != http.StatusOK || !res.Startup.Exists || !res.StartMenu.Exists {
+		t.Fatalf("両方とも作られるはず: code=%d %+v", rec.Code, res)
+	}
+
+	rec, res = doReq(s.handleSet, http.MethodPost, "/api/shortcuts/set?kind=startup&enable=false")
+	if rec.Code != http.StatusOK || res.Startup.Exists || !res.StartMenu.Exists {
+		t.Fatalf("startup だけ消えるはず: code=%d %+v", rec.Code, res)
+	}
+	if p, _ := l.Path(shortcut.Startup); fileExists(p) {
+		t.Errorf("削除されていない: %s", p)
+	}
+}
+
+func TestShortcutsSetValidation(t *testing.T) {
+	s, _ := testShortcutService(t)
+	cases := []struct {
+		method, target string
+		want           int
+	}{
+		{http.MethodGet, "/api/shortcuts/set?kind=startup&enable=true", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/api/shortcuts/set?kind=desktop&enable=true", http.StatusBadRequest},
+		{http.MethodPost, "/api/shortcuts/set?kind=startup&enable=yes", http.StatusBadRequest},
+		{http.MethodPost, "/api/shortcuts/set?kind=startup", http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		if rec, _ := doReq(s.handleSet, c.method, c.target); rec.Code != c.want {
+			t.Errorf("%s %s: code=%d, want %d", c.method, c.target, rec.Code, c.want)
+		}
+	}
+}
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}

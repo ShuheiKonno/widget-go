@@ -1,0 +1,250 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+	"unsafe"
+
+	"widget-go/aiusage"
+
+	"github.com/jchv/go-webview2"
+)
+
+// 設定は別ウィンドウ（ui/settings.html、/settings）で開く。メインのウィジェットは狭いので、
+// 広い画面で設定できるようにする。ウィンドウはメインと同じ UI スレッド・同じ Run ループの上に
+// 作る（aiusage の補助ウィンドウと同じ作り）。閉じると破棄してメモリを解放し、開くたびに作り直す。
+//
+// 作成直後の表示でちらつかないよう（docs/startup-flicker.md）、非表示で作り、位置を決めて完全な透明で
+// 表示状態にし、ページの準備完了（/api/settingsready）かタイマーで見せる。
+
+const (
+	settingsTitle     = "設定 - システムモニター"
+	settingsWidth     = 920 // 論理 px
+	settingsHeight    = 780
+	settingsRevealMax = 3 * time.Second // ページの準備完了が来なくても、見せるまでの上限
+
+	wmNCDestroy  = 0x0082
+	dwmwaDarkMod = 20 // DWMWA_USE_IMMERSIVE_DARK_MODE
+)
+
+var (
+	// GWLP_WNDPROC。定数にすると uintptr への変換でオーバーフローになるため var で持つ。
+	gwlpWndProcIdx = int32(-4)
+
+	// serverPort と webviewDataPath は main() が決める。設定ウィンドウの生成に使う。
+	serverPort      int
+	webviewDataPath string
+
+	settingsWin settingsWindow
+
+	procSetWindowLongPtr = user32.NewProc("SetWindowLongPtrW")
+	procCallWindowProc   = user32.NewProc("CallWindowProcW")
+
+	settingsWndProcCallback = syscall.NewCallback(settingsWndProc)
+)
+
+type settingsWindow struct {
+	mu       sync.Mutex
+	inst     webview2.WebView
+	hwnd     uintptr
+	revealed bool
+	orig     atomic.Uintptr // サブクラス化前のウィンドウプロシージャ
+}
+
+// openSettingsWindow は設定ウィンドウを開く（開いていれば前面に出す）。どの goroutine からでも呼べる。
+func openSettingsWindow() { dispatchUI(settingsWin.open) }
+
+// closeSettingsWindow は設定ウィンドウを閉じる。どの goroutine からでも呼べる。
+func closeSettingsWindow() {
+	dispatchUI(func() {
+		s := &settingsWin
+		s.mu.Lock()
+		hwnd := s.hwnd
+		s.mu.Unlock()
+		if hwnd != 0 {
+			procPostMessageW.Call(hwnd, WM_CLOSE, 0, 0)
+		}
+	})
+}
+
+// open は UI スレッドで呼ぶこと。
+func (s *settingsWindow) open() {
+	s.mu.Lock()
+	hwnd, has := s.hwnd, s.inst != nil
+	revealed := s.revealed
+	s.mu.Unlock()
+	if has {
+		// 見せる前（準備中）に押し直されても、何もしない。見せた後なら前面に出す。
+		if revealed {
+			raiseWindow(hwnd)
+		}
+		return
+	}
+
+	scale := getWindowDpiScale()
+	x, y, w, h := settingsWindowRect(scale)
+	inst := webview2.NewWithOptions(webview2.WebViewOptions{
+		Debug:    false,
+		DataPath: webviewDataPath,
+		WindowOptions: webview2.WindowOptions{
+			Title:  settingsTitle,
+			Width:  uint(w),
+			Height: uint(h),
+			Hidden: true,
+		},
+	})
+	if inst == nil {
+		aiusage.Logf("settings window: WebView の生成に失敗しました")
+		return
+	}
+	hwnd = uintptr(inst.Window())
+
+	s.mu.Lock()
+	s.inst, s.hwnd, s.revealed = inst, hwnd, false
+	s.mu.Unlock()
+
+	// go-webview2 は WM_DESTROY で PostQuitMessage を呼び、メインを含むアプリ全体を終了させる。
+	// サブクラス化して握りつぶす（aiusage の補助ウィンドウと同じ）。
+	orig, _, _ := procSetWindowLongPtr.Call(hwnd, uintptr(gwlpWndProcIdx), settingsWndProcCallback)
+	s.orig.Store(orig)
+
+	applySettingsWindowTheme(hwnd)
+	procSetWindowPos.Call(hwnd, 0, uintptr(uint32(x)), uintptr(uint32(y)), uintptr(w), uintptr(h), SWP_NOZORDER)
+	showTransparent(hwnd)
+	inst.Navigate(fmt.Sprintf("http://127.0.0.1:%d/settings", serverPort))
+	// このウィンドウ（hwnd）にだけ効くタイマー。閉じてすぐ開き直したとき、前のタイマーが
+	// 読み込み前の新しいウィンドウを見せてしまわないようにする。
+	time.AfterFunc(settingsRevealMax, func() { s.revealWindow(hwnd) })
+
+	// 生成中（Embed の入れ子メッセージループの間）に積まれた Dispatch は、次に誰かが
+	// Dispatch を積むまで止まる。空の Dispatch を 1 回積んで掃き出す。
+	dispatchUI(func() {})
+}
+
+// reveal は、透明にしておいた現在の設定ウィンドウを見せて前面に出す。1 回だけ。どの goroutine からでも呼べる。
+// ページの準備完了（/api/settingsready）から呼ぶ。
+func (s *settingsWindow) reveal() { s.revealWindow(0) }
+
+// revealWindow は reveal の本体。want が 0 以外なら、現在のウィンドウがそのウィンドウのときだけ見せる
+// （タイマーが、閉じて開き直した別のウィンドウを見せないため）。
+func (s *settingsWindow) revealWindow(want uintptr) {
+	dispatchUI(func() {
+		s.mu.Lock()
+		hwnd, revealed := s.hwnd, s.revealed
+		if hwnd != 0 && (want == 0 || want == hwnd) {
+			s.revealed = true
+		}
+		s.mu.Unlock()
+		if hwnd == 0 || revealed || (want != 0 && want != hwnd) {
+			return
+		}
+		clearLayered(hwnd)
+		raiseWindow(hwnd)
+	})
+}
+
+// onDestroyed はウィンドウが破棄された後（WM_NCDESTROY）に、状態を片づける。
+func (s *settingsWindow) onDestroyed() {
+	s.mu.Lock()
+	s.inst, s.hwnd, s.revealed = nil, 0, false
+	s.mu.Unlock()
+}
+
+func (s *settingsWindow) currentHwnd() uintptr {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hwnd
+}
+
+// settingsWndProc は設定ウィンドウのサブクラス化プロシージャ。
+//   - WM_DESTROY: 握りつぶす（go-webview2 が PostQuitMessage を呼び、アプリ全体が終了するため）。
+//   - WM_NCDESTROY: 破棄が済んだので、状態を片づけて元のプロシージャへ進む。
+//
+// × で閉じたとき（WM_CLOSE）は、go-webview2 の本来の処理（DestroyWindow）に任せる。
+func settingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
+	switch msg {
+	case WM_DESTROY:
+		return 0
+	case wmNCDestroy:
+		settingsWin.onDestroyed()
+	}
+	r, _, _ := procCallWindowProc.Call(settingsWin.orig.Load(), hwnd, msg, wParam, lParam)
+	return r
+}
+
+func raiseWindow(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	if iconic, _, _ := procIsIconic.Call(hwnd); iconic != 0 {
+		procShowWindow.Call(hwnd, SW_RESTORE)
+	}
+	procSetForegroundWindow.Call(hwnd)
+}
+
+// settingsWindowRect は、ウィジェットがあるモニタの作業領域の中央に置く設定ウィンドウの位置と大きさ
+// （物理 px）。作業領域より大きくならないようにする。
+func settingsWindowRect(scale float64) (x, y, w, h int32) {
+	w = int32(math.Round(settingsWidth * scale))
+	h = int32(math.Round(settingsHeight * scale))
+	work := RECT{Left: 0, Top: 0, Right: int32(math.Round(1920 * scale)), Bottom: int32(math.Round(1080 * scale))}
+	if main := windowHandle.Load(); main != 0 {
+		if hmon, _, _ := procMonitorFromWindow.Call(main, MONITOR_DEFAULTTONEAREST); hmon != 0 {
+			var mi MONITORINFO
+			mi.CbSize = uint32(unsafe.Sizeof(mi))
+			if ok, _, _ := procGetMonitorInfoW.Call(hmon, uintptr(unsafe.Pointer(&mi))); ok != 0 {
+				work = mi.RcWork
+			}
+		}
+	}
+	return centerInWork(work, w, h, int32(math.Round(16*scale)))
+}
+
+// centerInWork は work の中央に w×h を置く。work からはみ出す場合は、margin を残して縮める。
+func centerInWork(work RECT, w, h, margin int32) (x, y, rw, rh int32) {
+	ww, wh := work.Right-work.Left, work.Bottom-work.Top
+	rw, rh = w, h
+	if rw > ww-2*margin {
+		rw = ww - 2*margin
+	}
+	if rh > wh-2*margin {
+		rh = wh - 2*margin
+	}
+	x = work.Left + (ww-rw)/2
+	y = work.Top + (wh-rh)/2
+	return
+}
+
+// settingsDarkTitleBar は、設定ウィンドウのタイトルバーをダークにするか。
+// テーマ（"dark" | "light" | "system"）に従い、"system" は Windows のアプリのテーマに合わせる。
+func settingsDarkTitleBar(theme string, systemLight bool) bool {
+	return startupBackground(theme, systemLight) == startupBgDark
+}
+
+// applySettingsWindowTheme はタイトルバーをダーク / ライトにする。UI スレッドで呼ぶこと。
+func applySettingsWindowTheme(hwnd uintptr) {
+	if hwnd == 0 {
+		return
+	}
+	dark := int32(0)
+	if settingsDarkTitleBar(snapshotConfig().Theme, systemUsesLightTheme()) {
+		dark = 1
+	}
+	procDwmSetWindowAttribute.Call(hwnd, dwmwaDarkMod, uintptr(unsafe.Pointer(&dark)), unsafe.Sizeof(dark))
+}
+
+// notifyMainSettingsChanged は、設定ウィンドウでの変更をメインのウィジェットへ知らせる。
+// メイン側は /api/settings を読み直して反映する（window.__settingsChanged）。
+// あわせて、テーマが変わっているかもしれないので、設定ウィンドウのタイトルバーも合わせる。
+func notifyMainSettingsChanged() {
+	dispatchUI(func() {
+		if p := mainWebView.Load(); p != nil {
+			(*p).Eval("window.__settingsChanged&&window.__settingsChanged()")
+		}
+		applySettingsWindowTheme(settingsWin.currentHwnd())
+	})
+}
