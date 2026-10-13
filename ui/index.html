@@ -385,6 +385,7 @@
                 <div class="flip-face flip-front">
                     <div class="section-header"><span class="section-icon" id="conn-icon">📶</span><span class="section-title" id="conn-title">Wi-Fi</span><span class="section-value wifi-compact-value" id="wifi-compact">---</span><button class="chev" data-sec="network" title="折りたたむ">▼</button></div>
                     <div class="wifi-info">
+                        <div class="model-name is-empty" id="net-model"></div>
                         <div class="wifi-row wifi-detail"><span class="wifi-label" id="wifi-ssid-label">SSID</span><span class="wifi-value" id="wifi-ssid">---</span></div>
                         <div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value" id="wifi-band">---</span></div>
                         <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">規格</span><span class="wifi-value" id="wifi-type">---</span></div>
@@ -1458,6 +1459,7 @@
                     connSection.classList.remove('ethernet-mode');
                     connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; connTitle.dataset.compact='Wi-Fi'; ssidLabel.textContent='SSID';
                     ssid.textContent=data.WiFi.SSID; ssid.className='wifi-value wifi-connected';
+                    setModelName('net-model', data.WiFi.Description);
                     let band=data.WiFi.Band; if(data.WiFi.Channel>0){ band+=' (Ch '+data.WiFi.Channel+')'; }
                     document.getElementById('wifi-band').textContent=band;
                     document.getElementById('wifi-type').textContent=wifiStandards[data.WiFi.Type]||data.WiFi.Type;
@@ -1468,6 +1470,7 @@
                     connSection.classList.add('ethernet-mode');
                     connIcon.textContent='🔌'; connTitle.textContent='Ethernet'; connTitle.dataset.compact='LAN'; ssidLabel.textContent='アダプタ';
                     ssid.textContent=data.Ethernet.Name; ssid.className='wifi-value wifi-connected';
+                    setModelName('net-model', data.Ethernet.Description);
                     const spdStr=formatLinkSpeed(data.Ethernet.LinkSpeedBps);
                     document.getElementById('eth-speed').textContent=spdStr;
                     document.getElementById('wifi-compact').textContent=(spdStr==='---')?'Ethernet':spdStr;
@@ -1475,6 +1478,7 @@
                     connSection.classList.remove('ethernet-mode');
                     connIcon.textContent='📶'; connTitle.textContent='Wi-Fi'; connTitle.dataset.compact='Wi-Fi'; ssidLabel.textContent='SSID';
                     ssid.textContent='未接続'; ssid.className='wifi-value wifi-disconnected';
+                    setModelName('net-model', '');
                     document.getElementById('wifi-band').textContent='---';
                     document.getElementById('wifi-type').textContent='---';
                     document.getElementById('wifi-signal').textContent='---';
