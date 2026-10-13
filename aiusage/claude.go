@@ -95,6 +95,7 @@ func mapOverage(o *rawOveragePayload) *OverageInfo {
 
 // deriveSubscriptionType は capabilities と rate_limit_tier から表示用文字列を導く。
 // 例: ["claude_max", "chat"] + "default_claude_max_20x" → "Claude Max 20x"
+// Team 組織は capabilities に "raven" を持つ (rate_limit_tier は "default_raven")。
 func deriveSubscriptionType(caps []string, tier string) string {
 	has := func(s string) bool {
 		for _, c := range caps {
@@ -110,13 +111,17 @@ func deriveSubscriptionType(caps []string, tier string) string {
 		base = "Claude Max"
 	case has("claude_pro"):
 		base = "Claude Pro"
-	case has("claude_team") || has("team"):
+	case has("claude_team") || has("team") || has("raven"):
 		base = "Claude Team"
 	case has("api"), has("api_individual"):
 		base = "API"
 	default:
-		if len(caps) > 0 {
-			base = caps[0]
+		// プランを表さない capability ("chat" や "customer_terms:*") は表示しない。
+		for _, c := range caps {
+			if c != "chat" && !strings.HasPrefix(c, "customer_terms:") {
+				base = c
+				break
+			}
 		}
 	}
 	if suffix := extractTierMultiplier(tier); suffix != "" {
