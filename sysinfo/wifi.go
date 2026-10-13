@@ -9,13 +9,14 @@ import (
 )
 
 type WiFiInfo struct {
-	SSID      string
-	BSSID     string
-	Band      string
-	Type      string
-	Signal    int
-	Channel   int
-	Connected bool
+	SSID        string
+	BSSID       string
+	Band        string
+	Type        string
+	Description string // アダプタのモデル名 (netsh の "説明" / "Description" 行)
+	Signal      int
+	Channel     int
+	Connected   bool
 }
 
 func GetWiFiInfo() (*WiFiInfo, error) {
@@ -74,6 +75,14 @@ func parseWiFiInfo(output []byte) *WiFiInfo {
 				if match := bssidRe.FindStringSubmatch(trimmed); len(match) > 1 {
 					info.BSSID = strings.TrimSpace(match[1])
 				}
+			}
+			continue
+		}
+
+		// 説明 (Description) — アダプタのモデル名。
+		if strings.HasPrefix(trimmed, "説明") || strings.HasPrefix(trimmed, "Description") {
+			if match := colonRe.FindStringSubmatch(trimmed); len(match) > 1 {
+				info.Description = strings.TrimSpace(match[1])
 			}
 			continue
 		}

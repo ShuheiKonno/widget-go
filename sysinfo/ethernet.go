@@ -9,6 +9,7 @@ import (
 
 type EthernetInfo struct {
 	Name         string
+	Description  string // アダプタのモデル名 (MIB_IF_ROW2.Description)
 	LinkSpeedBps uint64 // TransmitLinkSpeed (bits/sec). 取得失敗時は 0。
 	Connected    bool
 }
@@ -167,6 +168,7 @@ func GetEthernetInfo() (*EthernetInfo, error) {
 			}
 			return &EthernetInfo{
 				Name:         ifc.Name,
+				Description:  info.Description,
 				LinkSpeedBps: info.LinkSpeedBps,
 				Connected:    true,
 			}, nil

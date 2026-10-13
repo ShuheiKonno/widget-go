@@ -69,6 +69,7 @@ func TestParseWiFiInfo(t *testing.T) {
 		wantCh     int
 		wantSignal int
 		wantType   string
+		wantDesc   string
 	}{
 		{
 			name:       "日本語ロケール・接続",
@@ -78,6 +79,7 @@ func TestParseWiFiInfo(t *testing.T) {
 			wantCh:     36,
 			wantSignal: 90,
 			wantType:   "802.11ax",
+			wantDesc:   "Intel(R) Wi-Fi 6E AX211 160MHz",
 		},
 		{
 			name:       "英語ロケール・接続",
@@ -87,6 +89,7 @@ func TestParseWiFiInfo(t *testing.T) {
 			wantCh:     36,
 			wantSignal: 90,
 			wantType:   "802.11ax",
+			wantDesc:   "Intel(R) Wi-Fi 6E AX211 160MHz",
 		},
 		{
 			name:       "バンド行なし・チャネル149から5GHzを推定",
@@ -135,6 +138,9 @@ func TestParseWiFiInfo(t *testing.T) {
 			}
 			if got.Type != tc.wantType {
 				t.Errorf("Type = %q, want %q", got.Type, tc.wantType)
+			}
+			if got.Description != tc.wantDesc {
+				t.Errorf("Description = %q, want %q", got.Description, tc.wantDesc)
 			}
 			if !got.Connected {
 				t.Error("Connected = false, want true")
