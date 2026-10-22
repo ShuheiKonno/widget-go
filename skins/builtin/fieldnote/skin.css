@@ -1,0 +1,143 @@
+/* スキン「計測票 FIELDNOTE」(fieldnote)。角丸のカードを、細い罫線でつながる一枚の紙に変える。
+   数値と目盛りを主役にし、区画には 01〜06 の番号を振る。セレクタはすべて body[data-skin="fieldnote"] から始める。 */
+
+/* ---- 変数: ダーク ---- */
+body[data-skin="fieldnote"] {
+    --bg-grad: linear-gradient(#152524, #152524);
+    --container-bg: rgba(21,37,36,.98);
+    --text-color: #e1eae4;
+    --muted-color: #a0b4ad;
+    --section-bg: transparent;
+    --section-border: #3b524c;
+    --section-title: #b4c8be;
+    --section-value: #a9dbc0;
+    --bar-track: #2e4540;
+    --core-track: #2e4540;
+    --net-canvas-bg: #1b302c;
+    --btn-bg: #2e4540;
+    --btn-bg-hover: #3e5c53;
+    --btn-color: #b4c8be;
+    --input-bg: #203a32;
+    --input-border: #49635a;
+    --claude-a: #d8b796; --claude-b: #d8b796; --codex-a: #a9dbc0; --codex-b: #a9dbc0;
+    --warn: #e8be71; --crit: #f69b8e; --ok: #a9dbc0;
+    /* 本体の新設変数 */
+    --core-bar-bg: rgba(169,219,192,.4);
+    --core-value-color: #e1eae4;
+    --core-value-shadow: 0 0 3px rgba(21,37,36,.98);
+    --memory-used-color: #a9dbc0;
+    --wifi-ok-color: #a9dbc0;
+    --wifi-ng-color: #f69b8e;
+    --gpu-fill-bg: #a9dbc0;
+    --npu-fill-bg: #a9dbc0;
+    --net-rx: #a9dbc0;
+    --net-rx-fill: rgba(169,219,192,0.12);
+    --net-tx: #a0b4ad;
+    --net-tx-fill: rgba(160,180,173,0.07);
+    --net-empty-color: #a0b4ad;
+}
+/* ---- 変数: ライト ---- */
+body[data-skin="fieldnote"].theme-light {
+    --bg-grad: linear-gradient(#f6f5ec, #f6f5ec);
+    --container-bg: rgba(246,245,236,.98);
+    --text-color: #253f38;
+    --muted-color: #61756b;
+    --section-bg: transparent;
+    --section-border: #c4cec0;
+    --section-title: #496356;
+    --section-value: #21654e;
+    --bar-track: #dce1d3;
+    --core-track: #e0e4d8;
+    --net-canvas-bg: #ebeee2;
+    --btn-bg: #e5e8da;
+    --btn-bg-hover: #d4ddcb;
+    --btn-color: #496356;
+    --input-bg: #eeefe5;
+    --input-border: #b4c1ae;
+    --claude-a: #876342; --claude-b: #876342; --codex-a: #21654e; --codex-b: #21654e;
+    --warn: #8f650f; --crit: #b54136; --ok: #21654e;
+    --core-bar-bg: rgba(33,101,78,.38);
+    --core-value-color: #253f38;
+    --core-value-shadow: 0 0 3px rgba(246,245,236,.98);
+    --memory-used-color: #21654e;
+    --wifi-ok-color: #21654e;
+    --wifi-ng-color: #b54136;
+    --gpu-fill-bg: #21654e;
+    --npu-fill-bg: #21654e;
+    --net-rx: #21654e;
+    --net-rx-fill: rgba(33,101,78,0.12);
+    --net-tx: #61756b;
+    --net-tx-fill: rgba(97,117,107,0.07);
+    --net-empty-color: #61756b;
+}
+
+/* ---- 紙（コンテナ）。左上に「計測票」の見出しを置く ---- */
+body[data-skin="fieldnote"] .container { border-radius: 2px; padding: 34px 9px 7px; border: 1px solid var(--section-border); }
+body[data-skin="fieldnote"] .container::before { content: '計測票'; position: absolute; top: 9px; left: 10px; color: var(--muted-color); font-size: 8px; letter-spacing: .15em; }
+body[data-skin="fieldnote"] .container.compact { padding: 28px 5px 5px; }
+body[data-skin="fieldnote"] .container.compact::before { content: '計'; left: 8px; top: 8px; font-size: 8px; }
+
+/* ---- 上部のボタン ---- */
+body[data-skin="fieldnote"] .top-btn { border-radius: 2px; }
+body[data-skin="fieldnote"] .pin-btn.active { background: var(--btn-bg); color: var(--section-value); outline: 1px solid var(--section-value); }
+body[data-skin="fieldnote"] .compact-btn.expanded { background: var(--section-value); color: var(--container-bg); }
+body[data-skin="fieldnote"] .compact-btn.expanded:hover { background: var(--section-value); filter: brightness(.9); }
+body[data-skin="fieldnote"] .ai-act:not(.quiet) { background: var(--section-value); color: var(--container-bg); border-radius: 2px; }
+body[data-skin="fieldnote"] .ai-act:not(.quiet):hover { background: var(--section-value); filter: brightness(.9); }
+
+/* ---- 区画: 角丸のカードをやめ、上罫線だけでつなぐ ---- */
+body[data-skin="fieldnote"] .section { border: 0; border-top: 1px solid var(--section-border); border-radius: 0; padding: 8px 4px 7px; margin: 0; }
+body[data-skin="fieldnote"] .wifi-section { padding: 0; }
+body[data-skin="fieldnote"] .flip-card > .flip-face { padding: 8px 4px 9px; border: 0; border-radius: 0; background: transparent; }
+body[data-skin="fieldnote"] .section-header { gap: 7px; }
+body[data-skin="fieldnote"] .chev { margin-left: 0; width: 14px; height: 14px; border-radius: 0; font-size: 8px; }
+/* 区画番号（既存の絵文字アイコンを隠し、data-sec ごとに 01〜06 を出す） */
+body[data-skin="fieldnote"] .section-icon { font-size: 0; margin-right: 0; color: var(--muted-color); }
+body[data-skin="fieldnote"] .section-icon::before { content: '00'; font: 9px Consolas, monospace; }
+body[data-skin="fieldnote"] [data-sec="cpu"] .section-icon::before { content: '01'; }
+body[data-skin="fieldnote"] [data-sec="memory"] .section-icon::before { content: '02'; }
+body[data-skin="fieldnote"] [data-sec="gpu"] .section-icon::before { content: '03'; }
+body[data-skin="fieldnote"] [data-sec="npu"] .section-icon::before { content: '04'; }
+body[data-skin="fieldnote"] [data-sec="network"] .section-icon::before { content: '05'; }
+body[data-skin="fieldnote"] [data-sec="ai"] .section-icon::before { content: '06'; }
+body[data-skin="fieldnote"] .section-value { font-weight: 400; font-size: 17px; letter-spacing: -.04em; }
+
+/* ---- 計測バー: 直角にして、20% ごとの目盛りを入れる ---- */
+body[data-skin="fieldnote"] .progress-bar,
+body[data-skin="fieldnote"] .progress-fill,
+body[data-skin="fieldnote"] .core-bar-container,
+body[data-skin="fieldnote"] .core-bar,
+body[data-skin="fieldnote"] .net-canvas { border-radius: 0; }
+body[data-skin="fieldnote"] .cpu-fill,
+body[data-skin="fieldnote"] .memory-fill { background: var(--section-value); }
+body[data-skin="fieldnote"] .progress-bar { background-image: repeating-linear-gradient(90deg, transparent 0 19%, var(--section-border) 19% 20%); }
+body[data-skin="fieldnote"] .plan,
+body[data-skin="fieldnote"] .chip { border-radius: 0; }
+body[data-skin="fieldnote"] .prov-name i,
+body[data-skin="fieldnote"] .ai-crow i { border-radius: 0; }
+/* 電源モードのスライダーは、状態ごとの色分けをやめて区画の値の色にそろえる */
+body[data-skin="fieldnote"] .power-mode,
+body[data-skin="fieldnote"] .power-mode.pm-saver,
+body[data-skin="fieldnote"] .power-mode.pm-balanced,
+body[data-skin="fieldnote"] .power-mode.pm-best { --pm-color: var(--section-value); --pm-text: var(--section-value); }
+
+/* ---- AI 使用量（展開）---- */
+body[data-skin="fieldnote"] .ai-crow { border-radius: 0; }
+
+/* ---- コンパクト（幅 130px）: 本体の .compact ルールに負けないよう、対応する規則を書き直す ---- */
+body[data-skin="fieldnote"] .compact .section,
+body[data-skin="fieldnote"] .compact .flip-card > .flip-face { padding: 7px 3px; margin: 0; }
+body[data-skin="fieldnote"] .compact .wifi-section { padding: 0; }
+body[data-skin="fieldnote"] .compact .section-header { gap: 3px; }
+body[data-skin="fieldnote"] .compact .section-title { font-size: 10px; }
+body[data-skin="fieldnote"] .compact .section-title[data-compact] { font-size: 0; }
+body[data-skin="fieldnote"] .compact .section-title[data-compact]::before { font-size: 10px; }
+body[data-skin="fieldnote"] .compact .section-value { font-size: 13px; }
+body[data-skin="fieldnote"] .compact .wifi-compact-value { font-size: 10px; }
+/* AI 使用量: 見出し（06 AI 使用量）を出し、各行は枠のない 1 行にする */
+body[data-skin="fieldnote"] .compact .ai-section > .section-header { display: flex; margin-bottom: 5px; }
+body[data-skin="fieldnote"] .compact .ai-section .ai-compact { gap: 6px; }
+body[data-skin="fieldnote"] .compact .ai-section .ai-crow { background: transparent; border: 0; border-radius: 0; padding: 0; gap: 3px; }
+body[data-skin="fieldnote"] .compact .ai-crow i { width: 4px; height: 4px; margin-right: 0; }
+body[data-skin="fieldnote"] .compact .ai-section .ai-cname { font-size: 10px; }
+body[data-skin="fieldnote"] .compact .ai-section .ai-cval { font-weight: 400; }

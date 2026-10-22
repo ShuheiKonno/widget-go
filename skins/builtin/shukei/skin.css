@@ -1,0 +1,194 @@
+/* スキン「朱罫帳」(shukei)。帳簿の朱罫をモチーフにした、静かで文字中心のデザイン。
+   ダーク = 墨 / ライト = 和紙。セレクタはすべて body[data-skin="shukei"] から始める。 */
+
+/* ---- 変数: ダーク（墨）---- */
+body[data-skin="shukei"] {
+    --bg-grad: none;
+    --container-bg: rgba(24,21,17,0.97);
+    --text-color: #eee6d6;
+    --muted-color: #a89f8d;
+    --section-bg: transparent;
+    --section-border: rgba(240,122,92,0.34);
+    --section-title: #eee6d6;
+    --section-value: #f2805f;
+    --bar-track: rgba(238,230,214,0.13);
+    --core-track: rgba(238,230,214,0.09);
+    --net-canvas-bg: transparent;
+    --btn-bg: transparent;
+    --btn-bg-hover: rgba(238,230,214,0.14);
+    --btn-color: #cfc6b4;
+    --input-bg: rgba(238,230,214,0.05);
+    --input-border: rgba(238,230,214,0.16);
+    --claude-a: #ec9770; --claude-b: #dd6d4e; --codex-a: #92c7b8; --codex-b: #5fa897;
+    --warn: #e8b13a; --crit: #e5533d; --ok: #9ccf8f;
+    --chip-warn-bg: rgba(232,177,58,.14); --chip-warn-fg: #efc45e;
+    --chip-login-bg: rgba(111,159,203,.16); --chip-login-fg: #a8c8e6;
+    /* 本体の新設変数 */
+    --core-bar-bg: #d65a40;
+    --core-value-color: #fff;
+    --core-value-shadow: none;
+    --memory-used-color: #8db7da;
+    --wifi-ok-color: #9ccf8f;
+    --wifi-ng-color: #e5533d;
+    --gpu-fill-bg: #5bbfb3;
+    --npu-fill-bg: #e8b04a;
+    --net-rx: #8fc4e0;
+    --net-rx-fill: rgba(143,196,224,0.22);
+    --net-tx: #f2805f;
+    --net-tx-fill: rgba(242,128,95,0.22);
+    --net-empty-color: rgba(238,230,214,0.4);
+    /* このスキン専用 */
+    --accent: #ef6b4d;
+    --accent-fg: #fff;
+    --pin-active: #ef6b4d;
+    --fill-cpu: #e8654a;
+    --fill-mem: #6f9fcb;
+    --fill-clock: #a9b4b6;
+    --fill-clock-low: #8cc27c;
+    --fill-clock-high: #f0953c;
+    --font-title: 'Yu Mincho','YuMincho','Hiragino Mincho ProN','MS PMincho',serif;
+    --font-num: 'Cambria','Yu Mincho','YuMincho',serif;
+    --radius-section: 0px;
+    --radius-bar: 1px;
+    --radius-btn: 3px;
+    --bar-gap: 2px;
+}
+/* ---- 変数: ライト（和紙）---- */
+body[data-skin="shukei"].theme-light {
+    --bg-grad: none;
+    --container-bg: rgba(244,238,224,0.97);
+    --text-color: #2b241b;
+    --muted-color: #7a6f5c;
+    --section-bg: transparent;
+    --section-border: rgba(184,52,26,0.32);
+    --section-title: #2b241b;
+    --section-value: #b8341a;
+    --bar-track: rgba(43,36,27,0.13);
+    --core-track: rgba(43,36,27,0.08);
+    --net-canvas-bg: transparent;
+    --btn-bg: transparent;
+    --btn-bg-hover: rgba(43,36,27,0.12);
+    --btn-color: #5a4f3c;
+    --input-bg: rgba(43,36,27,0.04);
+    --input-border: rgba(43,36,27,0.18);
+    --claude-a: #d9774f; --claude-b: #bd4a33; --codex-a: #4fa08e; --codex-b: #37806f;
+    --warn: #b8860b; --crit: #c0281b; --ok: #3d7d3a;
+    --chip-warn-bg: rgba(184,134,11,.16); --chip-warn-fg: #7a5900;
+    --chip-login-bg: rgba(47,95,138,.12); --chip-login-fg: #2f5f8a;
+    --core-bar-bg: rgba(196,58,30,0.55);
+    --core-value-color: #2b241b;
+    --core-value-shadow: none;
+    --memory-used-color: #2f5f8a;
+    --wifi-ok-color: #3d7d3a;
+    --wifi-ng-color: #c0281b;
+    --gpu-fill-bg: #1f7f78;
+    --npu-fill-bg: #b57a12;
+    --net-rx: #2f6f8f;
+    --net-rx-fill: rgba(47,111,143,0.22);
+    --net-tx: #c43a1e;
+    --net-tx-fill: rgba(196,58,30,0.22);
+    --net-empty-color: rgba(43,36,27,0.45);
+    --accent: #c43a1e;
+    --accent-fg: #fff;
+    --pin-active: #c43a1e;
+    --fill-cpu: #c43a1e;
+    --fill-mem: #2f5f8a;
+    --fill-clock: #6b7a80;
+    --fill-clock-low: #5e8f4e;
+    --fill-clock-high: #d9650f;
+    --font-title: 'Yu Mincho','YuMincho','Hiragino Mincho ProN','MS PMincho',serif;
+    --font-num: 'Cambria','Yu Mincho','YuMincho',serif;
+    --radius-section: 0px;
+    --radius-bar: 1px;
+    --radius-btn: 3px;
+    --bar-gap: 2px;
+}
+
+/* ---- 色・角丸・書体を、変数を使わない本体の規則へ流し込む ---- */
+body[data-skin="shukei"] .top-btn { border-radius: var(--radius-btn); }
+body[data-skin="shukei"] .pin-btn.active { background: var(--pin-active); }
+body[data-skin="shukei"] .compact-btn.expanded { background: var(--accent); color: var(--accent-fg); }
+body[data-skin="shukei"] .compact-btn.expanded:hover { background: var(--accent); filter: brightness(.9); }
+body[data-skin="shukei"] .ai-act:not(.quiet) { background: var(--accent); color: var(--accent-fg); }
+body[data-skin="shukei"] .ai-act:not(.quiet):hover { background: var(--accent); filter: brightness(.9); }
+body[data-skin="shukei"] .section,
+body[data-skin="shukei"] .flip-card > .flip-face,
+body[data-skin="shukei"] .ai-crow { border-radius: var(--radius-section); }
+body[data-skin="shukei"] .progress-bar,
+body[data-skin="shukei"] .progress-fill { border-radius: var(--radius-bar); }
+body[data-skin="shukei"] .cpu-fill { background: var(--fill-cpu); }
+body[data-skin="shukei"] .memory-fill { background: var(--fill-mem); }
+body[data-skin="shukei"] .clock-fill { background: var(--fill-clock); }
+body[data-skin="shukei"] .clock-fill.clk-low { background: var(--fill-clock-low); }
+body[data-skin="shukei"] .clock-fill.clk-high { background: var(--fill-clock-high); }
+body[data-skin="shukei"] .section-title,
+body[data-skin="shukei"] .prov-name,
+body[data-skin="shukei"] .ai-cname { font-family: var(--font-title); }
+body[data-skin="shukei"] .section-value,
+body[data-skin="shukei"] .clock-value,
+body[data-skin="shukei"] .clock-base,
+body[data-skin="shukei"] .memory-details,
+body[data-skin="shukei"] .wifi-value,
+body[data-skin="shukei"] .net-legend,
+body[data-skin="shukei"] .ai-cval,
+body[data-skin="shukei"] .wrow .pct,
+body[data-skin="shukei"] .wreset,
+body[data-skin="shukei"] .extra { font-family: var(--font-num); }
+
+/* ---- 構造の上書き ---- */
+/* 1) カードの箱をやめて、朱の罫線で区切る */
+body[data-skin="shukei"] .section { border-width: 0 0 1px; }
+body[data-skin="shukei"] .section:last-child,
+body[data-skin="shukei"] .section.last-visible { border-bottom-color: transparent; }
+body[data-skin="shukei"] .flip-card > .flip-face { border-width: 0 0 1px; }
+body[data-skin="shukei"] .compact .ai-section .ai-crow { border-width: 0 0 1px; }
+/* 2) 天に朱の一本線（コンテナ内側。高さは変えない） */
+body[data-skin="shukei"] .container::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--accent); z-index: 101; }
+/* 3) 絵文字アイコン → 判子（漢字 1 字）。幅は絵文字とほぼ同じで、コンパクトでも溢れない */
+body[data-skin="shukei"] .section-icon { font-size: 0; width: 15px; height: 15px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--accent); border-radius: 2px; color: var(--accent); margin-right: 6px; }
+body[data-skin="shukei"] .compact .section-icon { width: 13px; height: 13px; margin-right: 4px; }
+body[data-skin="shukei"] .section-icon::before { content: '印'; font-family: var(--font-title); font-size: 10px; font-weight: 700; line-height: 1; }
+body[data-skin="shukei"] .compact .section-icon::before { font-size: 9px; }
+body[data-skin="shukei"] [data-sec="cpu"] .section-icon::before { content: '算'; }
+body[data-skin="shukei"] [data-sec="memory"] .section-icon::before { content: '記'; }
+body[data-skin="shukei"] [data-sec="gpu"] .section-icon::before { content: '画'; }
+body[data-skin="shukei"] [data-sec="npu"] .section-icon::before { content: '脳'; }
+body[data-skin="shukei"] [data-sec="network"] .section-icon::before { content: '網'; }
+body[data-skin="shukei"] [data-sec="ai"] .section-icon::before { content: '智'; }
+/* 4) 見出しは明朝・字間少し開け。数値は Cambria（lining + tabular） */
+body[data-skin="shukei"] .section-title,
+body[data-skin="shukei"] .prov-name,
+body[data-skin="shukei"] .ai-cname { letter-spacing: .06em; }
+body[data-skin="shukei"] .section-value,
+body[data-skin="shukei"] .clock-value,
+body[data-skin="shukei"] .clock-base,
+body[data-skin="shukei"] .memory-details,
+body[data-skin="shukei"] .wrow .pct,
+body[data-skin="shukei"] .wreset,
+body[data-skin="shukei"] .extra,
+body[data-skin="shukei"] .net-legend,
+body[data-skin="shukei"] .ai-cval,
+body[data-skin="shukei"] .wifi-value { font-variant-numeric: lining-nums tabular-nums; }
+body[data-skin="shukei"] .section-value { font-size: 14px; }
+body[data-skin="shukei"] .compact .section-value { font-size: 12px; }
+body[data-skin="shukei"] .compact .section-title { letter-spacing: .02em; margin-right: 4px; }
+body[data-skin="shukei"] .compact .wifi-compact-value { font-size: 10.5px; font-weight: 600; letter-spacing: -.02em; }
+/* 5) バーは細い罫線＋4 分割の目盛（--bar-gap が 0 のときは何も描かない） */
+body[data-skin="shukei"] .progress-bar::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(90deg, transparent 0, transparent calc(25% - var(--bar-gap)), var(--container-bg) calc(25% - var(--bar-gap)), var(--container-bg) 25%); }
+body[data-skin="shukei"] .progress-bar:not(.clock-progress) { height: 4px; }
+body[data-skin="shukei"] .wrow .progress-bar { height: 5px; }
+/* 6) ネットワーク裏面のグラフは方眼紙（罫線のグリッド） */
+body[data-skin="shukei"] .net-canvas { border-radius: 0;
+    background:
+      repeating-linear-gradient(0deg, var(--bar-track) 0 1px, transparent 1px 25%),
+      repeating-linear-gradient(90deg, var(--bar-track) 0 1px, transparent 1px 12.5%); }
+/* 7) 電源モードのつまみは角つき（トラックの色は変えない） */
+body[data-skin="shukei"] .pm-slider::-webkit-slider-thumb { border-radius: 2px; width: 10px; }
+body[data-skin="shukei"] .pm-slider::-webkit-slider-runnable-track { border-radius: 0; height: 3px; }
+/* 8) コアの縦バー・チップの角も揃える */
+body[data-skin="shukei"] .core-bar-container,
+body[data-skin="shukei"] .core-bar { border-radius: 1px; }
+body[data-skin="shukei"] .plan,
+body[data-skin="shukei"] .chip { border-radius: 2px; }

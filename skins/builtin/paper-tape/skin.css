@@ -1,0 +1,477 @@
+/* ==========================================================================
+   Skin: 紙テープ / PAPER TAPE (id: paper-tape)
+   ========================================================================== */
+
+body[data-skin="paper-tape"] {
+    /* 地色・インク（夜の黒紙） */
+    --bg-grad: linear-gradient(180deg, #1e1914 0%, #1e1914 100%);
+    --container-bg: rgba(30, 25, 20, .97);
+    --text-color: #e9ddc9;
+    --muted-color: #a2907a;
+    --section-bg: rgba(233, 221, 201, .03);
+    --section-border: rgba(233, 221, 201, .14);
+    --section-title: #cdbb9f;
+    --section-value: #ff9366;
+    --bar-track: rgba(233, 221, 201, .10);
+    --core-track: rgba(233, 221, 201, .08);
+    --net-canvas-bg: rgba(0, 0, 0, .30);
+    --btn-bg: rgba(233, 221, 201, .07);
+    --btn-bg-hover: rgba(233, 221, 201, .16);
+    --btn-color: #b9a88f;
+    --input-bg: rgba(233, 221, 201, .04);
+    --input-border: rgba(233, 221, 201, .18);
+
+    /* AI（朱 = Claude / 藍 = Codex） */
+    --claude-a: #ff9b6a;
+    --claude-b: #d4532f;
+    --codex-a: #8fb3bd;
+    --codex-b: #3f6f7a;
+    --warn: #e8b64a;
+    --crit: #ef6a52;
+    --ok: #8fb3bd;
+    --chip-warn-bg: rgba(232, 182, 74, .12);
+    --chip-warn-fg: #e8c877;
+    --chip-login-bg: rgba(143, 179, 189, .14);
+    --chip-login-fg: #a8c9d2;
+
+    /* §4 本体新設 CSS 変数 */
+    --core-bar-bg: repeating-linear-gradient(0deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 5px), #ff9366;
+    --core-value-color: #fff;
+    --core-value-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+    --memory-used-color: #8fb3bd;
+    --wifi-ok-color: #8fb3bd;
+    --wifi-ng-color: #ef6a52;
+    --gpu-fill-bg: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px), #8fb3bd;
+    --npu-fill-bg: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px), #ff9366;
+    --net-rx: #8fb3bd;
+    --net-rx-fill: rgba(143, 179, 189, .20);
+    --net-tx: #ff9366;
+    --net-tx-fill: rgba(255, 147, 102, .16);
+    --net-empty-color: rgba(233, 221, 201, .45);
+
+    /* スキン固有 */
+    --paper-rule: rgba(233, 221, 201, .14);
+    --paper-rule-strong: rgba(233, 221, 201, .32);
+    --paper-accent: #ff9366;
+    --paper-ink-2: #8fb3bd;
+    --paper-grid: rgba(233, 221, 201, .045);
+    --paper-edge: rgba(233, 221, 201, .20);
+    --on-accent: #231a14;
+    --radius: 0px;
+    --font-mono: 'Consolas', 'Cascadia Mono', 'Courier New', monospace;
+}
+
+body[data-skin="paper-tape"].theme-light {
+    /* 地色・インク（生成りの紙） */
+    --bg-grad: linear-gradient(180deg, #f7f1e5 0%, #f7f1e5 100%);
+    --container-bg: rgba(247, 241, 229, .97);
+    --text-color: #2b241b;
+    --muted-color: #6f6250;
+    --section-bg: rgba(43, 36, 27, .025);
+    --section-border: rgba(43, 36, 27, .16);
+    --section-title: #4a3f30;
+    --section-value: #b03a1c;
+    --bar-track: rgba(43, 36, 27, .12);
+    --core-track: rgba(43, 36, 27, .09);
+    --net-canvas-bg: rgba(43, 36, 27, .05);
+    --btn-bg: rgba(43, 36, 27, .07);
+    --btn-bg-hover: rgba(43, 36, 27, .15);
+    --btn-color: #4a3f30;
+    --input-bg: rgba(43, 36, 27, .04);
+    --input-border: rgba(43, 36, 27, .18);
+
+    --claude-a: #c9542f;
+    --claude-b: #8e2f16;
+    --codex-a: #4f7d8a;
+    --codex-b: #2c5560;
+    --warn: #a87400;
+    --crit: #b3261e;
+    --ok: #3f6f7a;
+    --chip-warn-bg: rgba(168, 116, 0, .12);
+    --chip-warn-fg: #7a5400;
+    --chip-login-bg: rgba(79, 125, 138, .12);
+    --chip-login-fg: #2c5560;
+
+    --core-bar-bg: repeating-linear-gradient(0deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 5px), #b03a1c;
+    --core-value-color: #fff;
+    --core-value-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+    --memory-used-color: #3f6f7a;
+    --wifi-ok-color: #3f6f7a;
+    --wifi-ng-color: #b3261e;
+    --gpu-fill-bg: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px), #3f6f7a;
+    --npu-fill-bg: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px), #b03a1c;
+    --net-rx: #3f6f7a;
+    --net-rx-fill: rgba(63, 111, 122, .20);
+    --net-tx: #b03a1c;
+    --net-tx-fill: rgba(176, 58, 28, .16);
+    --net-empty-color: rgba(43, 36, 27, .45);
+
+    --paper-rule: rgba(43, 36, 27, .16);
+    --paper-rule-strong: rgba(43, 36, 27, .34);
+    --paper-accent: #b03a1c;
+    --paper-ink-2: #3f6f7a;
+    --paper-grid: rgba(43, 36, 27, .05);
+    --paper-edge: rgba(43, 36, 27, .20);
+    --on-accent: #fbf3e4;
+}
+
+/* --- 紙面（罫線）と左端のミシン目 --- */
+body[data-skin="paper-tape"] .container {
+    background-color: var(--container-bg);
+    background-image: repeating-linear-gradient(to bottom, var(--paper-grid) 0 1px, transparent 1px 12px);
+    background-position: 0 30px;
+}
+body[data-skin="paper-tape"] .container::before {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 30px;
+    bottom: 8px;
+    border-left: 1px dashed var(--paper-edge);
+    opacity: .7;
+    pointer-events: none;
+}
+body[data-skin="paper-tape"] .container.compact::before {
+    display: none;
+}
+
+/* --- 区画 = 面を捨て、上辺の破線だけで仕切る --- */
+body[data-skin="paper-tape"] .section {
+    background: transparent;
+    border: 0;
+    border-top: 1px dashed var(--paper-rule);
+    border-radius: 0;
+    padding: 6px 2px 7px;
+    margin-bottom: 0;
+}
+body[data-skin="paper-tape"] .section:last-child,
+body[data-skin="paper-tape"] .section.last-visible {
+    margin-bottom: 0;
+}
+body[data-skin="paper-tape"] .wifi-section {
+    border: 0;
+    border-top: 1px dashed var(--paper-rule);
+    padding: 0;
+}
+body[data-skin="paper-tape"] .flip-card > .flip-face {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 6px 2px 7px;
+}
+body[data-skin="paper-tape"] .section-header {
+    margin-bottom: 4px;
+}
+body[data-skin="paper-tape"] .section-header::before {
+    content: "";
+    width: 3px;
+    height: 11px;
+    background: var(--paper-accent);
+    margin-right: 6px;
+    flex: none;
+}
+body[data-skin="paper-tape"] .section-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .06em;
+    font-weight: 700;
+}
+body[data-skin="paper-tape"] .section-value {
+    font-size: 12px;
+    letter-spacing: .02em;
+    font-variant-numeric: tabular-nums;
+}
+body[data-skin="paper-tape"] .section-icon {
+    font-size: 0;
+    width: 13px;
+    margin-right: 5px;
+    flex: none;
+    color: var(--muted-color);
+    font-family: var(--font-mono);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+body[data-skin="paper-tape"] .section-icon::before {
+    content: "»";
+    font-size: 11px;
+    line-height: 1;
+}
+body[data-skin="paper-tape"] [data-sec="memory"] .section-icon::before { content: "≡"; }
+body[data-skin="paper-tape"] [data-sec="gpu"] .section-icon::before { content: "△"; }
+body[data-skin="paper-tape"] [data-sec="npu"] .section-icon::before { content: "◇"; }
+body[data-skin="paper-tape"] [data-sec="network"] .section-icon::before { content: "⇅"; }
+body[data-skin="paper-tape"] [data-sec="ai"] .section-icon::before { content: "✳"; }
+
+/* --- バー = 一定間隔で切れ目が入った「印刷の目盛り」 --- */
+body[data-skin="paper-tape"] .progress-bar {
+    height: 6px;
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px var(--paper-rule);
+    margin-bottom: 5px;
+}
+body[data-skin="paper-tape"] .npu-progress,
+body[data-skin="paper-tape"] .wrow .progress-bar {
+    margin-bottom: 0;
+}
+body[data-skin="paper-tape"] .progress-fill,
+body[data-skin="paper-tape"] .cpu-fill,
+body[data-skin="paper-tape"] .npu-fill,
+body[data-skin="paper-tape"] .clock-fill,
+body[data-skin="paper-tape"] .claude .progress-fill {
+    border-radius: 0;
+    background-color: var(--paper-accent);
+    background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px);
+}
+body[data-skin="paper-tape"] .memory-fill,
+body[data-skin="paper-tape"] .gpu-fill,
+body[data-skin="paper-tape"] .codex .progress-fill {
+    border-radius: 0;
+    background-color: var(--paper-ink-2);
+    background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px);
+}
+body[data-skin="paper-tape"] .progress-fill.warn {
+    background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px), var(--warn) !important;
+}
+body[data-skin="paper-tape"] .progress-fill.crit {
+    background: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px), var(--crit) !important;
+}
+body[data-skin="paper-tape"] .memory-details .used {
+    color: var(--paper-ink-2);
+}
+body[data-skin="paper-tape"] .memory-details,
+body[data-skin="paper-tape"] .clock-value,
+body[data-skin="paper-tape"] .clock-base,
+body[data-skin="paper-tape"] .wifi-value,
+body[data-skin="paper-tape"] .wreset,
+body[data-skin="paper-tape"] .extra {
+    font-variant-numeric: tabular-nums;
+}
+body[data-skin="paper-tape"] .clock-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+}
+body[data-skin="paper-tape"] .clock-base-marker {
+    width: 2px;
+    background: var(--paper-ink-2);
+    opacity: 1;
+}
+
+/* コア別バー */
+body[data-skin="paper-tape"] .core-bar-container {
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px var(--paper-rule);
+}
+body[data-skin="paper-tape"] .core-bar {
+    border-radius: 0;
+    background-color: var(--paper-accent);
+    background-image: repeating-linear-gradient(0deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 5px);
+}
+body[data-skin="paper-tape"] .core-label {
+    font-family: var(--font-mono);
+    font-size: 7.5px;
+}
+body[data-skin="paper-tape"] .core-value {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--core-value-color);
+    text-shadow: var(--core-value-shadow);
+}
+
+/* 電源モード: 省電力 = 藍 / バランス・パフォーマンス = 朱 */
+body[data-skin="paper-tape"] .power-mode.pm-saver {
+    --pm-color: var(--paper-ink-2);
+    --pm-text: var(--paper-ink-2);
+}
+body[data-skin="paper-tape"] .power-mode.pm-balanced,
+body[data-skin="paper-tape"] .power-mode.pm-best {
+    --pm-color: var(--paper-accent);
+    --pm-text: var(--paper-accent);
+}
+body[data-skin="paper-tape"] .pm-slider::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px var(--paper-rule);
+}
+body[data-skin="paper-tape"] .pm-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 9px;
+    height: 14px;
+    margin-top: -5.5px;
+    border-radius: 0;
+    background: var(--pm-color);
+    border: 1px solid var(--container-bg);
+    box-shadow: 0 0 0 1px var(--pm-color);
+}
+body[data-skin="paper-tape"] .pm-labels span {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+}
+
+/* 上部ボタン = 角の丸くない小さなスイッチ */
+body[data-skin="paper-tape"] .top-btn {
+    width: 17px;
+    height: 17px;
+    border-radius: 0;
+    border: 1px solid var(--paper-rule);
+    background: transparent;
+    font-size: 9px;
+}
+body[data-skin="paper-tape"] .top-btn:hover {
+    background: var(--btn-bg-hover);
+}
+body[data-skin="paper-tape"] .pin-btn.active {
+    background: var(--paper-accent);
+    border-color: var(--paper-accent);
+    color: var(--on-accent);
+}
+body[data-skin="paper-tape"] .compact-btn.expanded {
+    background: var(--paper-accent);
+    color: var(--on-accent);
+    border-color: var(--paper-accent);
+}
+
+/* ネットワーク */
+body[data-skin="paper-tape"] .net-canvas {
+    border-radius: 0;
+    box-shadow: inset 0 0 0 1px var(--paper-rule);
+}
+body[data-skin="paper-tape"] .net-leg-rx {
+    color: var(--net-rx);
+}
+body[data-skin="paper-tape"] .net-leg-tx {
+    color: var(--net-tx);
+}
+body[data-skin="paper-tape"] .net-legend {
+    font-variant-numeric: tabular-nums;
+}
+body[data-skin="paper-tape"] .wifi-value {
+    font-size: 10.5px;
+}
+body[data-skin="paper-tape"] .wifi-connected {
+    color: var(--paper-ink-2);
+}
+body[data-skin="paper-tape"] .wifi-disconnected {
+    color: var(--crit);
+}
+
+/* AI 使用量: 2 色印刷 */
+body[data-skin="paper-tape"] .ai-crow {
+    border-radius: 0;
+}
+body[data-skin="paper-tape"] .prov-name {
+    font-family: var(--font-mono);
+    letter-spacing: .03em;
+}
+body[data-skin="paper-tape"] .prov-name i,
+body[data-skin="paper-tape"] .ai-crow i {
+    width: 7px;
+    height: 7px;
+    border-radius: 0;
+}
+body[data-skin="paper-tape"] .plan {
+    border-radius: 0;
+    border-color: var(--paper-rule-strong);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: .04em;
+}
+body[data-skin="paper-tape"] .prov-state {
+    font-size: 9.5px;
+    font-family: var(--font-mono);
+}
+body[data-skin="paper-tape"] .wreset,
+body[data-skin="paper-tape"] .extra {
+    font-size: 9.5px;
+}
+body[data-skin="paper-tape"] .wrow .lab {
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+body[data-skin="paper-tape"] .wrow .pct {
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+}
+body[data-skin="paper-tape"] .chip {
+    border-radius: 0;
+    border-left: 3px solid currentColor;
+    padding: 3px 6px;
+    font-family: var(--font-mono);
+}
+body[data-skin="paper-tape"] .ai-act {
+    border-radius: 0;
+    background: var(--paper-accent);
+    color: var(--on-accent);
+}
+body[data-skin="paper-tape"] .ai-act.quiet {
+    background: var(--btn-bg);
+    color: var(--text-color);
+}
+body[data-skin="paper-tape"] .ai-refresh {
+    border-radius: 0;
+}
+
+/* 折りたたみ状態 */
+body[data-skin="paper-tape"] .section.collapsed .section-header,
+body[data-skin="paper-tape"] .compact .section-header {
+    margin-bottom: 0;
+}
+body[data-skin="paper-tape"] .section.collapsed:not(.wifi-section),
+body[data-skin="paper-tape"] .wifi-section.collapsed .flip-card > .flip-face {
+    padding-top: 2.5px;
+    padding-bottom: 2.5px;
+}
+
+/* コンパクト時の紙テープ（幅 130px）: 余白を詰め、区切りは破線のまま */
+body[data-skin="paper-tape"] .compact .section {
+    padding: 3px 2px;
+    margin-bottom: 0;
+}
+body[data-skin="paper-tape"] .compact .wifi-section {
+    padding: 0;
+}
+body[data-skin="paper-tape"] .compact .section-header::before {
+    height: 9px;
+    margin-right: 5px;
+}
+body[data-skin="paper-tape"] .compact .section-icon {
+    display: none;
+}
+body[data-skin="paper-tape"] .compact .section-title {
+    font-size: 10.5px;
+    letter-spacing: .02em;
+}
+body[data-skin="paper-tape"] .compact .section-title[data-compact] {
+    font-size: 0;
+}
+body[data-skin="paper-tape"] .compact .section-title[data-compact]::before {
+    font-size: 10.5px;
+    letter-spacing: .02em;
+}
+body[data-skin="paper-tape"] .compact .section-value {
+    font-size: 10.5px;
+}
+body[data-skin="paper-tape"] .compact .flip-card > .flip-face {
+    padding: 3px 2px;
+}
+body[data-skin="paper-tape"] .compact .ai-section,
+body[data-skin="paper-tape"] .compact .ai-section.collapsed {
+    border-top: 0;
+    padding: 0;
+}
+body[data-skin="paper-tape"] .compact .ai-section .ai-crow {
+    background: transparent;
+    border: 0;
+    border-top: 1px dashed var(--paper-rule);
+    border-radius: 0;
+    padding: 3px 2px;
+}
+body[data-skin="paper-tape"] .compact .ai-section .ai-compact {
+    gap: 0;
+}
+body[data-skin="paper-tape"] .compact .ai-cname {
+    font-size: 10.5px;
+}
+body[data-skin="paper-tape"] .compact .ai-cval {
+    font-size: 10.5px;
+}

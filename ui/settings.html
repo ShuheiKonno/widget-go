@@ -67,6 +67,26 @@
         .opt.active { background: var(--accent); border-color: var(--accent); color: #fff; }
         .opt.disabled, .sub.disabled { opacity: .4; pointer-events: none; }
 
+        .skin-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 8px; }
+        .skin-entry { min-width: 0; }
+        .skin-choice.opt { width: 100%; height: 100%; min-width: 0; text-align: left; padding: 10px; overflow-wrap: anywhere; }
+        .skin-choice.opt.active { background: var(--btn-bg); color: var(--text-color); box-shadow: inset 0 0 0 1px var(--accent); }
+        .skin-entry:has(.skin-action) .skin-choice { height: auto; min-height: 90px; }
+        .skin-swatch { display: flex; height: 12px; overflow: hidden; border: 1px solid var(--input-border); border-radius: 3px; margin-bottom: 8px; }
+        .skin-swatch span { flex: 1; background: var(--btn-bg); }
+        .skin-name { display: block; font-weight: 600; }
+        .skin-meta { display: block; font-size: 11px; color: var(--muted-color); margin-top: 4px; }
+        .skin-badge { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid var(--input-border); border-radius: 4px; font-size: 10px; font-weight: normal; color: var(--muted-color); }
+        .skin-action { margin-top: 5px; width: 100%; }
+        .skin-tools { margin-top: 12px; }
+        #skinCard button:disabled { opacity: .5; cursor: wait; }
+        #skinCard button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        #skinConfirm { flex-wrap: wrap; }
+        #skinConfirmText { flex: 1 1 180px; overflow-wrap: anywhere; }
+        #skinErrors { margin-top: 10px; overflow-wrap: anywhere; }
+        #skinErrors ul { padding-left: 18px; margin-top: 5px; }
+        #skinStatus { overflow-wrap: anywhere; }
+
         .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; cursor: pointer; }
         .toggle + .toggle { margin-top: 6px; }
         .toggle input { margin: 0; width: 16px; height: 16px; cursor: pointer; flex: none; }
@@ -118,6 +138,27 @@
                     <button class="opt" data-value="light">ライト</button>
                     <button class="opt" data-value="system">システム</button>
                 </div>
+            </div>
+            <div class="card" id="skinCard">
+                <span class="label" id="skinLabel">スキン</span>
+                <div class="skin-list" id="skinList" role="group" aria-labelledby="skinLabel"></div>
+                <div class="opts skin-tools">
+                    <button class="opt" type="button" id="skinImport">インポート…</button>
+                    <button class="opt" type="button" id="skinOpenDir">スキンフォルダを開く</button>
+                    <button class="opt" type="button" id="skinReload">再読み込み</button>
+                </div>
+                <input type="file" id="skinFile" accept=".zip" hidden>
+                <div class="note warn" id="skinConfirm" role="group" aria-labelledby="skinConfirmText" hidden>
+                    <span id="skinConfirmText"></span>
+                    <button class="quiet" type="button" id="skinConfirmOK"></button>
+                    <button class="quiet" type="button" id="skinConfirmCancel">キャンセル</button>
+                </div>
+                <p class="hint" id="skinStatus" role="status" aria-live="polite">スキンを読み込んでいます…</p>
+                <div class="note err" id="skinErrors" hidden>
+                    <strong>読み込めなかったスキン</strong>
+                    <ul id="skinErrorList"></ul>
+                </div>
+                <p class="hint">第三者のスキンは見た目を変更できます(スクリプトは実行されません)<br>自作の方法: スキンフォルダに skin.json と skin.css を置いて「再読み込み」</p>
             </div>
             <div class="card">
                 <span class="label">透過モード</span>
@@ -246,7 +287,7 @@
         }
         const $ = function(id){ return document.getElementById(id); };
 
-        const settings = { theme: 'system', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon',
+        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon',
             hidden: {}, order: ['cpu', 'memory', 'gpu', 'npu', 'network', 'ai'] };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
@@ -284,7 +325,181 @@
             renderOrderList();
             renderAI();
             renderShortcuts();
+            renderSkinState();
         }
+
+        // ---------- スキン（設定ウィンドウ自体には適用しない） ----------
+        let skinBusy = false;
+        let skinLoadRev = 0;
+        let skinConfirmation = null;
+        function skinStatus(message, error){
+            $('skinStatus').textContent = message;
+            $('skinStatus').style.color = error ? 'var(--danger-fg)' : '';
+        }
+        function renderSkinState(){
+            $('skinCard').setAttribute('aria-busy', String(skinBusy));
+            $('skinCard').querySelectorAll('button').forEach(function(b){ b.disabled = skinBusy; });
+            $('skinList').querySelectorAll('.skin-choice').forEach(function(b){
+                const active = b.dataset.skin === settings.skin;
+                b.classList.toggle('active', active);
+                b.setAttribute('aria-pressed', String(active));
+            });
+        }
+        async function fetchSkinCatalog(){
+            try {
+                const r = await apiFetch('/api/skins');
+                if (!r.ok) throw new Error((await r.text()).trim() || 'スキン一覧を取得できません');
+                return { data: await r.json() };
+            } catch (e) { return { error: e.message || 'スキン一覧を取得できません' }; }
+        }
+        function applySkinCatalog(result){
+            if (result.error) { skinStatus(result.error, true); return false; }
+            const data = result.data;
+            settings.skin = data.active || 'default';
+            const list = $('skinList');
+            list.textContent = '';
+            (data.skins || []).forEach(function(skin){
+                const entry = document.createElement('div');
+                entry.className = 'skin-entry';
+                const b = document.createElement('button');
+                b.type = 'button'; b.className = 'opt skin-choice'; b.dataset.skin = skin.id;
+                b.title = skin.description || skin.name;
+                const swatch = document.createElement('span');
+                swatch.className = 'skin-swatch'; swatch.setAttribute('aria-hidden', 'true');
+                for (let i = 0; i < 3; i++) {
+                    const color = document.createElement('span');
+                    const value = (skin.swatch || [])[i];
+                    if (/^#[0-9a-f]{6}$/i.test(value || '')) color.style.backgroundColor = value;
+                    swatch.appendChild(color);
+                }
+                b.appendChild(swatch);
+                const name = document.createElement('span');
+                name.className = 'skin-name'; name.textContent = skin.name;
+                if (skin.builtin) {
+                    const badge = document.createElement('span');
+                    badge.className = 'skin-badge'; badge.textContent = '組み込み'; name.appendChild(badge);
+                }
+                b.appendChild(name);
+                const meta = document.createElement('span');
+                meta.className = 'skin-meta';
+                meta.textContent = [skin.author, skin.version].filter(Boolean).join(' / ') || '作者・バージョン未設定';
+                b.appendChild(meta);
+                b.addEventListener('click', function(){
+                    runSkinAction(async function(){
+                        await skinPost('/api/setoption?key=skin&value=' + encodeURIComponent(skin.id));
+                        settings.skin = skin.id; renderSkinState(); changed();
+                        skinStatus('選択しました: ' + skin.name);
+                    });
+                });
+                entry.appendChild(b);
+                if (skin.id !== 'default') {
+                    const action = document.createElement('button');
+                    action.type = 'button'; action.className = 'quiet skin-action';
+                    action.textContent = skin.builtin ? 'コピーして編集' : '削除';
+                    action.setAttribute('aria-label', skin.name + 'を' + action.textContent);
+                    action.addEventListener('click', function(){
+                        if (skin.builtin) copySkin(skin);
+                        else confirmSkin('「' + skin.name + '」を削除しますか？ 選択中ならデフォルトに戻ります。', '削除', function(){
+                            runSkinAction(async function(){
+                                await skinPost('/api/skins/delete?id=' + encodeURIComponent(skin.id));
+                                changed();
+                                if (await loadSkins()) skinStatus('削除しました: ' + skin.name);
+                            });
+                        }, action);
+                    });
+                    entry.appendChild(action);
+                }
+                list.appendChild(entry);
+            });
+            const errors = $('skinErrorList');
+            errors.textContent = '';
+            (data.errors || []).forEach(function(error){
+                const li = document.createElement('li');
+                li.textContent = error.folder + ': ' + error.message;
+                errors.appendChild(li);
+            });
+            $('skinErrors').hidden = !errors.children.length;
+            skinStatus(''); renderSkinState();
+            return true;
+        }
+        async function loadSkins(){
+            const generation = ++skinLoadRev;
+            const result = await fetchSkinCatalog();
+            if (generation !== skinLoadRev) return false;
+            return applySkinCatalog(result);
+        }
+        async function skinPost(url, body, allowConflict){
+            const r = await apiFetch(url, { method: 'POST', body: body,
+                headers: body ? { 'Content-Type': 'application/zip' } : {} });
+            if (!r.ok && !(allowConflict && r.status === 409)) throw new Error((await r.text()).trim() || 'スキンの操作に失敗しました');
+            return r;
+        }
+        async function runSkinAction(action){
+            if (skinBusy) return;
+            closeSkinConfirmation(false);
+            touch(); ++skinLoadRev;
+            skinBusy = true; renderSkinState();
+            try { await action(); }
+            catch (e) { skinStatus(e.message || 'スキンの操作に失敗しました', true); }
+            finally {
+                skinBusy = false; renderSkinState();
+                if (skinConfirmation) $('skinConfirmCancel').focus();
+            }
+        }
+        function closeSkinConfirmation(restoreFocus){
+            const pending = skinConfirmation;
+            skinConfirmation = null;
+            $('skinConfirm').hidden = true;
+            if (restoreFocus && pending && pending.opener && pending.opener.isConnected) pending.opener.focus();
+            return pending;
+        }
+        function confirmSkin(message, label, action, opener){
+            skinConfirmation = { action: action, opener: opener };
+            $('skinConfirmText').textContent = message;
+            $('skinConfirmOK').textContent = label;
+            $('skinConfirm').hidden = false;
+            $('skinConfirmCancel').focus();
+        }
+        $('skinConfirmOK').addEventListener('click', function(){
+            const pending = closeSkinConfirmation(true);
+            if (pending) pending.action();
+        });
+        $('skinConfirmCancel').addEventListener('click', function(){ closeSkinConfirmation(true); });
+        async function importSkin(file, overwrite){
+            await runSkinAction(async function(){
+                const r = await skinPost('/api/skins/import' + (overwrite ? '?overwrite=1' : ''), file, true);
+                if (r.status === 409) {
+                    if (overwrite) throw new Error((await r.text()).trim() || 'スキンを上書きできません');
+                    confirmSkin('同じ ID のスキンが既にあります。上書きしますか？', '上書き', function(){ importSkin(file, true); }, $('skinImport'));
+                    return;
+                }
+                const result = await r.json();
+                changed();
+                if (await loadSkins()) skinStatus('インポートしました: ' + result.name);
+            });
+        }
+        function copySkin(skin){
+            runSkinAction(async function(){
+                const r = await skinPost('/api/skins/copy?id=' + encodeURIComponent(skin.id), null, true);
+                if (r.status === 409) { skinStatus('既にコピーがあります', true); return; }
+                const result = await r.json();
+                if (await loadSkins()) skinStatus('コピーしました: ' + result.name + '。スキンフォルダを開いて編集できます。');
+            });
+        }
+        $('skinImport').addEventListener('click', function(){ closeSkinConfirmation(false); $('skinFile').click(); });
+        $('skinFile').addEventListener('change', function(){
+            const file = this.files[0]; this.value = '';
+            if (file) importSkin(file, false);
+        });
+        $('skinOpenDir').addEventListener('click', function(){
+            runSkinAction(async function(){ await skinPost('/api/skins/opendir'); skinStatus('スキンフォルダを開きました'); });
+        });
+        $('skinReload').addEventListener('click', function(){
+            closeSkinConfirmation(false);
+            runSkinAction(async function(){
+                if (await loadSkins()) { changed(); skinStatus('スキンを再読み込みしました'); }
+            });
+        });
 
         function renderOrderList(){
             const box = $('orderList');
@@ -518,6 +733,7 @@
         });
         // Esc で閉じる
         document.addEventListener('keydown', function(e){
+            if (e.key === 'Escape' && skinConfirmation) { closeSkinConfirmation(true); return; }
             if (e.key === 'Escape') apiFetch('/api/closesettings').catch(function(){});
         });
 
@@ -525,6 +741,7 @@
         function applySettings(s){
             if (!s) return;
             if (s.theme) settings.theme = s.theme;
+            settings.skin = s.skin || 'default';
             if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
             if (typeof s.powerMode === 'boolean') settings.powerMode = s.powerMode;
             if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
@@ -539,13 +756,16 @@
         // 古い値で上書きしないよう、結果を捨てる（フォーカスの mousedown で読み込みが始まり、続く
         // クリックの変更より後に古い値が届くと、チェックが元に戻って見えるため）。
         async function reloadAll(){
+            if (skinBusy) return;
             const r0 = rev;
-            const res = await Promise.all([fetchJSON('/api/settings'), fetchJSON('/api/ai/settings'), fetchJSON('/api/ai/usage'), fetchJSON('/api/shortcuts')]);
+            const skin0 = ++skinLoadRev;
+            const res = await Promise.all([fetchJSON('/api/settings'), fetchJSON('/api/ai/settings'), fetchJSON('/api/ai/usage'), fetchJSON('/api/shortcuts'), fetchSkinCatalog()]);
             if (r0 !== rev) return;
             applySettings(res[0]);
             if (res[1]) ai.settings = res[1];
             if (res[2]) ai.usage = res[2];
             if (res[3]) { shortcuts = res[3]; showShortcutError(res[3].error || ''); }
+            if (skin0 === skinLoadRev) applySkinCatalog(res[4]);
             render();
         }
         // ウィジェット本体で変えたもの（ピン留めなど）や、手で消したショートカットに追従するため、

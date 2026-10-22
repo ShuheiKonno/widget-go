@@ -104,3 +104,17 @@ func TestWriteConfigIncludesShowGPU(t *testing.T) {
 		t.Error("再読込で ShowGPU が true に戻った")
 	}
 }
+
+func TestConfigSkinCompatibilityAndRoundTrip(t *testing.T) {
+	withConfigFile(t, configV180)
+	if snapshotConfig().Skin != "" {
+		t.Fatal("旧設定はスキンなしとして読む")
+	}
+	for _, id := range []string{"custom", "default", ""} {
+		mutateConfig(func(c *Config) { c.Skin = id })
+		loadConfig()
+		if c := snapshotConfig(); c.Skin != id || c.Theme != "light" {
+			t.Fatalf("設定の往復: skin=%q theme=%q", c.Skin, c.Theme)
+		}
+	}
+}

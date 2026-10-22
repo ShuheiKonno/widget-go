@@ -1007,11 +1007,7 @@ func main() {
 	// WebView2 のユーザーデータを固定場所に保存する。
 	// 既定の挙動 (%APPDATA%\{exe 名}) に依存すると、ビルド名変更やカレントディレクトリ違いで
 	// localStorage が別プロファイル扱いになる。明示指定で設定の記憶を確実にする。
-	localAppData := os.Getenv("LOCALAPPDATA")
-	if localAppData == "" {
-		localAppData = os.Getenv("APPDATA")
-	}
-	appRoot := filepath.Join(localAppData, "widget-go")
+	appRoot := appConfigDirectory()
 	appDataRoot = appRoot
 	dataPath := filepath.Join(appRoot, "WebView2")
 	_ = os.MkdirAll(dataPath, 0755)
@@ -1072,7 +1068,7 @@ func main() {
 	// 利用者が自分で指定している場合は、それを尊重する。
 	if os.Getenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR") == "" {
 		_ = os.Setenv("WEBVIEW2_DEFAULT_BACKGROUND_COLOR",
-			startupBackground(c.Theme, systemUsesLightTheme()).argbHex())
+			widgetStartupBackground(c.Theme, c.Skin, systemUsesLightTheme()).argbHex())
 	}
 
 	// ウィンドウは非表示で作る（go-webview2 は既定で作成直後に表示し、位置・中身が決まる前の

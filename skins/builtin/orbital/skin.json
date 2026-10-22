@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "orbital",
+  "name": "Orbital Zero-G",
+  "author": "Antigravity",
+  "version": "1.0.0",
+  "description": "四隅の照準レチクルと16px座標グリッド、目盛り付きセグメントゲージを備えた軌道テレメトリ計器盤スキン",
+  "css": "skin.css",
+  "swatch": ["#060b15", "#00f0ff", "#f1f6fc"],
+  "startupBackground": { "dark": "#060b15", "light": "#f1f6fc" }
+}

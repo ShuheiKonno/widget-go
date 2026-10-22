@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "shukei",
+  "name": "朱罫帳",
+  "author": "Claude",
+  "version": "1.0.0",
+  "description": "帳簿の朱罫をモチーフにした、静かで文字中心のデザイン。カードの箱をやめて朱の罫線で区切り、絵文字は判子に、バーは目盛つきの細い線にする。ダークは墨、ライトは和紙。",
+  "css": "skin.css",
+  "swatch": ["#14110f", "#c0392b", "#f4efe3"],
+  "startupBackground": { "dark": "#181511", "light": "#f4eee0" }
+}
