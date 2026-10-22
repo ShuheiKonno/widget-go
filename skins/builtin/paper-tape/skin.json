@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "paper-tape",
+  "name": "紙テープ / PAPER TAPE",
+  "author": "OpenCode",
+  "version": "1.0.0",
+  "description": "計測ログを印字した紙テープをモチーフにした、破線の罫線と朱・藍2色印刷の静かなスキン",
+  "css": "skin.css",
+  "swatch": ["#1e1914", "#ff9366", "#f7f1e5"],
+  "startupBackground": { "dark": "#1e1914", "light": "#f7f1e5" }
+}

@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スキン案: 紙テープ / PAPER TAPE — widget-go</title>
+<style>
+/* =====================================================================
+   このファイルは docs/skins/mock-opencode.html（デザイン案モック）です。
+   アプリのコードは変更していません。数値はすべてダミーです。
+   ウィジェット部分の寸法・余白・クラス名は ui/index.html に合わせています。
+   ===================================================================== */
+
+/* ---------- このページ自体（ドキュメント）の見た目 ---------- */
+:root{
+  --doc-bg:#0e1013; --doc-bg-2:#14181d; --doc-panel:#14181d; --doc-line:#252c34;
+  --doc-fg:#e7ecf2; --doc-muted:#98a3ae; --doc-accent:#e2603c; --doc-mono:'Consolas','Cascadia Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:
+    radial-gradient(1100px 520px at 12% -12%, #1b2229 0%, rgba(27,34,41,0) 62%),
+    repeating-linear-gradient(to bottom, rgba(255,255,255,.018) 0 1px, transparent 1px 28px),
+    var(--doc-bg);
+  color:var(--doc-fg); font:14px/1.7 'Segoe UI','Yu Gothic UI',sans-serif;
+  padding:34px 30px 80px;
+}
+.doc{max-width:1180px;margin:0 auto}
+.eyebrow{font:11px/1.4 var(--doc-mono);letter-spacing:.08em;color:var(--doc-muted);text-transform:uppercase}
+h1{font-size:23px;line-height:1.35;font-weight:650;margin:6px 0 6px;letter-spacing:.01em}
+h1 .en{font:600 15px/1 var(--doc-mono);color:var(--doc-muted);margin-left:8px;letter-spacing:.06em}
+.lead{color:var(--doc-muted);font-size:13px;max-width:900px}
+.lead code,.notes code,.note code{font-family:var(--doc-mono);color:#ffd9c9;background:rgba(226,96,60,.10);padding:0 4px;border-radius:3px;font-size:12px}
+
+/* ---------- 冒頭のデザインノート ---------- */
+.design-note{
+  margin:22px 0 26px;padding:0;border:1px solid var(--doc-line);border-radius:12px;
+  background:linear-gradient(180deg,#171c22 0%,#12161b 100%);
+  display:grid;grid-template-columns:1.05fr 1fr 1fr;overflow:hidden;
+}
+.design-note > div{padding:16px 18px 17px;border-right:1px solid var(--doc-line)}
+.design-note > div:last-child{border-right:0}
+.design-note .kicker{font:10px/1.4 var(--doc-mono);letter-spacing:.12em;color:var(--doc-accent);text-transform:uppercase;margin-bottom:5px}
+.design-note h2{font-size:18px;font-weight:650;line-height:1.3;margin-bottom:7px}
+.design-note h2 span{display:block;font:600 11px/1.4 var(--doc-mono);color:var(--doc-muted);letter-spacing:.08em;margin-top:2px}
+.design-note p{font-size:12.3px;line-height:1.68;color:#c3ccd6}
+.design-note p + p{margin-top:6px}
+.design-note b{color:#fff;font-weight:600}
+
+/* ---------- ツールバー ---------- */
+.toolbar{
+  display:flex;flex-wrap:wrap;align-items:center;gap:12px 26px;
+  padding:11px 14px;margin:0 0 24px;background:var(--doc-panel);border:1px solid var(--doc-line);border-radius:10px;
+}
+.ctl{display:flex;align-items:center;gap:8px}
+.ctl > span{font-size:11.5px;color:var(--doc-muted);white-space:nowrap}
+.seg{display:inline-flex;border:1px solid var(--doc-line);border-radius:7px;overflow:hidden}
+.seg button{background:transparent;border:0;border-right:1px solid var(--doc-line);color:var(--doc-fg);font:inherit;font-size:11.5px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:rgba(255,255,255,.07)}
+.seg button.on{background:var(--doc-accent);color:#fff}
+.hintline{font-size:11px;color:var(--doc-muted);margin-left:auto}
+
+/* ---------- ステージ ---------- */
+.stage{display:flex;flex-wrap:wrap;gap:28px 26px;align-items:flex-start}
+.stage + .stage{margin-top:30px;padding-top:30px;border-top:1px dashed var(--doc-line)}
+figure{display:flex;flex-direction:column;gap:9px}
+.stage > figure{width:262px}
+.stage > figure.fig-materials{width:300px}
+.stage > figure.fig-settings{width:662px}
+.fig-compact .frame{width:100%;justify-content:center}
+.fig-settings .frame{padding:0;border:0;background:transparent;box-shadow:none;justify-content:flex-start;border-radius:0}
+.fig-materials .materials{width:268px}
+figcaption{font-size:11.5px;line-height:1.6;color:var(--doc-muted);max-width:330px}
+figcaption b{display:block;color:var(--doc-fg);font-size:12.5px;font-weight:600;margin-bottom:2px}
+figcaption .meas{font-family:var(--doc-mono);color:#ffb79f}
+.frame{
+  background:#101419;border:1px solid #222932;border-radius:12px;padding:18px 16px;
+  display:flex;justify-content:center;align-items:flex-start;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+}
+.frame.tight{padding:14px 12px}
+/* 透過モードの近似表示: 実機はウィンドウ全体のアルファ（文字も薄くなる） */
+body.tr .frame{
+  background:
+    conic-gradient(#2a313a 25%, #333b45 0 50%, #2a313a 0 75%, #333b45 0) 0 0/18px 18px;
+}
+body.tr .win, body.tr .net-demo{opacity:.86}
+.fig-narrow figcaption{max-width:230px}
+
+/* =====================================================================
+   ウィジェット（ui/index.html のスキン適用後）— 幅 230 / 130 は実寸
+   body.theme-light → .theme-light に読み替え。
+   .win は実機の .container#dragArea に相当。
+   ===================================================================== */
+.tok{
+  /* 既定（現行）のダーク配色。ここを data-skin が上書きする */
+  --container-bg:rgba(16,16,22,.97);
+  --text-color:#f0f0f5;
+  --muted-color:#a8a8b8;
+  --section-bg:rgba(255,255,255,.05);
+  --section-border:rgba(255,255,255,.10);
+  --section-title:#d8d8e8;
+  --section-value:#7bffe0;
+  --bar-track:rgba(255,255,255,.12);
+  --core-track:rgba(255,255,255,.10);
+  --net-canvas-bg:rgba(0,0,0,.35);
+  --btn-bg:rgba(255,255,255,.12);
+  --btn-bg-hover:rgba(255,255,255,.22);
+  --btn-color:#bbb;
+  --input-bg:rgba(255,255,255,.05);
+  --input-border:rgba(255,255,255,.14);
+  --claude-a:#f0a27a; --claude-b:#d06b5b; --codex-a:#7be0c0; --codex-b:#34b3d6;
+  --warn:#facc15; --crit:#ef6a6a; --ok:#7fffaa;
+  --chip-warn-bg:rgba(250,204,21,.14); --chip-warn-fg:#ffd84d;
+  --chip-login-bg:rgba(90,160,255,.16); --chip-login-fg:#9cc6ff;
+  --net-rx:#7fffaa; --net-tx:#ffa3ff;
+  --radius:8px;
+  --font-mono:'Consolas','Cascadia Mono','Courier New',monospace;
+}
+.tok.theme-light{
+  --container-bg:rgba(245,246,252,.96);
+  --text-color:#24263a;
+  --muted-color:#606078;
+  --section-bg:rgba(0,0,0,.04);
+  --section-border:rgba(0,0,0,.1);
+  --section-title:#3b3b5a;
+  --section-value:#0a7f68;
+  --bar-track:rgba(0,0,0,.1);
+  --core-track:rgba(0,0,0,.08);
+  --net-canvas-bg:rgba(0,0,0,.06);
+  --btn-bg:rgba(0,0,0,.08);
+  --btn-bg-hover:rgba(0,0,0,.16);
+  --btn-color:#444;
+  --input-bg:rgba(0,0,0,.04);
+  --input-border:rgba(0,0,0,.15);
+  --claude-a:#e58f63; --claude-b:#c4553f; --codex-a:#2fbf94; --codex-b:#1f8fb3;
+  --warn:#d9a400; --crit:#d33; --ok:#1aa86b;
+  --chip-warn-bg:rgba(217,164,0,.16); --chip-warn-fg:#8a6500;
+  --chip-login-bg:rgba(30,100,220,.12); --chip-login-fg:#1d5fc2;
+  --net-rx:#1aa86b; --net-tx:#b74da6;
+}
+
+.win{
+  width:230px;
+  background-color:var(--container-bg);
+  color:var(--text-color);
+  padding:30px 10px 10px;
+  position:relative;
+  font:13px/1.35 'Segoe UI','Yu Gothic UI',sans-serif;
+  user-select:none;
+  border-radius:var(--radius);
+  box-shadow:0 12px 32px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.07);
+}
+.top-btns{position:absolute;top:8px;right:8px;display:flex;gap:4px;z-index:5}
+.top-btn{
+  width:18px;height:18px;border-radius:50%;border:0;background:var(--btn-bg);color:var(--btn-color);
+  display:flex;align-items:center;justify-content:center;font-size:10px;line-height:1;font-family:inherit;
+  padding:0;cursor:pointer;
+}
+.top-btn:hover{background:var(--btn-bg-hover)}
+.tray-btn{font-size:14px;font-weight:700;padding:0 0 5px}
+.pin-btn{font-size:9px}
+.pin-btn.active{background:#4CAF50;color:#fff}
+.settings-btn,.compact-btn{font-size:10px}
+.compact-btn.expanded{background:#5aa0ff;color:#fff;font-size:11px}
+
+.section{background:var(--section-bg);border-radius:var(--radius);padding:8px 10px;margin-bottom:8px;border:1px solid var(--section-border)}
+.section:last-child{margin-bottom:0}
+.section-header{display:flex;align-items:center;margin-bottom:6px}
+.section-icon{font-size:14px;margin-right:6px;flex:none}
+.section-title{font-size:12px;font-weight:600;flex-grow:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--section-title)}
+.section-value{color:var(--section-value);font-size:13px;font-weight:700;font-family:var(--font-mono);flex-shrink:0;margin-left:auto}
+.chev{margin-left:4px;width:18px;height:18px;flex:none;border:0;border-radius:50%;background:transparent;color:var(--muted-color);font-size:9px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.chev:hover{background:var(--btn-bg-hover)}
+
+.model-name{font-size:10px;line-height:1.3;color:var(--muted-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cpu-model{margin-bottom:2px}
+.npu-model{margin-top:4px}
+.progress-bar{position:relative;height:5px;background:var(--bar-track);border-radius:3px;overflow:hidden;margin-bottom:6px}
+.progress-fill{height:100%;border-radius:3px}
+.cpu-fill{background:linear-gradient(90deg,#8a9cff,#b07cff)}
+.memory-fill{background:linear-gradient(90deg,#ffa3ff,#ff7a8a)}
+.clock-row{display:flex;align-items:baseline;justify-content:space-between;gap:4px;margin-bottom:4px}
+.clock-label{color:var(--muted-color);font-size:11px;white-space:nowrap}
+.clock-value{color:var(--section-value);font-size:12px;font-weight:700;font-family:var(--font-mono);white-space:nowrap}
+.clock-base{color:var(--muted-color);font-size:10px;font-family:var(--font-mono);white-space:nowrap}
+.clock-fill{background:linear-gradient(90deg,#5ad0ff,#8a9cff)}
+.clock-base-marker{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.55)}
+.theme-light .clock-base-marker{background:rgba(0,0,0,.35)}
+
+/* 電源モード（3 段階スライダー） */
+.power-mode{margin-bottom:6px;--pm-color:#72b6ff;--pm-text:#72b6ff;--pm-fill:50%}
+.power-mode.pm-saver{--pm-color:#5bd28e;--pm-text:#5bd28e}
+.power-mode.pm-balanced{--pm-color:#72b6ff;--pm-text:#72b6ff}
+.power-mode.pm-best{--pm-color:#ff9f53;--pm-text:#ff9f53}
+.theme-light .power-mode.pm-saver{--pm-text:#12905a}
+.theme-light .power-mode.pm-balanced{--pm-text:#2f7fd0}
+.theme-light .power-mode.pm-best{--pm-text:#d9650f}
+.pm-slider{-webkit-appearance:none;appearance:none;display:block;width:100%;height:14px;margin:0;background:transparent}
+.pm-slider:focus{outline:none}
+.pm-slider::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--pm-color) var(--pm-fill),var(--bar-track) var(--pm-fill))}
+.pm-slider::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border-radius:50%;background:var(--pm-color);border:2px solid var(--container-bg);box-shadow:0 0 0 1px var(--pm-color)}
+.pm-labels{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);margin-top:1px}
+.pm-labels span{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:10px;line-height:1.3;white-space:nowrap;color:var(--muted-color)}
+.pm-labels span:first-child{justify-self:start}
+.pm-labels span:last-child{justify-self:end}
+.pm-labels span.active{color:var(--pm-text);font-weight:700}
+
+.cores-container{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-top:5px}
+.core-item{text-align:center}
+.core-label{color:var(--muted-color);font-size:8px;display:block;margin-bottom:2px}
+.core-bar-container{height:24px;background:var(--core-track);border-radius:3px;position:relative;overflow:hidden}
+.core-bar{position:absolute;bottom:0;width:100%;background:linear-gradient(180deg,#8a9cff,#b07cff);border-radius:3px}
+.core-value{display:block;text-align:center;color:#fff;font-size:9px;font-weight:600;line-height:24px;height:24px;margin-top:-24px;position:relative;text-shadow:0 1px 2px rgba(0,0,0,.6);pointer-events:none}
+.memory-details{text-align:right;font-size:11px;color:var(--muted-color);font-family:var(--font-mono)}
+.memory-details .used{color:#ffa3ff;font-weight:600}
+.theme-light .memory-details .used{color:#e85ad0}
+
+/* GPU / NPU */
+.accel-section .section-title,.accel-section .section-value{white-space:nowrap}
+.gpu-fill{background:linear-gradient(90deg,#6ad7ff,#5a8cff)}
+.npu-fill{background:linear-gradient(90deg,#ffd36a,#ff9f5a)}
+.npu-progress{margin-bottom:0}
+.accel-info{display:flex;flex-direction:column;gap:3px}
+.accel-info .wifi-row{gap:6px}
+
+/* ネットワーク（表裏反転） */
+.wifi-section{background:transparent;border:0;padding:0;perspective:800px}
+.flip-card{display:grid;transform-style:preserve-3d;transition:transform .55s}
+.flip-face{grid-area:1/1;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:var(--section-bg);border:1px solid var(--section-border);border-radius:var(--radius);padding:8px 10px;cursor:pointer}
+.flip-back{transform:rotateY(180deg);display:flex;flex-direction:column;min-height:104px}
+.wifi-section.flipped .flip-card{transform:rotateY(180deg)}
+.wifi-info{display:flex;flex-direction:column;gap:4px}
+.wifi-row{display:flex;justify-content:space-between;align-items:center}
+.wifi-label{color:var(--muted-color);font-size:11px}
+.wifi-value{color:var(--text-color);font-size:11px;font-weight:600;font-family:var(--font-mono)}
+.wifi-connected{color:#1aa86b}
+.theme-light .wifi-connected{color:#0a7f48}
+.wifi-compact-value{display:none}
+.wifi-ethernet-only{display:none}
+.wifi-section.ethernet-mode .wifi-wireless-only{display:none}
+.wifi-section.ethernet-mode .wifi-ethernet-only{display:flex}
+.net-peak-toggle{padding:1px 4px;border-radius:4px;cursor:pointer}
+.net-canvas{width:100%;height:62px;display:block;margin-top:4px;background:var(--net-canvas-bg);border-radius:4px;overflow:hidden}
+.net-canvas svg{display:block;width:100%;height:100%}
+.net-grid{stroke:var(--section-border);stroke-width:.7;stroke-dasharray:2 3;vector-effect:non-scaling-stroke}
+.net-rx-area{fill:var(--net-rx);fill-opacity:.20}
+.net-tx-area{fill:var(--net-tx);fill-opacity:.16}
+.net-rx-line{fill:none;stroke:var(--net-rx);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.net-tx-line{fill:none;stroke:var(--net-tx);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.net-legend{display:flex;justify-content:space-between;margin-top:4px;font-size:11px;font-family:var(--font-mono)}
+.net-leg-rx{color:#1aa86b}
+.theme-light .net-leg-rx{color:#0a7f48}
+.net-leg-tx{color:#b74da6}
+.theme-light .net-leg-tx{color:#a03a8e}
+
+/* AI 使用量 */
+.ai-compact{display:none}
+.ai-crow{display:flex;align-items:center;background:var(--section-bg);border:1px solid var(--section-border);border-radius:var(--radius);padding:4px 6px}
+.ai-crow i{width:8px;height:8px;border-radius:50%;flex:none;margin-right:6px}
+.ai-crow.claude i{background:linear-gradient(135deg,var(--claude-a),var(--claude-b))}
+.ai-crow.codex i{background:linear-gradient(135deg,var(--codex-a),var(--codex-b))}
+.ai-cname{font-size:11px;font-weight:600;color:var(--section-title);flex-grow:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-cval{font-size:11px;font-weight:700;font-family:var(--font-mono);color:var(--section-value);flex-shrink:0;margin-left:auto}
+.ai-cval.warn{color:var(--warn)}
+.ai-cval.crit{color:var(--crit)}
+.ai-refresh{margin-left:4px;width:18px;height:18px;flex:none;border:0;border-radius:50%;background:transparent;color:var(--muted-color);font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.prov + .prov{margin-top:9px;padding-top:8px;border-top:1px dashed var(--section-border)}
+.prov-head{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.prov-name{font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px}
+.prov-name i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.claude .prov-name i{background:linear-gradient(135deg,var(--claude-a),var(--claude-b))}
+.codex .prov-name i{background:linear-gradient(135deg,var(--codex-a),var(--codex-b))}
+.plan{font-size:9px;padding:0 5px;border-radius:8px;border:1px solid var(--section-border);color:var(--muted-color);line-height:15px;white-space:nowrap}
+.prov-state{margin-left:auto;font-size:10px;color:var(--muted-color);white-space:nowrap}
+.prov-state.ok::before{content:'● ';color:var(--ok)}
+.prov-state.inc::before{content:'▲ ';color:var(--warn)}
+.wrow{display:grid;grid-template-columns:20px 1fr 34px;align-items:center;column-gap:6px}
+.wrow .lab{font-size:11px;color:var(--muted-color)}
+.wrow .progress-bar{margin:0;height:6px}
+.wrow .pct{text-align:right;font-family:var(--font-mono);font-size:12px;font-weight:700}
+.wreset{font-size:10px;color:var(--muted-color);padding-left:26px;margin:1px 0 4px;font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.claude .progress-fill{background:linear-gradient(90deg,var(--claude-a),var(--claude-b))}
+.codex .progress-fill{background:linear-gradient(90deg,var(--codex-a),var(--codex-b))}
+.progress-fill.warn{background:var(--warn)!important}
+.progress-fill.crit{background:var(--crit)!important}
+.pct.warn{color:var(--warn)}
+.pct.crit{color:var(--crit)}
+.extra{font-size:10px;color:var(--muted-color);padding-left:26px;display:flex;justify-content:space-between;font-family:var(--font-mono);margin-bottom:2px;gap:6px}
+.chip{display:flex;align-items:center;gap:6px;font-size:10px;line-height:1.3;padding:4px 6px;border-radius:5px;margin-bottom:5px;overflow-wrap:anywhere}
+.chip.warn{background:var(--chip-warn-bg);color:var(--chip-warn-fg)}
+.chip.login{background:var(--chip-login-bg);color:var(--chip-login-fg)}
+.ai-act{margin-left:auto;border:0;border-radius:4px;background:#5aa0ff;color:#fff;font:inherit;font-size:10px;padding:2px 8px;cursor:pointer;flex:none}
+
+/* コンパクト表示（幅 130px） */
+.win.compact{width:130px}
+.compact{padding:23px 4px 4px}
+.compact .top-btns{top:5px;right:5px;gap:3px}
+.compact .top-btn{width:16px;height:16px;font-size:9px}
+.compact .tray-btn{font-size:12px;padding:0 0 4px}
+.compact .compact-btn.expanded{font-size:10px}
+.compact .section{padding:4px 6px;margin-bottom:3px}
+.compact .wifi-section{padding:0}
+.compact .flip-face{padding:4px 6px}
+.compact .section-header{margin-bottom:0}
+.compact .section-icon{font-size:12px;margin-right:3px}
+.compact .section-title{font-size:11px}
+.compact .section-title[data-compact]{font-size:0}
+.compact .section-title[data-compact]::before{content:attr(data-compact);font-size:11px;font-weight:600}
+.compact .section-value{font-size:11px}
+.compact .model-name{display:none}
+.compact .cores-container{display:none}
+.compact .cpu-progress{display:none}
+.compact .mem-progress{display:none}
+.compact .memory-details{display:none}
+.compact .wifi-info{display:none}
+.compact .wifi-compact-value{display:inline}
+.compact .gpu-progress,.compact .npu-progress,.compact .accel-info{display:none}
+.compact .power-mode{display:none}
+.compact .clock-row{display:none}
+.compact .clock-progress{display:none}
+.compact .chev{display:none}
+.compact .net-canvas{display:none}
+.compact .net-legend{display:none}
+.compact .ai-section{background:transparent;border:none;padding:0;margin-bottom:0}
+.compact .ai-section > .section-header{display:none}
+.compact .ai-section .sec-body{display:none}
+.compact .ai-section .ai-compact{display:flex;flex-direction:column;gap:3px}
+.compact .ai-section .ai-crow{background:var(--section-bg);border:1px solid var(--section-border);padding:4px 6px}
+.compact .ai-refresh{display:none}
+
+/* =====================================================================
+   ここからスキン本体: data-skin="paper-tape"
+   既定（data-skin なし）は現行の見た目のまま。変数の上書き＋最小限の差分ルールだけ。
+   ===================================================================== */
+.tok[data-skin="paper-tape"]{
+  /* 地色・インク */
+  --container-bg:rgba(30,25,20,.97);
+  --text-color:#e9ddc9;
+  --muted-color:#a2907a;
+  --section-bg:rgba(233,221,201,.03);
+  --section-border:rgba(233,221,201,.14);
+  --section-title:#cdbb9f;
+  --section-value:#ff9366;
+  --bar-track:rgba(233,221,201,.10);
+  --core-track:rgba(233,221,201,.08);
+  --net-canvas-bg:rgba(0,0,0,.30);
+  --btn-bg:rgba(233,221,201,.07);
+  --btn-bg-hover:rgba(233,221,201,.16);
+  --btn-color:#b9a88f;
+  --input-bg:rgba(233,221,201,.04);
+  --input-border:rgba(233,221,201,.18);
+  /* AI（朱 = Claude / 藍 = Codex） */
+  --claude-a:#ff9b6a; --claude-b:#d4532f;
+  --codex-a:#8fb3bd; --codex-b:#3f6f7a;
+  --warn:#e8b64a; --crit:#ef6a52; --ok:#8fb3bd;
+  --chip-warn-bg:rgba(232,182,74,.12); --chip-warn-fg:#e8c877;
+  --chip-login-bg:rgba(143,179,189,.14); --chip-login-fg:#a8c9d2;
+  --net-rx:#8fb3bd; --net-tx:#ff9366;
+  /* スキン固有 */
+  --paper-rule:rgba(233,221,201,.14);
+  --paper-rule-strong:rgba(233,221,201,.32);
+  --paper-accent:#ff9366;
+  --paper-ink-2:#8fb3bd;
+  --paper-grid:rgba(233,221,201,.045);
+  --paper-edge:rgba(233,221,201,.20);
+  --on-accent:#231a14;
+  --radius:0px;
+  --font-mono:'Consolas','Cascadia Mono','Courier New',monospace;
+}
+.tok[data-skin="paper-tape"].theme-light{
+  --container-bg:rgba(247,241,229,.97);
+  --text-color:#2b241b;
+  --muted-color:#6f6250;
+  --section-bg:rgba(43,36,27,.025);
+  --section-border:rgba(43,36,27,.16);
+  --section-title:#4a3f30;
+  --section-value:#b03a1c;
+  --bar-track:rgba(43,36,27,.12);
+  --core-track:rgba(43,36,27,.09);
+  --net-canvas-bg:rgba(43,36,27,.05);
+  --btn-bg:rgba(43,36,27,.07);
+  --btn-bg-hover:rgba(43,36,27,.15);
+  --btn-color:#4a3f30;
+  --input-bg:rgba(43,36,27,.04);
+  --input-border:rgba(43,36,27,.18);
+  --claude-a:#c9542f; --claude-b:#8e2f16;
+  --codex-a:#4f7d8a; --codex-b:#2c5560;
+  --warn:#a87400; --crit:#b3261e; --ok:#3f6f7a;
+  --chip-warn-bg:rgba(168,116,0,.12); --chip-warn-fg:#7a5400;
+  --chip-login-bg:rgba(79,125,138,.12); --chip-login-fg:#2c5560;
+  --net-rx:#3f6f7a; --net-tx:#b03a1c;
+  --paper-rule:rgba(43,36,27,.16);
+  --paper-rule-strong:rgba(43,36,27,.34);
+  --paper-accent:#b03a1c;
+  --paper-ink-2:#3f6f7a;
+  --paper-grid:rgba(43,36,27,.05);
+  --paper-edge:rgba(43,36,27,.20);
+  --on-accent:#fbf3e4;
+}
+
+/* --- 紙面（罫線）と左端のミシン目 --- */
+.tok[data-skin="paper-tape"].win{
+  background-image:repeating-linear-gradient(to bottom,var(--paper-grid) 0 1px,transparent 1px 12px);
+  background-position:0 30px;
+  box-shadow:0 10px 26px rgba(0,0,0,.38);
+}
+.tok[data-skin="paper-tape"].theme-light.win{box-shadow:0 10px 26px rgba(90,70,40,.20)}
+.tok[data-skin="paper-tape"].win::before{
+  content:"";position:absolute;left:5px;top:30px;bottom:8px;
+  border-left:1px dashed var(--paper-edge);opacity:.7;pointer-events:none;
+}
+.tok[data-skin="paper-tape"].win.compact::before{display:none}
+
+/* --- 区画 = 面を捨て、上辺の破線だけで仕切る --- */
+.tok[data-skin="paper-tape"] .section{
+  background:transparent;border:0;border-top:1px dashed var(--paper-rule);
+  border-radius:0;padding:6px 2px 7px;margin-bottom:0;
+}
+.tok[data-skin="paper-tape"] .section:last-child{margin-bottom:0}
+.tok[data-skin="paper-tape"] .wifi-section{
+  border:0;border-top:1px dashed var(--paper-rule);padding:0;
+}
+.tok[data-skin="paper-tape"] .flip-face{
+  background:transparent;border:0;border-radius:0;padding:6px 2px 7px;
+}
+.tok[data-skin="paper-tape"] .section-header{margin-bottom:4px}
+.tok[data-skin="paper-tape"] .section-header::before{
+  content:"";width:3px;height:11px;background:var(--paper-accent);margin-right:6px;flex:none;
+}
+.tok[data-skin="paper-tape"] .section-title{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;font-weight:700}
+.tok[data-skin="paper-tape"] .section-value{font-size:12px;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.tok[data-skin="paper-tape"] .section-icon{
+  font-size:0;width:13px;margin-right:5px;flex:none;color:var(--muted-color);
+  font-family:var(--font-mono);display:flex;align-items:center;justify-content:center;
+}
+.tok[data-skin="paper-tape"] .section-icon::before{content:"»";font-size:11px;line-height:1}
+.tok[data-skin="paper-tape"] [data-sec="memory"] .section-icon::before{content:"≡"}
+.tok[data-skin="paper-tape"] [data-sec="gpu"] .section-icon::before{content:"△"}
+.tok[data-skin="paper-tape"] [data-sec="npu"] .section-icon::before{content:"◇"}
+.tok[data-skin="paper-tape"] [data-sec="network"] .section-icon::before{content:"⇅"}
+.tok[data-skin="paper-tape"] [data-sec="ai"] .section-icon::before{content:"✳"}
+
+/* --- バー = 一定間隔で切れ目が入った「印刷の目盛り」 --- */
+.tok[data-skin="paper-tape"] .progress-bar{
+  height:6px;border-radius:0;box-shadow:inset 0 0 0 1px var(--paper-rule);margin-bottom:5px;
+}
+.tok[data-skin="paper-tape"] .progress-fill{
+  border-radius:0;background-color:var(--paper-accent);
+  background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.30) 0 1px,transparent 1px 6px);
+}
+.tok[data-skin="paper-tape"] .cpu-fill,
+.tok[data-skin="paper-tape"] .npu-fill,
+.tok[data-skin="paper-tape"] .clock-fill{background-color:var(--paper-accent)}
+.tok[data-skin="paper-tape"] .memory-fill,
+.tok[data-skin="paper-tape"] .gpu-fill{background-color:var(--paper-ink-2)}
+.tok[data-skin="paper-tape"] .memory-details .used{color:var(--paper-ink-2)}
+.tok[data-skin="paper-tape"] .memory-details,
+.tok[data-skin="paper-tape"] .clock-value,
+.tok[data-skin="paper-tape"] .clock-base,
+.tok[data-skin="paper-tape"] .wifi-value,
+.tok[data-skin="paper-tape"] .wreset,
+.tok[data-skin="paper-tape"] .extra{font-variant-numeric:tabular-nums}
+.tok[data-skin="paper-tape"] .clock-label{font-family:var(--font-mono);font-size:10.5px}
+.tok[data-skin="paper-tape"] .clock-base-marker{width:2px;background:var(--paper-ink-2);opacity:1}
+
+/* コア別バー */
+.tok[data-skin="paper-tape"] .core-bar-container{border-radius:0;box-shadow:inset 0 0 0 1px var(--paper-rule)}
+.tok[data-skin="paper-tape"] .core-bar{
+  border-radius:0;background-color:var(--paper-accent);
+  background-image:repeating-linear-gradient(0deg,rgba(0,0,0,.30) 0 1px,transparent 1px 5px);
+}
+.tok[data-skin="paper-tape"] .core-label{font-family:var(--font-mono);font-size:7.5px}
+.tok[data-skin="paper-tape"] .core-value{font-family:var(--font-mono);font-size:9px}
+
+/* 電源モード: 省電力 = 藍 / バランス・パフォーマンス = 朱 */
+.tok[data-skin="paper-tape"] .power-mode.pm-saver{--pm-color:var(--paper-ink-2);--pm-text:var(--paper-ink-2)}
+.tok[data-skin="paper-tape"] .power-mode.pm-balanced,
+.tok[data-skin="paper-tape"] .power-mode.pm-best{--pm-color:var(--paper-accent);--pm-text:var(--paper-accent)}
+.tok[data-skin="paper-tape"] .pm-slider::-webkit-slider-runnable-track{
+  height:3px;border-radius:0;box-shadow:inset 0 0 0 1px var(--paper-rule);
+}
+.tok[data-skin="paper-tape"] .pm-slider::-webkit-slider-thumb{
+  -webkit-appearance:none;width:9px;height:14px;margin-top:-5.5px;border-radius:0;
+  background:var(--pm-color);border:1px solid var(--container-bg);box-shadow:0 0 0 1px var(--pm-color);
+}
+.tok[data-skin="paper-tape"] .pm-labels span{font-family:var(--font-mono);font-size:9.5px}
+
+/* 上部ボタン = 角の丸くない小さなスイッチ */
+.tok[data-skin="paper-tape"] .top-btn{
+  width:17px;height:17px;border-radius:0;border:1px solid var(--paper-rule);background:transparent;font-size:9px;
+}
+.tok[data-skin="paper-tape"] .top-btn:hover{background:var(--btn-bg-hover)}
+.tok[data-skin="paper-tape"] .pin-btn.active{background:var(--paper-accent);border-color:var(--paper-accent);color:var(--on-accent)}
+.tok[data-skin="paper-tape"] .compact-btn.expanded{background:var(--paper-accent);color:var(--on-accent);border-color:var(--paper-accent)}
+
+/* ネットワーク */
+.tok[data-skin="paper-tape"] .net-canvas{border-radius:0;box-shadow:inset 0 0 0 1px var(--paper-rule)}
+.tok[data-skin="paper-tape"] .net-leg-rx{color:var(--net-rx)}
+.tok[data-skin="paper-tape"] .net-leg-tx{color:var(--net-tx)}
+.tok[data-skin="paper-tape"] .net-legend{font-variant-numeric:tabular-nums}
+.tok[data-skin="paper-tape"] .wifi-value{font-size:10.5px}
+.tok[data-skin="paper-tape"] .wifi-connected{color:var(--paper-ink-2)}
+.tok[data-skin="paper-tape"] .wifi-disconnected{color:var(--crit)}
+
+/* AI 使用量: 2 色印刷 */
+.tok[data-skin="paper-tape"] .prov-name{font-family:var(--font-mono);letter-spacing:.03em}
+.tok[data-skin="paper-tape"] .prov-name i,
+.tok[data-skin="paper-tape"] .ai-crow i{width:7px;height:7px;border-radius:0}
+.tok[data-skin="paper-tape"] .plan{
+  border-radius:0;border-color:var(--paper-rule-strong);font-family:var(--font-mono);
+  font-size:8.5px;letter-spacing:.04em;
+}
+.tok[data-skin="paper-tape"] .prov-state{font-size:9.5px;font-family:var(--font-mono)}
+.tok[data-skin="paper-tape"] .wreset,
+.tok[data-skin="paper-tape"] .extra{font-size:9.5px}
+.tok[data-skin="paper-tape"] .wrow .lab{font-family:var(--font-mono);font-size:10px}
+.tok[data-skin="paper-tape"] .wrow .pct{font-size:11.5px;font-variant-numeric:tabular-nums}
+.tok[data-skin="paper-tape"] .chip{border-radius:0;border-left:3px solid currentColor;padding:3px 6px;font-family:var(--font-mono)}
+.tok[data-skin="paper-tape"] .ai-act{border-radius:0;background:var(--paper-accent);color:var(--on-accent)}
+.tok[data-skin="paper-tape"] .ai-refresh{border-radius:0}
+
+/* コンパクト時の紙テープ: 余白を詰め、区切りは破線のまま */
+.tok[data-skin="paper-tape"] .compact .section,
+.tok[data-skin="paper-tape"].compact .section{padding:3px 2px;margin-bottom:0}
+.tok[data-skin="paper-tape"].compact .section-header::before{height:9px;margin-right:5px}
+.tok[data-skin="paper-tape"] .compact .section-icon,
+.tok[data-skin="paper-tape"].compact .section-icon{display:none}
+.tok[data-skin="paper-tape"].compact .section-title{font-size:10.5px;letter-spacing:.02em}
+.tok[data-skin="paper-tape"].compact .section-title[data-compact]{font-size:0}
+.tok[data-skin="paper-tape"].compact .section-title[data-compact]::before{font-size:10.5px;letter-spacing:.02em}
+.tok[data-skin="paper-tape"].compact .section-value{font-size:10.5px}
+.tok[data-skin="paper-tape"].compact .flip-face{padding:3px 2px}
+.tok[data-skin="paper-tape"].compact .ai-section{border-top:0;padding:0}
+.tok[data-skin="paper-tape"].compact .ai-section .ai-crow{
+  background:transparent;border:0;border-top:1px dashed var(--paper-rule);border-radius:0;padding:3px 2px;
+}
+.tok[data-skin="paper-tape"].compact .ai-section .ai-compact{gap:0}
+.tok[data-skin="paper-tape"].compact .ai-section .ai-crow:first-child{border-top:0}
+.tok[data-skin="paper-tape"].compact .ai-cname{font-size:10.5px}
+.tok[data-skin="paper-tape"].compact .ai-cval{font-size:10.5px}
+
+/* =====================================================================
+   設定ウィンドウ（ui/settings.html）— 920×780 の実寸
+   ===================================================================== */
+.settings{
+  width:920px;height:780px;flex:none;
+  background:var(--bg);color:var(--text-color);
+  font:13px/1.5 'Segoe UI','Yu Gothic UI',sans-serif;
+  display:flex;overflow:hidden;
+  /* 既定（現行）のダーク配色 */
+  --bg:#101016; --nav-bg:#15151d;
+  --card-bg:rgba(255,255,255,.05); --card-border:rgba(255,255,255,.10);
+  --text-color:#f0f0f5; --muted-color:#a8a8b8; --title-color:#d8d8e8;
+  --btn-bg:rgba(255,255,255,.12); --btn-bg-hover:rgba(255,255,255,.22); --btn-color:#bbb;
+  --input-bg:rgba(255,255,255,.05); --input-border:rgba(255,255,255,.14);
+  --accent:#5aa0ff;
+  --warn-bg:rgba(255,190,60,.14); --warn-fg:#ffd27a;
+  --ok-fg:#7fffaa; --danger-fg:#ff9a9a;
+  accent-color:var(--accent);
+}
+.settings.theme-light{
+  --bg:#eef0f8; --nav-bg:#e2e6f3;
+  --card-bg:rgba(255,255,255,.75); --card-border:rgba(0,0,0,.10);
+  --text-color:#24263a; --muted-color:#606078; --title-color:#3b3b5a;
+  --btn-bg:rgba(0,0,0,.08); --btn-bg-hover:rgba(0,0,0,.16); --btn-color:#444;
+  --input-bg:rgba(0,0,0,.04); --input-border:rgba(0,0,0,.15);
+  --warn-bg:rgba(220,140,0,.14); --warn-fg:#8a5a00;
+  --ok-fg:#0a7f48; --danger-fg:#b3261e;
+}
+.settings nav{width:188px;flex:none;background:var(--nav-bg);padding:18px 10px;display:flex;flex-direction:column;gap:4px;border-right:1px solid var(--card-border)}
+.settings nav h1{font-size:14px;font-weight:600;color:var(--title-color);padding:2px 10px 12px;margin:0}
+.settings .nav-item{text-align:left;padding:9px 12px;border:0;border-radius:6px;background:none;color:var(--text-color);font:inherit;cursor:pointer}
+.settings .nav-item:hover{background:var(--btn-bg)}
+.settings .nav-item.active{background:var(--accent);color:#fff}
+.settings main{flex:1;min-width:0;overflow-y:auto;padding:22px 28px 40px}
+.settings .panel{display:none;max-width:640px;margin:0 auto}
+.settings .panel.active{display:block}
+.settings .panel > h2{font-size:17px;font-weight:600;color:var(--title-color);margin-bottom:14px}
+.settings .card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.settings .card > .label{display:block;font-size:12px;color:var(--muted-color);margin-bottom:8px}
+.settings .hint{font-size:11.5px;color:var(--muted-color);margin-top:8px;line-height:1.55}
+.settings .opts{display:flex;gap:6px;flex-wrap:wrap}
+.settings .opt{flex:0 1 auto;min-width:84px;text-align:center;padding:7px 14px;font:inherit;background:var(--input-bg);border:1px solid var(--input-border);border-radius:6px;cursor:pointer;color:var(--text-color)}
+.settings .opt:hover{background:var(--btn-bg-hover)}
+.settings .opt.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.settings .toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;background:var(--input-bg);border:1px solid var(--input-border);border-radius:6px;cursor:pointer}
+.settings .toggle input{margin:0;width:16px;height:16px;cursor:pointer;flex:none}
+
+/* 新しい「スキン」カード */
+.skin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.skin-card{
+  position:relative;display:flex;align-items:center;gap:10px;text-align:left;
+  padding:9px 10px;background:var(--input-bg);border:1px solid var(--input-border);
+  border-radius:8px;color:var(--text-color);font:inherit;cursor:pointer;
+}
+.skin-card:hover{background:var(--btn-bg)}
+.skin-card.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.skin-card .radio{width:14px;height:14px;border-radius:50%;border:2px solid var(--input-border);flex:none;margin-left:auto;position:relative}
+.skin-card.selected .radio{border-color:var(--accent)}
+.skin-card.selected .radio::after{content:"";position:absolute;inset:2px;border-radius:50%;background:var(--accent)}
+.skin-meta{min-width:0;display:flex;flex-direction:column;gap:1px}
+.skin-meta b{font-size:12.5px;font-weight:600;color:var(--title-color);display:flex;align-items:center;gap:5px}
+.skin-meta small{font-size:10.5px;color:var(--muted-color);white-space:nowrap}
+.badge-new{font:600 9px/1 var(--font-mono);letter-spacing:.04em;background:var(--accent);color:#fff;border-radius:3px;padding:3px 4px}
+.preview{
+  width:78px;height:50px;flex:none;border-radius:4px;border:1px solid var(--card-border);
+  position:relative;overflow:hidden;
+}
+/* 既定のプレビュー: 現行のグラファイト＋紫バー＋ミントの数値 */
+.prev-default{background:linear-gradient(135deg,#0d0d12,#16161e)}
+.prev-default::before{
+  content:"";position:absolute;left:8px;top:12px;width:40px;height:4px;border-radius:2px;
+  background:linear-gradient(90deg,#8a9cff,#b07cff);
+}
+.prev-default::after{
+  content:"31%";position:absolute;right:7px;bottom:8px;
+  font:700 9px/1 var(--font-mono);color:#7bffe0;
+}
+/* 紙テープのプレビュー: 生成り＋朱の罫線とバー */
+.prev-paper{
+  background:
+    repeating-linear-gradient(to bottom,rgba(43,36,27,.09) 0 1px,transparent 1px 8px),
+    #f1e8d6;
+  border-color:rgba(43,36,27,.22);
+}
+.prev-paper::before{
+  content:"";position:absolute;left:7px;top:11px;width:40px;height:4px;
+  background:repeating-linear-gradient(90deg,#b03a1c 0 1px,transparent 1px 5px);
+  background-color:#b03a1c;
+}
+.prev-paper::after{
+  content:"42";position:absolute;right:6px;bottom:6px;
+  font:700 11px/1 var(--font-mono);color:#b03a1c;letter-spacing:.04em;
+}
+.prev-paper .prev-rule{display:none}
+
+/* 設定ウィンドウのスキン（変数の上書き） */
+.settings[data-skin="paper-tape"]{
+  --bg:#16120e; --nav-bg:#1c1712;
+  --card-bg:rgba(233,221,201,.03); --card-border:rgba(233,221,201,.14);
+  --text-color:#e9ddc9; --muted-color:#a2907a; --title-color:#cdbb9f;
+  --btn-bg:rgba(233,221,201,.07); --btn-bg-hover:rgba(233,221,201,.16); --btn-color:#b9a88f;
+  --input-bg:rgba(233,221,201,.04); --input-border:rgba(233,221,201,.18);
+  --accent:#c9542f;
+  --warn-bg:rgba(232,182,74,.12); --warn-fg:#e8c877;
+  --ok-fg:#8fb3bd; --danger-fg:#ff9b8a;
+  --radius:0px;
+  --font-mono:'Consolas','Cascadia Mono','Courier New',monospace;
+}
+.settings[data-skin="paper-tape"].theme-light{
+  --bg:#f1e8d6; --nav-bg:#e8ddc8;
+  --card-bg:rgba(255,251,242,.7); --card-border:rgba(43,36,27,.16);
+  --text-color:#2b241b; --muted-color:#6f6250; --title-color:#4a3f30;
+  --btn-bg:rgba(43,36,27,.07); --btn-bg-hover:rgba(43,36,27,.15); --btn-color:#4a3f30;
+  --input-bg:rgba(43,36,27,.04); --input-border:rgba(43,36,27,.18);
+  --accent:#b03a1c;
+  --warn-bg:rgba(168,116,0,.12); --warn-fg:#7a5400;
+  --ok-fg:#3f6f7a; --danger-fg:#a3231b;
+}
+/* 設定ウィンドウの差分: 角を落とし、罫線と等幅の見出しに揃える */
+.settings[data-skin="paper-tape"] .card,
+.settings[data-skin="paper-tape"] .opt,
+.settings[data-skin="paper-tape"] .toggle,
+.settings[data-skin="paper-tape"] .skin-card,
+.settings[data-skin="paper-tape"] .nav-item{border-radius:0}
+.settings[data-skin="paper-tape"] nav{border-right-style:dashed}
+.settings[data-skin="paper-tape"] nav h1,
+.settings[data-skin="paper-tape"] .panel > h2{font-family:var(--font-mono);letter-spacing:.06em}
+.settings[data-skin="paper-tape"] .card > .label{font-family:var(--font-mono);letter-spacing:.05em;font-size:11px}
+.settings[data-skin="paper-tape"] .opt{background:transparent}
+.settings[data-skin="paper-tape"] .toggle{background:transparent}
+.settings[data-skin="paper-tape"] .skin-card{background:transparent}
+.settings[data-skin="paper-tape"] .skin-card:hover{background:var(--btn-bg)}
+.settings[data-skin="paper-tape"] .skin-card.selected{box-shadow:0 0 0 1px var(--accent),inset 3px 0 0 var(--accent)}
+.settings[data-skin="paper-tape"] .skin-meta b{font-family:var(--font-mono);letter-spacing:.04em}
+.settings[data-skin="paper-tape"] .skin-meta small{font-family:var(--font-mono);font-size:10px}
+.settings[data-skin="paper-tape"] .badge-new{background:var(--accent);color:#fbf3e4}
+.settings[data-skin="paper-tape"] .preview{border-radius:0}
+
+/* ネットワーク区画だけの比較用（表 / 裏） */
+.net-demo{
+  width:230px;padding:10px 10px 8px;
+  background-color:var(--container-bg);color:var(--text-color);
+  font:13px/1.35 'Segoe UI','Yu Gothic UI',sans-serif;user-select:none;
+  border-radius:var(--radius);box-shadow:0 12px 32px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.07);
+}
+.net-demo-cap{font:9.5px/1.4 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted-color);margin:8px 0 1px}
+.net-demo-cap:first-child{margin-top:0}
+.tok[data-skin="paper-tape"].net-demo{
+  background-image:repeating-linear-gradient(to bottom,var(--paper-grid) 0 1px,transparent 1px 12px);
+  background-position:0 0;
+  box-shadow:0 10px 26px rgba(0,0,0,.38);
+}
+
+/* スキンの材料（スペシメン） */
+.materials{
+  width:330px;padding:16px 16px 14px;background:#f1e8d6;color:#2b241b;
+  background-image:repeating-linear-gradient(to bottom,rgba(43,36,27,.055) 0 1px,transparent 1px 12px);
+  font:12px/1.6 'Segoe UI','Yu Gothic UI',sans-serif;
+  box-shadow:0 12px 32px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.08);
+}
+.materials .mat-cap{
+  font:9px/1.4 var(--doc-mono);letter-spacing:.16em;color:#8a7a63;
+  margin:13px 0 7px;border-top:1px dashed rgba(43,36,27,.25);padding-top:8px;
+}
+.materials .mat-cap:first-child{margin-top:0;border-top:0;padding-top:0}
+.swatches{display:grid;gap:7px}
+.sw{display:flex;align-items:center;gap:9px}
+.sw i{width:26px;height:26px;flex:none;border:1px solid rgba(43,36,27,.28)}
+.sw span{display:block}
+.sw b{display:block;font:600 11px/1.4 var(--doc-mono);letter-spacing:.04em}
+.sw small{display:block;font:10px/1.4 var(--doc-mono);color:#6f6250}
+.type-row{display:flex;align-items:baseline;gap:14px;font-family:var(--doc-mono);color:#b03a1c;font-variant-numeric:tabular-nums}
+.type-row .t1{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.type-row .t2{font-size:15px;font-weight:700}
+.type-row .t3{font-family:'Segoe UI','Yu Gothic UI',sans-serif;font-size:12px;color:#2b241b;font-weight:600}
+.mat-bars{display:grid;gap:6px}
+.mat-bar{display:grid;grid-template-columns:34px 1fr 30px;align-items:center;gap:7px;font:10px/1.2 var(--doc-mono);color:#6f6250}
+.mat-bar .track{height:6px;background:rgba(43,36,27,.12);box-shadow:inset 0 0 0 1px rgba(43,36,27,.18);position:relative}
+.mat-bar .fill{position:absolute;inset:0 auto 0 0;background-color:#b03a1c;background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.3) 0 1px,transparent 1px 6px)}
+.mat-bar .val{text-align:right;color:#b03a1c;font-weight:700}
+.mat-rule{border-top:1px dashed rgba(43,36,27,.35);padding-top:7px;font:10px/1.4 var(--doc-mono);color:#6f6250}
+.mat-radius{display:flex;align-items:center;gap:8px;font:10px/1.4 var(--doc-mono);color:#6f6250;margin-top:8px}
+.mat-radius i{width:26px;height:16px;border:1px solid #b03a1c;background:repeating-linear-gradient(90deg,rgba(176,58,28,.9) 0 1px,transparent 1px 5px)}
+
+/* 設定ウィンドウの縮小表示 */
+.settings-scale{width:662px;height:562px;overflow:hidden;border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.5)}
+.settings-scale .settings{transform:scale(.72);transform-origin:top left}
+
+/* ---------- 下部ノート ---------- */
+.notes{margin-top:42px;border-top:1px solid var(--doc-line);padding-top:24px;max-width:1030px}
+.notes h2{font-size:15px;font-weight:650;margin-bottom:10px;color:#fff}
+.notes h3{font-size:13px;font-weight:650;margin:22px 0 8px;color:#fff}
+.notes p,.notes li{font-size:12.5px;line-height:1.72;color:#b8c2cc}
+.notes ul{padding-left:20px}
+.notes li{margin-bottom:4px}
+.notes b{color:#e9eef4;font-weight:600}
+.diff{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 26px;margin-top:8px}
+.diff > div{padding:10px 12px;border:1px solid var(--doc-line);border-radius:8px;background:#12161b}
+.diff h4{font:600 11px/1.4 var(--doc-mono);letter-spacing:.06em;color:var(--doc-accent);margin-bottom:4px}
+.diff p{font-size:11.8px}
+table.vars{width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px}
+table.vars th,table.vars td{border-bottom:1px solid var(--doc-line);padding:5px 8px;text-align:left;vertical-align:top}
+table.vars thead th{font:600 10.5px/1.4 var(--doc-mono);letter-spacing:.06em;color:var(--doc-muted);text-transform:uppercase}
+table.vars td:first-child{font-family:var(--doc-mono);color:#ffd9c9;white-space:nowrap}
+table.vars td:nth-child(2){font-family:var(--doc-mono);color:#9fb6c8;white-space:nowrap}
+table.vars td:nth-child(3){font-family:var(--doc-mono);color:#c8b79c}
+table.vars td:nth-child(4){color:#aab6c2}
+table.vars tr.grp td{background:#161b21;color:var(--doc-muted);font:600 10.5px/1.4 var(--doc-mono);letter-spacing:.08em}
+table.vars tr.grp td:first-child{color:var(--doc-muted)}
+details{margin-top:12px}
+details summary{cursor:pointer;font-size:12px;color:var(--doc-accent)}
+.foot{margin-top:30px;font-size:11px;color:#7d8894;font-family:var(--doc-mono)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <p class="eyebrow">docs/skins/mock-opencode.html / skin concept 1 of 4</p>
+  <h1>スキン案「紙テープ」<span class="en">PAPER TAPE</span></h1>
+  <p class="lead">
+    <code>ui/index.html</code> と <code>ui/settings.html</code> の実 DOM・クラス名・CSS 変数をそのまま使い、
+    スキン 1 案を実寸で組み直したモックです。数値・SSID・モデル名はすべてダミー。幅 230px（フル）と 130px（コンパクト）は実機と同じで、
+    スキンは <code>data-skin</code> と CSS 変数の差分だけで表現しています。アプリ本体のコードは変更していません。
+  </p>
+
+  <!-- ============ 冒頭のデザインノート ============ -->
+  <section class="design-note">
+    <div>
+      <p class="kicker">コンセプト</p>
+      <h2>紙テープ<span>PAPER TAPE</span></h2>
+      <p>計測ログを印字した<b>紙テープ</b>を、そのまま窓にしたスキン。等幅の数字、破線の罫線、<b>朱と藍の2色印刷</b>、角丸なし。装飾を足すのではなく、面・罫線・インクの3要素まで削ることで、常時表示していても視界の主役にならない静けさを狙います。</p>
+      <p>opencode の「ターミナルに常駐して、淡々とログを出す」性格を、UI の側から写した案です。</p>
+    </div>
+    <div>
+      <p class="kicker">テーマ・透過との関係</p>
+      <p><b>併存（置き換えない）。</b>スキンは「インク・罫線・書体・角」のレイヤーだけを担当し、<b>ダーク / ライト / システム</b>が紙の地色を選びます（ダーク＝夜の黒紙、ライト＝生成りの紙）。</p>
+      <p><b>透過モード</b>はウィンドウ全体のアルファ（Go 側の <code>SetLayeredWindowAttributes</code>）なので、スキンとは独立して効きます。<code>--container-bg</code> のアルファ値はスキンでも変えません。</p>
+    </div>
+    <div>
+      <p class="kicker">実装の形</p>
+      <p><code>body[data-skin="paper-tape"]</code> で変数を上書きし、差分ルールは 8 個だけ（角丸・破線・目盛りバー・アイコン記号など）。<b>data-skin なしは現行と同一</b>。<code>config.json</code> には <code>skin</code> を 1 キー足す想定で、テーマ・透過の保存値には触れません。</p>
+      <p>下のツールバーで「既定（現行）」に切り替えると、レイアウトが動かないことを確認できます。</p>
+    </div>
+  </section>
+
+  <!-- ============ 操作 ============ -->
+  <div class="toolbar">
+    <div class="ctl"><span>スキン</span>
+      <div class="seg">
+        <button type="button" data-skin-btn="paper-tape" class="on">紙テープ</button>
+        <button type="button" data-skin-btn="default">既定（現行）</button>
+      </div>
+    </div>
+    <div class="ctl"><span>透過モード</span>
+      <div class="seg"><button type="button" id="trBtn" aria-pressed="false">OFF</button></div>
+    </div>
+    <div class="hintline">幅は実寸（230px / 130px / 設定 920×780 を 0.72 倍）。透過はウィンドウ全体のアルファのため、文字も薄くなります（実機と同じ）。</div>
+  </div>
+
+  <!-- ============ ウィジェット ============ -->
+  <div class="stage">
+    <figure class="fig-narrow">
+      <div class="frame"><div id="winFull"></div></div>
+      <figcaption>
+        <b>① フル表示（幅 230px・ダーク）</b>
+        CPU（全体・コア別・クロック・電源モード）、メモリ、GPU、NPU、Wi-Fi、AI 使用量（Claude / Codex の 5h・7d）をすべて表示。
+        <span class="meas">ピン留めは ON、電源モードは「バランス」</span>。
+      </figcaption>
+    </figure>
+
+    <figure class="fig-compact">
+      <div class="frame tight"><div id="winCompact"></div></div>
+      <figcaption>
+        <b>② コンパクト表示（幅 130px・ダーク）</b>
+        見出しと値だけの 1 行区画。AI は Claude / Codex の 2 行。角丸を落としても、130px では罫線が区切りの役割を果たします。
+      </figcaption>
+    </figure>
+
+    <figure class="fig-narrow">
+      <div class="frame"><div id="winLight"></div></div>
+      <figcaption>
+        <b>③ フル表示（ライト）— テーマとの併存</b>
+        同じスキンで、地色だけが「生成りの紙」に替わります。朱と藍は印刷インク相当なので、明るい紙でもコントラストを保ちます。
+      </figcaption>
+    </figure>
+
+    <figure class="fig-materials">
+      <div class="frame"><div class="materials" aria-hidden="true">
+        <p class="mat-cap">2 COLORS / 2色印刷</p>
+        <div class="swatches">
+          <div class="sw"><i style="background:#ff9366"></i><span><b>朱 / VERMILION</b><small>#ff9366 — CPU・NPU・Claude・送信</small></span></div>
+          <div class="sw"><i style="background:#8fb3bd"></i><span><b>藍 / INDIGO</b><small>#8fb3bd — メモリ・GPU・Codex・受信</small></span></div>
+        </div>
+        <p class="mat-cap">TYPE / 等幅・桁揃え</p>
+        <div class="type-row"><span class="t1">3.42 GHz</span><span class="t2">42%</span><span class="t3">office-5g</span></div>
+        <p class="mat-cap">GAUGE / 6px ごとの目盛り</p>
+        <div class="mat-bars">
+          <div class="mat-bar"><span>5h</span><span class="track"><span class="fill" style="width:87%"></span></span><span class="val">87%</span></div>
+          <div class="mat-bar"><span>7d</span><span class="track"><span class="fill" style="width:58%;background-color:#3f6f7a"></span></span><span class="val" style="color:#3f6f7a">58%</span></div>
+          <div class="mat-bar"><span>core</span><span class="track"><span class="fill" style="width:14%"></span></span><span class="val">14%</span></div>
+        </div>
+        <p class="mat-cap">RULE / 罫線と角</p>
+        <div class="mat-rule">区画の区切りは破線 1 本。面は塗らない。</div>
+        <div class="mat-radius"><i></i><span>角丸 0px（--radius: 0px）</span></div>
+      </div></div>
+      <figcaption>
+        <b>スキンの材料（仕様メモ）</b>
+        この 1 枚でスキンの語彙が分かるように、色・書体・ゲージ・罫線を並べました。実装では色は変数、ゲージと罫線は 3 本の差分ルールに落ちます。
+      </figcaption>
+    </figure>
+  </div>
+
+  <div class="stage">
+    <figure class="fig-narrow">
+      <div class="frame"><div id="netDemo"></div></div>
+      <figcaption>
+        <b>④ ネットワーク区画（幅 230px）</b>
+        上: <b>Ethernet 接続時の表</b>（アダプタ・速度）。下: <b>裏面のトラフィックグラフ</b>（実機は区画クリックで反転）。グラフはインライン SVG で、外部リソースは使いません。
+      </figcaption>
+    </figure>
+
+    <figure class="fig-settings">
+      <div class="frame"><div class="settings-scale"><div class="settings skinnable" id="settingsWin" data-skin="paper-tape"></div></div></div>
+      <figcaption>
+        <b>⑤ 設定ウィンドウ（920×780 を 0.72 倍）— スキン選択 UI</b>
+        「表示」パネルのテーマと透過モードの間に「スキン」を追加。カードのプレビューをクリックすると、このページの全サンプルが切り替わります（選択 UI の動作確認用）。
+      </figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ ノート ============ -->
+  <div class="notes">
+    <h2>デザインノート（実装に渡すときのメモ）</h2>
+
+    <h3>1. なぜこの見た目か</h3>
+    <ul>
+      <li><b>2色印刷に限定。</b>朱（CPU・NPU・クロック・Claude）と藍（メモリ・GPU・Codex・受信・稼働中）の 2 色だけ。現行の紫→青→桃→橙という 4 系統のグラデーションを捨て、色数を減らすことで「今どこが動いているか」を色ではなく位置と数字で読ませます。使用率の警告（61%〜黄 / 81%〜赤）だけは意味を持つ色として例外にします。</li>
+      <li><b>面を捨てて罫線に。</b>区画の塗りと角丸を外し、上辺の破線 1 本で仕切ります。紙の罫線と同じで、区画が増えても画面が重くなりません。</li>
+      <li><b>数字は等幅・桁揃え。</b>値は <code>font-variant-numeric: tabular-nums</code>。更新で桁が跳ねないため、チラ見でも変化が読めます。</li>
+      <li><b>バーは目盛り。</b>6px ごとに切れ目を入れた単色バー。グラデーションをやめ、印刷のゲージらしくしました（<code>repeating-linear-gradient</code> 1 行）。</li>
+      <li><b>アイコンは記号に。</b>絵文字（💻🧠🎮🧩📶🤖）は紙面から浮くため、<code>» ≡ △ ◇ ⇅ ✳</code> に差し替え。DOM は変えず、<code>.section-icon</code> の <code>font-size:0</code> と <code>::before</code> だけで実現します。</li>
+    </ul>
+
+    <h3>2. 実装方針（差分だけで足す）</h3>
+    <div class="diff">
+      <div><h4>1. 設定と保存</h4><p><code>config.json</code> に <code>skin</code>（既定 <code>""</code>）を追加。設定画面の選択で <code>/api/setoption?key=skin&amp;value=paper-tape</code>。テーマ・透過の値はそのまま。</p></div>
+      <div><h4>2. DOM</h4><p>変更なし。<code>body</code> に <code>data-skin</code> を立てるだけ（起動時と設定変更時）。クラス名・区画構造・JS の更新処理に手を入れません。</p></div>
+      <div><h4>3. CSS 変数</h4><p><code>[data-skin="paper-tape"]</code> で約 40 個を上書き。既定値は現行のままなので、スキン未選択時の描画は 1px も変わりません。</p></div>
+      <div><h4>4. 差分ルール（8 個）</h4><p>角丸 <code>0</code>／区画の塗りを廃して上辺破線／目盛りバー／アイコン記号／電源スライダーの角形つまみ／上部ボタンの角形化／2色インク／設定カードの角形化。</p></div>
+      <div><h4>5. グラフ色</h4><p>受信・送信の色は現在 canvas 内にハードコードされているため、<code>--net-rx</code> / <code>--net-tx</code> に切り出す（このモックではインライン SVG で再現）。</p></div>
+      <div><h4>6. 角丸の変数化</h4><p>現在リテラルで書かれている <code>8px</code> / <code>10px</code> を <code>--radius</code> に置換（既定 <code>8px</code>、スキンで <code>0</code>）。置換しない場合はスキン側で個別に上書き。</p></div>
+      <div><h4>7. 絵文字の非表示</h4><p><code>.section-icon</code> は <code>font-size:0</code> にし、区画ごとの <code>::before</code> を 1 行ずつ。読み上げ用の <code>aria-label</code> は現状どおり親の見出しテキストが担う。</p></div>
+      <div><h4>8. 設定画面</h4><p>「表示」パネルにスキンカードを追加するだけ。カードのプレビューは静的な CSS 描画（画像ファイル不要）。</p></div>
+    </div>
+
+    <h3>3. data-skin ごとの上書き変数（このモックの実値）</h3>
+    <p>既定（<code>data-skin</code> なし）は <code>ui/index.html</code> の現行値。以下は <b>paper-tape のときだけ</b>上書きする値です。設定ウィンドウは同名の変数を持つため、<code>--text-color</code> / <code>--muted-color</code> / <code>--btn-*</code> / <code>--input-*</code> はウィジェットと同じ値を再定義しています。</p>
+    <table class="vars">
+      <thead><tr><th>変数</th><th>ダーク（夜の黒紙）</th><th>ライト（生成りの紙）</th><th>用途</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td colspan="4">ウィジェット共通（ui/index.html）</td></tr>
+        <tr><td>--container-bg</td><td>rgba(30,25,20,.97)</td><td>rgba(247,241,229,.97)</td><td>窓の地色（アルファは現行どおり）</td></tr>
+        <tr><td>--text-color</td><td>#e9ddc9</td><td>#2b241b</td><td>本文・値</td></tr>
+        <tr><td>--muted-color</td><td>#a2907a</td><td>#6f6250</td><td>ラベル・補助文字</td></tr>
+        <tr><td>--section-bg</td><td>rgba(233,221,201,.03)</td><td>rgba(43,36,27,.025)</td><td>区画の面（ほぼ透明）</td></tr>
+        <tr><td>--section-border</td><td>rgba(233,221,201,.14)</td><td>rgba(43,36,27,.16)</td><td>破線・グラフのグリッド</td></tr>
+        <tr><td>--section-title</td><td>#cdbb9f</td><td>#4a3f30</td><td>区画名</td></tr>
+        <tr><td>--section-value</td><td>#ff9366</td><td>#b03a1c</td><td>値（朱インク）</td></tr>
+        <tr><td>--bar-track</td><td>rgba(233,221,201,.10)</td><td>rgba(43,36,27,.12)</td><td>バーの溝</td></tr>
+        <tr><td>--core-track</td><td>rgba(233,221,201,.08)</td><td>rgba(43,36,27,.09)</td><td>コア別バーの溝</td></tr>
+        <tr><td>--net-canvas-bg</td><td>rgba(0,0,0,.30)</td><td>rgba(43,36,27,.05)</td><td>トラフィックグラフの下地</td></tr>
+        <tr><td>--btn-bg</td><td>rgba(233,221,201,.07)</td><td>rgba(43,36,27,.07)</td><td>上部ボタン・ホバー</td></tr>
+        <tr><td>--btn-bg-hover</td><td>rgba(233,221,201,.16)</td><td>rgba(43,36,27,.15)</td><td>同・ホバー</td></tr>
+        <tr><td>--btn-color</td><td>#b9a88f</td><td>#4a3f30</td><td>上部ボタンの記号</td></tr>
+        <tr><td>--input-bg</td><td>rgba(233,221,201,.04)</td><td>rgba(43,36,27,.04)</td><td>設定の入力欄</td></tr>
+        <tr><td>--input-border</td><td>rgba(233,221,201,.18)</td><td>rgba(43,36,27,.18)</td><td>設定の入力枠</td></tr>
+        <tr><td>--radius</td><td>0px</td><td>0px</td><td>角丸（新設。既定 8px）</td></tr>
+        <tr class="grp"><td colspan="4">AI 使用量・ネットワーク</td></tr>
+        <tr><td>--claude-a / -b</td><td>#ff9b6a / #d4532f</td><td>#c9542f / #8e2f16</td><td>Claude の朱</td></tr>
+        <tr><td>--codex-a / -b</td><td>#8fb3bd / #3f6f7a</td><td>#4f7d8a / #2c5560</td><td>Codex の藍</td></tr>
+        <tr><td>--warn</td><td>#e8b64a</td><td>#a87400</td><td>61% 以上の注意</td></tr>
+        <tr><td>--crit</td><td>#ef6a52</td><td>#b3261e</td><td>81% 以上の警告</td></tr>
+        <tr><td>--ok</td><td>#8fb3bd</td><td>#3f6f7a</td><td>稼働中（藍）</td></tr>
+        <tr><td>--chip-warn-bg / -fg</td><td>rgba(232,182,74,.12) / #e8c877</td><td>rgba(168,116,0,.12) / #7a5400</td><td>障害チップ</td></tr>
+        <tr><td>--chip-login-bg / -fg</td><td>rgba(143,179,189,.14) / #a8c9d2</td><td>rgba(79,125,138,.12) / #2c5560</td><td>未ログインチップ</td></tr>
+        <tr><td>--net-rx / --net-tx</td><td>#8fb3bd / #ff9366</td><td>#3f6f7a / #b03a1c</td><td>グラフ色（新設。要切り出し）</td></tr>
+        <tr class="grp"><td colspan="4">スキン固有（新設。このスキンだけが使う）</td></tr>
+        <tr><td>--paper-rule</td><td>rgba(233,221,201,.14)</td><td>rgba(43,36,27,.16)</td><td>破線・罫線・バーの枠</td></tr>
+        <tr><td>--paper-rule-strong</td><td>rgba(233,221,201,.32)</td><td>rgba(43,36,27,.34)</td><td>強い罫線（プランの枠）</td></tr>
+        <tr><td>--paper-accent</td><td>#ff9366</td><td>#b03a1c</td><td>朱インク（区画の目印・つまみ）</td></tr>
+        <tr><td>--paper-ink-2</td><td>#8fb3bd</td><td>#3f6f7a</td><td>藍インク（メモリ・GPU・受信・ベースクロック線）</td></tr>
+        <tr><td>--paper-grid</td><td>rgba(233,221,201,.045)</td><td>rgba(43,36,27,.05)</td><td>紙面の横罫線（12px 間隔）</td></tr>
+        <tr><td>--paper-edge</td><td>rgba(233,221,201,.20)</td><td>rgba(43,36,27,.20)</td><td>左端のミシン目</td></tr>
+        <tr><td>--on-accent</td><td>#231a14</td><td>#fbf3e4</td><td>朱の上に置く文字（ピン留め ON など）</td></tr>
+        <tr><td>--font-mono</td><td colspan="2">'Consolas','Cascadia Mono','Courier New',monospace</td><td>値・見出しの等幅</td></tr>
+        <tr class="grp"><td colspan="4">設定ウィンドウ（ui/settings.html）</td></tr>
+        <tr><td>--bg</td><td>#16120e</td><td>#f1e8d6</td><td>設定の地色</td></tr>
+        <tr><td>--nav-bg</td><td>#1c1712</td><td>#e8ddc8</td><td>左ナビ</td></tr>
+        <tr><td>--card-bg</td><td>rgba(233,221,201,.03)</td><td>rgba(255,251,242,.7)</td><td>カード</td></tr>
+        <tr><td>--card-border</td><td>rgba(233,221,201,.14)</td><td>rgba(43,36,27,.16)</td><td>カードの枠</td></tr>
+        <tr><td>--title-color</td><td>#cdbb9f</td><td>#4a3f30</td><td>見出し</td></tr>
+        <tr><td>--accent</td><td>#c9542f</td><td>#b03a1c</td><td>選択中の選択肢・スキンカード</td></tr>
+        <tr><td>--warn-bg / -fg</td><td>rgba(232,182,74,.12) / #e8c877</td><td>rgba(168,116,0,.12) / #7a5400</td><td>警告ノート</td></tr>
+        <tr><td>--ok-fg</td><td>#8fb3bd</td><td>#3f6f7a</td><td>「登録されています」</td></tr>
+        <tr><td>--danger-fg</td><td>#ff9b8a</td><td>#a3231b</td><td>エラー</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4. 未確定にしていること</h3>
+    <ul>
+      <li><b>設定のラベル。</b>「スキン」で通していますが、「デザイン」のほうが分かりやすいかもしれません。既存の「テーマ」との違いは、テーマ＝地色、スキン＝印刷の質感、という説明をヒントに置いています。</li>
+      <li><b>既定の扱い。</b>スキン未選択を「既定」として残す前提です。新規インストール時に紙テープを既定にするかは、別途判断が必要です。</li>
+      <li><b>絵文字の差し替え。</b>スキンでアイコンを記号に替えると、区画の意味が分かりにくくなる可能性があります。実際に使ってみて、<code>»</code> などが読みづらければアイコンだけ現行のまま残す選択肢もあります。</li>
+      <li><b>ライトの紙色。</b>生成りの紙は暖色寄りなので、Windows のライトテーマ（寒色寄りの UI）と並べたときの差が大きめです。気になる場合は <code>--container-bg</code> を <code>#f3f4f0</code> 程度まで中立化できます。</li>
+      <li><b>ミシン目。</b>左端の破線は装飾です。ウィンドウ幅を狭めたときに邪魔なら、<code>.win::before</code> を消すだけで外せます。</li>
+    </ul>
+
+    <details>
+      <summary>このモックで再現していないこと（実装時の確認事項）</summary>
+      <ul>
+        <li>折りたたみ（シェブロン）の開閉アニメーションと、区画の並べ替え。DOM とクラスは現行のままなので、スキンは <code>.collapsed</code> の見た目にだけ影響します。</li>
+        <li>AI 使用量の「自動で反転 / クリックで反転」表示。コンパクトでは 2 行を並べる既定の見せ方だけを示しています。</li>
+        <li>実際のトレイアイコン。スキンはウィジェットと設定ウィンドウが対象で、トレイの配色（tray.go）は別扱いとしています。</li>
+        <li>数値のライブ更新。モックは静的ですが、桁揃え（tabular-nums）により更新時のガタつきは起きません。</li>
+        <li>透過モードの正確な見え方。実機はデスクトップの上に窓全体のアルファが掛かるため、このページではチェッカー板と <code>opacity</code> で近似しています。</li>
+      </ul>
+    </details>
+
+    <p class="foot">mock-opencode.html — skin: paper-tape / widget 230px &amp; 130px / settings 920×780 — dummy data, no external resources.</p>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+   1. ウィジェットの組み立て（ui/index.html と同じ DOM・クラス名）
+   ===================================================================== */
+const CORE_VALUES = [34, 22, 41, 18, 27, 52, 15, 30];
+
+function coresHtml(){
+  return CORE_VALUES.map(function(v, i){
+    return '<div class="core-item"><span class="core-label">Core ' + i + '</span>'
+      + '<div class="core-bar-container"><div class="core-bar" style="height:' + v + '%"></div></div>'
+      + '<span class="core-value">' + v + '%</span></div>';
+  }).join('');
+}
+
+function topBtns(compact){
+  return '<div class="top-btns">'
+    + '<button class="top-btn pin-btn active" title="常に前面に表示">📌</button>'
+    + '<button class="top-btn settings-btn" title="表示オプション">⚙</button>'
+    + '<button class="top-btn compact-btn' + (compact ? ' expanded' : '') + '" title="' + (compact ? 'フル表示' : 'コンパクト表示') + '">' + (compact ? '▢' : '▬') + '</button>'
+    + '<button class="top-btn tray-btn" title="タスクバーに格納">_</button>'
+    + '</div>';
+}
+
+function cpuSection(){
+  return '<div class="section" data-sec="cpu">'
+    + '<div class="section-header"><span class="section-icon">💻</span><span class="section-title">CPU</span><span class="section-value">31%</span><button class="chev" title="折りたたむ">▼</button></div>'
+    + '<div class="sec-body">'
+    +   '<div class="progress-bar cpu-progress"><div class="progress-fill cpu-fill" style="width:31%"></div></div>'
+    +   '<div class="clock-row"><span class="clock-label">クロック</span><span class="clock-value">3.42 GHz</span><span class="clock-base">base 2.40</span></div>'
+    +   '<div class="progress-bar clock-progress"><div class="progress-fill clock-fill" style="width:71%"></div><div class="clock-base-marker" style="left:50%"></div></div>'
+    +   '<div class="power-mode pm-balanced" style="--pm-fill:50%">'
+    +     '<input type="range" class="pm-slider" min="0" max="2" step="1" value="1" aria-label="電源モード">'
+    +     '<div class="pm-labels"><span data-mode="saver">省電力</span><span data-mode="balanced" class="active">バランス</span><span data-mode="best">パフォーマンス</span></div>'
+    +   '</div>'
+    +   '<div class="model-name cpu-model">Intel(R) Core(TM) Ultra 7 155H</div>'
+    +   '<div class="cores-container">' + coresHtml() + '</div>'
+    + '</div></div>';
+}
+
+function memorySection(){
+  return '<div class="section" data-sec="memory">'
+    + '<div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value">58%</span><button class="chev" title="折りたたむ">▼</button></div>'
+    + '<div class="sec-body">'
+    +   '<div class="progress-bar mem-progress"><div class="progress-fill memory-fill" style="width:58%"></div></div>'
+    +   '<div class="memory-details"><span class="used">18.6 GB</span><span> / 32.0 GB</span></div>'
+    + '</div></div>';
+}
+
+function gpuSection(){
+  return '<div class="section accel-section" data-sec="gpu">'
+    + '<div class="section-header"><span class="section-icon">🎮</span><span class="section-title">GPU</span><span class="section-value">14%</span><button class="chev" title="折りたたむ">▼</button></div>'
+    + '<div class="sec-body">'
+    +   '<div class="progress-bar gpu-progress"><div class="progress-fill gpu-fill" style="width:14%"></div></div>'
+    +   '<div class="accel-info">'
+    +     '<div class="model-name">Intel(R) Arc(TM) Graphics</div>'
+    +     '<div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value">0.5 GB</span></div>'
+    +     '<div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value">12.4 GB</span></div>'
+    +   '</div>'
+    + '</div></div>';
+}
+
+function npuSection(){
+  return '<div class="section accel-section" data-sec="npu">'
+    + '<div class="section-header"><span class="section-icon">🧩</span><span class="section-title">NPU</span><span class="section-value">3%</span><button class="chev" title="折りたたむ">▼</button></div>'
+    + '<div class="sec-body">'
+    +   '<div class="progress-bar npu-progress"><div class="progress-fill npu-fill" style="width:3%"></div></div>'
+    +   '<div class="model-name npu-model">Intel(R) AI Boost</div>'
+    + '</div></div>';
+}
+
+function netFront(){
+  return '<div class="section wifi-section" data-sec="network"><div class="flip-card">'
+    + '<div class="flip-face flip-front">'
+    +   '<div class="section-header"><span class="section-icon">📶</span><span class="section-title" data-compact="Wi-Fi">Wi-Fi</span><span class="section-value wifi-compact-value">5GHz(44ch)</span><button class="chev" title="折りたたむ">▼</button></div>'
+    +   '<div class="wifi-info">'
+    +     '<div class="model-name">Intel(R) Wi-Fi 6E AX211 160MHz</div>'
+    +     '<div class="wifi-row wifi-detail"><span class="wifi-label">SSID</span><span class="wifi-value wifi-connected">office-5g</span></div>'
+    +     '<div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value">5GHz (Ch 44)</span></div>'
+    +     '<div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">規格</span><span class="wifi-value">802.11ax (Wi-Fi 6)</span></div>'
+    +     '<div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">信号強度</span><span class="wifi-value">78%</span></div>'
+    +     '<div class="wifi-row wifi-ethernet-only"><span class="wifi-label">速度</span><span class="wifi-value">2.5 Gbps</span></div>'
+    +   '</div>'
+    + '</div></div></div>';
+}
+
+function netBack(){
+  return '<div class="section wifi-section flipped" data-sec="network"><div class="flip-card">'
+    + '<div class="flip-face flip-back">'
+    +   '<div class="section-header"><span class="section-icon">📊</span><span class="section-title" data-compact="Net">Network</span><span class="section-value net-peak-toggle" title="クリックで単位切替 (B ⇔ bit)">4.2 MB/s</span><button class="chev" title="折りたたむ">▼</button></div>'
+    +   '<div class="net-canvas" id="netGraph"></div>'
+    +   '<div class="net-legend"><span class="net-leg-rx">↓ <span>2.8 MB/s</span></span><span class="net-leg-tx">↑ <span>1.1 MB/s</span></span></div>'
+    + '</div></div></div>';
+}
+
+function aiSection(){
+  return '<div class="section ai-section" data-sec="ai">'
+    + '<div class="section-header"><span class="section-icon">🤖</span><span class="section-title">AI 使用量</span><button class="ai-refresh" title="今すぐ更新">↻</button><button class="chev" title="折りたたむ">▼</button></div>'
+    + '<div class="ai-compact">'
+    +   '<div class="ai-crow claude"><i></i><span class="ai-cname">Claude</span><span class="ai-cval">42%</span></div>'
+    +   '<div class="ai-crow codex"><i></i><span class="ai-cname">Codex</span><span class="ai-cval">12%</span></div>'
+    + '</div>'
+    + '<div class="sec-body">'
+
+    +   '<div class="prov claude">'
+    +     '<div class="prov-head"><span class="prov-name"><i></i>Claude</span><span class="plan">Max 5x</span><span class="prov-state ok">稼働中</span></div>'
+    +     '<div class="wrow"><span class="lab">5h</span><div class="progress-bar"><div class="progress-fill" style="width:42%"></div></div><span class="pct">42%</span></div>'
+    +     '<div class="wreset">↻ 10月21日（水）14:30</div>'
+    +     '<div class="wrow"><span class="lab">7d</span><div class="progress-bar"><div class="progress-fill" style="width:18%"></div></div><span class="pct">18%</span></div>'
+    +     '<div class="wreset">↻ 10月26日（月）09:00</div>'
+    +     '<div class="extra"><span>追加利用枠</span><span>$3.20 / $50.00</span></div>'
+    +   '</div>'
+
+    +   '<div class="prov codex">'
+    +     '<div class="prov-head"><span class="prov-name"><i></i>Codex</span><span class="plan">Plus</span><span class="prov-state ok">稼働中</span></div>'
+    +     '<div class="wrow"><span class="lab">5h</span><div class="progress-bar"><div class="progress-fill" style="width:12%"></div></div><span class="pct">12%</span></div>'
+    +     '<div class="wreset">↻ 10月21日（水）16:05</div>'
+    +     '<div class="wrow"><span class="lab">7d</span><div class="progress-bar"><div class="progress-fill" style="width:3%"></div></div><span class="pct">3%</span></div>'
+    +     '<div class="wreset">↻ 10月27日（火）21:00</div>'
+    +   '</div>'
+
+    + '</div></div>';
+}
+
+function widgetHtml(opts){
+  const cls = 'win tok skinnable' + (opts.light ? ' theme-light' : '') + (opts.compact ? ' compact' : '');
+  return '<div class="' + cls + '" data-skin="paper-tape">'
+    + topBtns(!!opts.compact)
+    + cpuSection() + memorySection() + gpuSection() + npuSection()
+    + (opts.ethernet ? '' : netFront())
+    + aiSection()
+    + '</div>';
+}
+
+document.getElementById('winFull').innerHTML = widgetHtml({});
+document.getElementById('winCompact').innerHTML = widgetHtml({compact:true});
+document.getElementById('winLight').innerHTML = widgetHtml({light:true});
+
+/* ネットワーク区画だけの比較（表: Ethernet / 裏: トラフィック） */
+document.getElementById('netDemo').innerHTML =
+  '<div class="net-demo tok" data-skin="paper-tape">'
+  + '<p class="net-demo-cap">表 — Ethernet</p>'
+  + '<div class="section wifi-section ethernet-mode" data-sec="network"><div class="flip-card"><div class="flip-face flip-front">'
+  +   '<div class="section-header"><span class="section-icon">🔌</span><span class="section-title" data-compact="LAN">Ethernet</span><span class="section-value wifi-compact-value">2.5 Gbps</span><button class="chev" title="折りたたむ">▼</button></div>'
+  +   '<div class="wifi-info">'
+  +     '<div class="model-name">Intel(R) Ethernet Controller I226-V</div>'
+  +     '<div class="wifi-row wifi-detail"><span class="wifi-label">アダプタ</span><span class="wifi-value wifi-connected">イーサネット</span></div>'
+  +     '<div class="wifi-row wifi-ethernet-only"><span class="wifi-label">速度</span><span class="wifi-value">2.5 Gbps</span></div>'
+  +     '<div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value">---</span></div>'
+  +   '</div>'
+  + '</div></div></div>'
+  + '<p class="net-demo-cap">裏 — トラフィック（区画クリックで反転）</p>'
+  + netBack()
+  + '</div>';
+
+/* 通信グラフ（インライン SVG のみ。外部リソースなし） */
+function graphSvg(){
+  const W = 200, H = 60;
+  const rx = [30,26,34,44,38,30,22,18,26,38,46,52,44,36,30,22,16,20,28,34,26,18,12,16,24,30,22,14,10,14];
+  const tx = [8,6,12,20,16,10,8,12,18,26,22,16,12,18,24,20,14,10,8,12,16,12,8,6,10,14,10,6,8,6];
+  const stepX = W / (rx.length - 1);
+  function line(vals){
+    return vals.map(function(v,i){ return (i ? 'L' : 'M') + (i*stepX).toFixed(1) + ',' + (H - v).toFixed(1); }).join(' ');
+  }
+  function area(vals){
+    return 'M0,' + H + ' ' + vals.map(function(v,i){ return 'L' + (i*stepX).toFixed(1) + ',' + (H-v).toFixed(1); }).join(' ') + ' L' + W + ',' + H + ' Z';
+  }
+  let grid = '';
+  [15,30,45].forEach(function(y){ grid += '<line class="net-grid" x1="0" y1="' + y + '" x2="' + W + '" y2="' + y + '"/>'; });
+  [50,100,150].forEach(function(x){ grid += '<line class="net-grid" x1="' + x + '" y1="0" x2="' + x + '" y2="' + H + '"/>'; });
+  return '<svg viewBox="0 0 200 60" preserveAspectRatio="none" aria-hidden="true">'
+    + grid
+    + '<path class="net-rx-area" d="' + area(rx) + '"/>'
+    + '<path class="net-tx-area" d="' + area(tx) + '"/>'
+    + '<path class="net-rx-line" d="' + line(rx) + '"/>'
+    + '<path class="net-tx-line" d="' + line(tx) + '"/>'
+    + '</svg>';
+}
+document.getElementById('netGraph').innerHTML = graphSvg();
+
+/* =====================================================================
+   2. 設定ウィンドウ（ui/settings.html の「表示」パネル）
+   ===================================================================== */
+document.getElementById('settingsWin').innerHTML =
+  '<nav>'
+  + '<h1>設定</h1>'
+  + '<button class="nav-item active">表示</button>'
+  + '<button class="nav-item">区画</button>'
+  + '<button class="nav-item">AI 使用量</button>'
+  + '<button class="nav-item">起動とショートカット</button>'
+  + '</nav>'
+  + '<main><section class="panel active">'
+  +   '<h2>表示</h2>'
+
+  +   '<div class="card"><span class="label">テーマ</span>'
+  +     '<div class="opts"><button class="opt active">ダーク</button><button class="opt">ライト</button><button class="opt">システム</button></div>'
+  +   '</div>'
+
+  +   '<div class="card"><span class="label">スキン</span>'
+  +     '<div class="skin-grid">'
+  +       '<button class="skin-card" type="button" data-skin-choice="default" role="radio" aria-checked="false">'
+  +         '<span class="preview prev-default" aria-hidden="true"></span>'
+  +         '<span class="skin-meta"><b>既定</b><small>これまでどおり</small></span>'
+  +         '<span class="radio" aria-hidden="true"></span>'
+  +       '</button>'
+  +       '<button class="skin-card selected" type="button" data-skin-choice="paper-tape" role="radio" aria-checked="true">'
+  +         '<span class="preview prev-paper" aria-hidden="true"></span>'
+  +         '<span class="skin-meta"><b>紙テープ<span class="badge-new">新規</span></b><small>印字ログ風・朱と藍</small></span>'
+  +         '<span class="radio" aria-hidden="true"></span>'
+  +       '</button>'
+  +     '</div>'
+  +     '<p class="hint">スキンは配色・書体・罫線だけを変えます。テーマ（ダーク / ライト / システム）と透過モードは、スキンの上にそのまま重ねて使えます。</p>'
+  +   '</div>'
+
+  +   '<div class="card"><span class="label">透過モード</span>'
+  +     '<label class="toggle"><span>背景を半透明にする</span><input type="checkbox" aria-label="背景を半透明にする"></label>'
+  +   '</div>'
+
+  +   '<div class="card"><span class="label">CPU Core 番号</span>'
+  +     '<div class="opts"><button class="opt active">0 から</button><button class="opt">1 から</button></div>'
+  +   '</div>'
+
+  +   '<div class="card"><span class="label">タスクバー (最小化時)</span>'
+  +     '<div class="opts"><button class="opt active">アイコンのみ</button><button class="opt">CPU 使用率</button><button class="opt">AI 使用量</button></div>'
+  +     '<p class="hint">「AI 使用量」は、AI 使用量を ON にしたときだけ選べます。</p>'
+  +   '</div>'
+
+  + '</section></main>';
+
+/* =====================================================================
+   3. スキン切り替え・透過モード（モックの操作）
+   ===================================================================== */
+function applySkin(name){
+  document.querySelectorAll('.skinnable').forEach(function(el){
+    if (name === 'paper-tape') el.setAttribute('data-skin', 'paper-tape');
+    else el.removeAttribute('data-skin');
+  });
+  document.querySelectorAll('.net-demo.tok').forEach(function(el){
+    if (name === 'paper-tape') el.setAttribute('data-skin', 'paper-tape');
+    else el.removeAttribute('data-skin');
+  });
+  document.querySelectorAll('[data-skin-choice]').forEach(function(c){
+    const on = c.getAttribute('data-skin-choice') === name;
+    c.classList.toggle('selected', on);
+    c.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-skin-btn]').forEach(function(b){
+    b.classList.toggle('on', b.getAttribute('data-skin-btn') === name);
+  });
+}
+document.querySelectorAll('[data-skin-btn]').forEach(function(b){
+  b.addEventListener('click', function(){ applySkin(b.getAttribute('data-skin-btn')); });
+});
+document.querySelectorAll('[data-skin-choice]').forEach(function(c){
+  c.addEventListener('click', function(){ applySkin(c.getAttribute('data-skin-choice')); });
+});
+document.getElementById('trBtn').addEventListener('click', function(){
+  const on = document.body.classList.toggle('tr');
+  this.classList.toggle('on', on);
+  this.setAttribute('aria-pressed', on ? 'true' : 'false');
+  this.textContent = on ? 'ON' : 'OFF';
+});
+
+applySkin('paper-tape');
+
+/* 確認用: #skin=default / #tr=1 で初期状態を指定できる（モック限定） */
+const HASHQ = new URLSearchParams(location.hash.slice(1));
+if (HASHQ.get('skin') === 'default') applySkin('default');
+if (HASHQ.get('tr') === '1') document.getElementById('trBtn').click();
+</script>
+</body>
+</html>

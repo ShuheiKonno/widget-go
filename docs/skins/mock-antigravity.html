@@ -1,0 +1,2058 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>スキン案モック: Orbital Zero-G (軌道テレメトリ) — widget-go</title>
+<style>
+/* ==========================================================================
+   0. モックページ自体のレイアウト・デザインノート用スタイル
+   ========================================================================== */
+:root {
+    --page-bg: #12151e;
+    --page-fg: #e8eef7;
+    --page-muted: #8e9db4;
+    --page-line: rgba(140, 180, 225, 0.16);
+    --page-card: #191e2b;
+    --page-accent: #00d2ff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: var(--page-bg);
+    color: var(--page-fg);
+    font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.6;
+    padding: 28px 28px 72px;
+}
+.page-wrap { max-width: 1280px; margin: 0 auto; }
+.page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--page-line);
+}
+.page-header h1 {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.badge-concept {
+    font-family: 'Consolas', 'Cascadia Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #04101c;
+    background: linear-gradient(90deg, #00f0ff, #5aa0ff);
+    padding: 2px 9px;
+    border-radius: 3px;
+    letter-spacing: 0.06em;
+}
+.page-header .sub { color: var(--page-muted); font-size: 12.5px; }
+
+/* デザインノート（要件 5） */
+.design-note {
+    background: var(--page-card);
+    border: 1px solid var(--page-line);
+    border-left: 3px solid var(--page-accent);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+.design-note h2 {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.note-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 14px 20px;
+}
+.note-block h3 {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--page-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+}
+.note-block p, .note-block ul {
+    font-size: 12.5px;
+    color: var(--page-fg);
+}
+.note-block ul { padding-left: 18px; }
+.note-block li { margin-bottom: 3px; }
+.note-block code {
+    font-family: 'Consolas', monospace;
+    font-size: 11.5px;
+    background: rgba(0, 210, 255, 0.10);
+    color: #7be8ff;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+/* CSS 変数一覧折りたたみテーブル */
+details.var-spec {
+    margin-top: 12px;
+    border-top: 1px solid var(--page-line);
+    padding-top: 10px;
+}
+details.var-spec summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #8ad8ff;
+    user-select: none;
+}
+.var-table-wrap { overflow-x: auto; margin-top: 10px; }
+table.var-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    font-family: 'Consolas', monospace;
+}
+table.var-table th, table.var-table td {
+    border: 1px solid var(--page-line);
+    padding: 5px 8px;
+    text-align: left;
+}
+table.var-table th {
+    background: rgba(255,255,255,0.05);
+    color: var(--page-muted);
+    font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
+}
+.sw {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    border: 1px solid rgba(255,255,255,0.3);
+    vertical-align: -1px;
+    margin-right: 5px;
+}
+
+/* インタラクティブ確認ツールバー */
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 24px;
+    margin-bottom: 24px;
+    padding: 12px 16px;
+    background: var(--page-card);
+    border: 1px solid var(--page-line);
+    border-radius: 8px;
+    align-items: center;
+}
+.ctl { display: flex; align-items: center; gap: 8px; }
+.ctl > span { font-size: 12px; color: var(--page-muted); font-weight: 600; }
+.seg {
+    display: inline-flex;
+    border: 1px solid var(--page-line);
+    border-radius: 6px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.2);
+}
+.seg button {
+    background: transparent;
+    color: var(--page-fg);
+    border: 0;
+    padding: 5px 11px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    border-right: 1px solid var(--page-line);
+    transition: background 0.15s, color 0.15s;
+}
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: rgba(255,255,255,0.08); }
+.seg button.on { background: #0095c8; color: #fff; font-weight: 600; }
+
+/* ステージ（フル表示 + コンパクト表示 + 裏面/比較 + 設定ウィンドウ） */
+.stage-section-title {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 24px 0 12px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.stage-section-title small {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--page-muted);
+}
+.stage {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px 34px;
+    align-items: flex-start;
+    padding: 24px;
+    border-radius: 12px;
+    background:
+        radial-gradient(circle at 20% 25%, rgba(0, 180, 255, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 80% 70%, rgba(120, 80, 255, 0.10) 0%, transparent 50%),
+        linear-gradient(135deg, #0b101b 0%, #151f30 100%);
+    border: 1px solid var(--page-line);
+    position: relative;
+}
+/* 透過モード確認用の疑似デスクトップ壁紙パターン */
+.stage.wallpaper-bg {
+    background:
+        linear-gradient(45deg, rgba(0, 210, 255, 0.09) 25%, transparent 25%, transparent 75%, rgba(0, 210, 255, 0.09) 75%),
+        linear-gradient(45deg, rgba(0, 210, 255, 0.09) 25%, transparent 25%, transparent 75%, rgba(0, 210, 255, 0.09) 75%),
+        radial-gradient(circle at 30% 30%, #1d3b5c 0%, #0d1b2a 55%, #070d17 100%);
+    background-size: 32px 32px, 32px 32px, 100% 100%;
+    background-position: 0 0, 16px 16px, 0 0;
+}
+figure.mock-fig {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+figure.mock-fig figcaption {
+    font-size: 12px;
+    color: var(--page-muted);
+    max-width: 240px;
+    line-height: 1.5;
+}
+figure.mock-fig figcaption b {
+    color: var(--page-fg);
+    font-size: 12.5px;
+    display: block;
+    margin-bottom: 2px;
+}
+
+
+/* ==========================================================================
+   1. 現行 ui/index.html のベース CSS（クラス名・CSS 変数・DOM 構造を完全踏襲）
+   ※ 単一ページ内で複数プレビューを並べるため、body スコープの変数を .widget-root に付与
+   ========================================================================== */
+.widget-root {
+    --bg-grad: linear-gradient(135deg, #0d0d12 0%, #16161e 100%);
+    --container-bg: rgba(16,16,22,0.97);
+    --text-color: #f0f0f5;
+    --muted-color: #a8a8b8;
+    --section-bg: rgba(255,255,255,0.05);
+    --section-border: rgba(255,255,255,0.10);
+    --section-title: #d8d8e8;
+    --section-value: #7bffe0;
+    --bar-track: rgba(255,255,255,0.12);
+    --core-track: rgba(255,255,255,0.10);
+    --net-canvas-bg: rgba(0,0,0,0.35);
+    --btn-bg: rgba(255,255,255,0.12);
+    --btn-bg-hover: rgba(255,255,255,0.22);
+    --btn-color: #bbb;
+    --input-bg: rgba(255,255,255,0.05);
+    --input-border: rgba(255,255,255,0.14);
+    /* AI 使用量 */
+    --claude-a: #f0a27a;
+    --claude-b: #d06b5b;
+    --codex-a: #7be0c0;
+    --codex-b: #34b3d6;
+    --warn: #facc15;
+    --crit: #ef6a6a;
+    --ok: #7fffaa;
+    --chip-warn-bg: rgba(250,204,21,.14);
+    --chip-warn-fg: #ffd84d;
+    --chip-login-bg: rgba(90,160,255,.16);
+    --chip-login-fg: #9cc6ff;
+    /* バー塗り色（スキン差分で上書き可能にする CSS 変数、既定値は現行と同一） */
+    --cpu-fill-grad: linear-gradient(90deg, #8a9cff, #b07cff);
+    --core-fill-grad: linear-gradient(180deg, #8a9cff, #b07cff);
+    --mem-fill-grad: linear-gradient(90deg, #ffa3ff, #ff7a8a);
+    --clock-fill-grad: linear-gradient(90deg, #5ad0ff, #8a9cff);
+    --gpu-fill-grad: linear-gradient(90deg, #6ad7ff, #5a8cff);
+    --npu-fill-grad: linear-gradient(90deg, #ffd36a, #ff9f5a);
+    --mem-used-color: #ffa3ff;
+    --wifi-ok-color: #7fffaa;
+    --net-rx-color: #7fffaa;
+    --net-tx-color: #ffa3ff;
+
+    font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
+    background: var(--bg-grad);
+    color: var(--text-color);
+    font-size: 13px;
+    user-select: none;
+    width: 230px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.08);
+    transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.widget-root.compact-frame {
+    width: 130px;
+}
+.widget-root.theme-light {
+    --bg-grad: linear-gradient(135deg, #e6e9f5 0%, #cdd6ec 100%);
+    --container-bg: rgba(245,246,252,0.96);
+    --text-color: #24263a;
+    --muted-color: #606078;
+    --section-bg: rgba(0,0,0,0.04);
+    --section-border: rgba(0,0,0,0.1);
+    --section-title: #3b3b5a;
+    --section-value: #0a7f68;
+    --bar-track: rgba(0,0,0,0.1);
+    --core-track: rgba(0,0,0,0.08);
+    --net-canvas-bg: rgba(0,0,0,0.06);
+    --btn-bg: rgba(0,0,0,0.08);
+    --btn-bg-hover: rgba(0,0,0,0.16);
+    --btn-color: #444;
+    --input-bg: rgba(0,0,0,0.04);
+    --input-border: rgba(0,0,0,0.15);
+    --claude-a: #e58f63;
+    --claude-b: #c4553f;
+    --codex-a: #2fbf94;
+    --codex-b: #1f8fb3;
+    --warn: #d9a400;
+    --crit: #d33;
+    --ok: #1aa86b;
+    --chip-warn-bg: rgba(217,164,0,.16);
+    --chip-warn-fg: #8a6500;
+    --chip-login-bg: rgba(30,100,220,.12);
+    --chip-login-fg: #1d5fc2;
+    --mem-used-color: #e85ad0;
+    --wifi-ok-color: #1aa86b;
+    --net-rx-color: #1aa86b;
+    --net-tx-color: #b74da6;
+}
+
+/* ==========================================================================
+   2. スキン定義: data-skin="orbital"（Orbital Zero-G / 軌道テレメトリ）
+   ── 既存 CSS 変数の上書き + 属性セレクタによる最小限の装飾差分 ──
+   ========================================================================== */
+.widget-root[data-skin="orbital"] {
+    /* 深宇宙ダークパレット (Deep Space Telemetry) */
+    --bg-grad:
+        radial-gradient(circle at 88% 8%, rgba(0, 240, 255, 0.16) 0%, transparent 48%),
+        linear-gradient(165deg, #050912 0%, #0a1324 100%);
+    --container-bg: rgba(6, 11, 21, 0.95);
+    --text-color: #e2f1ff;
+    --muted-color: #6b89a8;
+    --section-bg: linear-gradient(180deg, rgba(0, 224, 255, 0.055) 0%, rgba(7, 17, 33, 0.72) 100%);
+    --section-border: rgba(0, 224, 255, 0.24);
+    --section-title: #9ed8f8;
+    --section-value: #00f0ff;
+    --bar-track: rgba(0, 224, 255, 0.12);
+    --core-track: rgba(0, 224, 255, 0.09);
+    --net-canvas-bg: rgba(2, 7, 16, 0.72);
+    --btn-bg: rgba(0, 224, 255, 0.09);
+    --btn-bg-hover: rgba(0, 224, 255, 0.24);
+    --btn-color: #8ad4f8;
+    --input-bg: rgba(0, 224, 255, 0.06);
+    --input-border: rgba(0, 224, 255, 0.26);
+
+    /* AI・ステータス・ゲージ配色（イオンスラスター＆テレメトリ発光色） */
+    --claude-a: #ffaa5c;
+    --claude-b: #ff6238;
+    --codex-a: #00f5d4;
+    --codex-b: #00aeff;
+    --warn: #ffbe0b;
+    --crit: #ff3864;
+    --ok: #00f5d4;
+    --chip-warn-bg: rgba(255, 190, 11, 0.14);
+    --chip-warn-fg: #ffd15c;
+    --chip-login-bg: rgba(0, 224, 255, 0.14);
+    --chip-login-fg: #8ceeff;
+
+    --cpu-fill-grad: linear-gradient(90deg, #00aeff, #00f0ff);
+    --core-fill-grad: linear-gradient(180deg, #00f0ff, #0077cc);
+    --mem-fill-grad: linear-gradient(90deg, #9d6eff, #e066ff);
+    --clock-fill-grad: linear-gradient(90deg, #00f5d4, #00bbf9);
+    --gpu-fill-grad: linear-gradient(90deg, #38b6ff, #5e60ce);
+    --npu-fill-grad: linear-gradient(90deg, #ffbe0b, #fb5607);
+    --mem-used-color: #d68fff;
+    --wifi-ok-color: #00f5d4;
+    --net-rx-color: #00f5d4;
+    --net-tx-color: #ff9e5e;
+
+    /* スキン固有トークン（レチクル・グリッド・発光） */
+    --orb-reticle: rgba(0, 240, 255, 0.65);
+    --orb-grid: rgba(0, 224, 255, 0.032);
+    --orb-glow: 0 0 8px rgba(0, 240, 255, 0.32);
+    --orb-tick: rgba(6, 11, 21, 0.62);
+    border-radius: 4px;
+    box-shadow:
+        0 14px 36px rgba(0, 0, 0, 0.65),
+        0 0 0 1px rgba(0, 224, 255, 0.28),
+        inset 0 1px 0 rgba(0, 240, 255, 0.18);
+}
+
+/* ライトテーマ併存時: 月面クリーンルーム計器盤 (Lunar Cleanroom Light) */
+.widget-root.theme-light[data-skin="orbital"] {
+    --bg-grad:
+        radial-gradient(circle at 88% 8%, rgba(0, 140, 215, 0.14) 0%, transparent 48%),
+        linear-gradient(165deg, #eaf1f8 0%, #d7e4f2 100%);
+    --container-bg: rgba(241, 246, 252, 0.95);
+    --text-color: #0d2137;
+    --muted-color: #4b6784;
+    --section-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(225, 236, 248, 0.72) 100%);
+    --section-border: rgba(0, 118, 185, 0.26);
+    --section-title: #133c63;
+    --section-value: #006ba6;
+    --bar-track: rgba(0, 110, 175, 0.13);
+    --core-track: rgba(0, 110, 175, 0.10);
+    --net-canvas-bg: rgba(13, 33, 55, 0.06);
+    --btn-bg: rgba(0, 110, 175, 0.09);
+    --btn-bg-hover: rgba(0, 110, 175, 0.20);
+    --btn-color: #15406a;
+    --input-bg: rgba(0, 110, 175, 0.06);
+    --input-border: rgba(0, 110, 175, 0.24);
+
+    --claude-a: #e87a30;
+    --claude-b: #c84620;
+    --codex-a: #009e86;
+    --codex-b: #0074b8;
+    --warn: #c98a00;
+    --crit: #cf2246;
+    --ok: #008c72;
+    --chip-warn-bg: rgba(201, 138, 0, 0.14);
+    --chip-warn-fg: #7a5200;
+    --chip-login-bg: rgba(0, 118, 185, 0.12);
+    --chip-login-fg: #00558f;
+
+    --cpu-fill-grad: linear-gradient(90deg, #0077cc, #00a8e8);
+    --core-fill-grad: linear-gradient(180deg, #0096d6, #005fa3);
+    --mem-fill-grad: linear-gradient(90deg, #7b42f6, #b833ff);
+    --clock-fill-grad: linear-gradient(90deg, #00a896, #028090);
+    --gpu-fill-grad: linear-gradient(90deg, #1e88e5, #3949ab);
+    --npu-fill-grad: linear-gradient(90deg, #f48c06, #dc2f02);
+    --mem-used-color: #7b2cbf;
+    --wifi-ok-color: #008c72;
+    --net-rx-color: #008c72;
+    --net-tx-color: #d95d1e;
+
+    --orb-reticle: rgba(0, 118, 185, 0.65);
+    --orb-grid: rgba(0, 110, 175, 0.045);
+    --orb-glow: none;
+    --orb-tick: rgba(241, 246, 252, 0.72);
+    box-shadow:
+        0 12px 28px rgba(15, 35, 60, 0.18),
+        0 0 0 1px rgba(0, 118, 185, 0.28);
+}
+
+/* 透過モード併存時（Go 側の SetLayeredWindowAttributes 透過 + 背景アルファ低減の再現） */
+.widget-root.transparent-mode {
+    --container-bg: rgba(16, 16, 22, 0.68);
+    backdrop-filter: blur(8px);
+}
+.widget-root.theme-light.transparent-mode {
+    --container-bg: rgba(245, 246, 252, 0.68);
+}
+.widget-root[data-skin="orbital"].transparent-mode {
+    --container-bg: rgba(6, 11, 21, 0.64);
+    --section-bg: linear-gradient(180deg, rgba(0, 224, 255, 0.08) 0%, rgba(7, 17, 33, 0.52) 100%);
+}
+.widget-root.theme-light[data-skin="orbital"].transparent-mode {
+    --container-bg: rgba(241, 246, 252, 0.66);
+    --section-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.65) 0%, rgba(225, 236, 248, 0.52) 100%);
+}
+
+/* Orbital Zero-G 固有の計器ディテール（DOM 非変更・CSS のみ） */
+.widget-root[data-skin="orbital"] .container {
+    background-color: var(--container-bg);
+    background-image:
+        linear-gradient(var(--orb-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--orb-grid) 1px, transparent 1px);
+    background-size: 16px 16px;
+}
+/* 上部左側のテレメトリ識別コールサイン（疑似要素で DOM 追加なし） */
+.widget-root[data-skin="orbital"] .container::before {
+    content: "ORB-TELEM // ZERO-G";
+    position: absolute;
+    top: 9px;
+    left: 10px;
+    font-family: 'Consolas', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    color: var(--muted-color);
+    opacity: 0.85;
+    pointer-events: none;
+}
+.widget-root[data-skin="orbital"] .container.compact::before {
+    content: "ZERO-G";
+    top: 6px;
+    left: 6px;
+    font-size: 8px;
+    letter-spacing: 0.06em;
+}
+/* 四隅のレチクル（照準ブラケット）付き計器区画カード */
+.widget-root[data-skin="orbital"] .section:not(.wifi-section),
+.widget-root[data-skin="orbital"] .flip-card > .flip-face,
+.widget-root[data-skin="orbital"] .compact .ai-section .ai-crow {
+    border-radius: 3px;
+    background:
+        linear-gradient(to right, var(--orb-reticle) 5px, transparent 5px) 0 0 / 100% 1px no-repeat,
+        linear-gradient(to bottom, var(--orb-reticle) 5px, transparent 5px) 0 0 / 1px 100% no-repeat,
+        linear-gradient(to left, var(--orb-reticle) 5px, transparent 5px) 100% 100% / 100% 1px no-repeat,
+        linear-gradient(to top, var(--orb-reticle) 5px, transparent 5px) 100% 100% / 1px 100% no-repeat,
+        var(--section-bg);
+    box-shadow: inset 0 0 14px rgba(0, 224, 255, 0.035);
+}
+.widget-root[data-skin="orbital"] .compact .ai-section {
+    background: transparent;
+    box-shadow: none;
+}
+.widget-root[data-skin="orbital"] .section-title {
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+.widget-root[data-skin="orbital"] .section-value {
+    text-shadow: var(--orb-glow);
+    letter-spacing: 0.02em;
+}
+/* 上部ボタン列: 角型タクティカルスイッチ */
+.widget-root[data-skin="orbital"] .top-btn {
+    border-radius: 3px;
+    border: 1px solid var(--section-border);
+}
+.widget-root[data-skin="orbital"] .pin-btn.active {
+    background: rgba(0, 245, 212, 0.22);
+    border-color: var(--ok);
+    color: var(--ok);
+    box-shadow: 0 0 6px rgba(0, 245, 212, 0.35);
+}
+.widget-root[data-skin="orbital"] .compact-btn.expanded {
+    background: rgba(0, 224, 255, 0.24);
+    border-color: var(--section-value);
+    color: var(--section-value);
+}
+/* 進捗バー: セグメント目盛りオーバーレイ付きの精密ゲージ */
+.widget-root[data-skin="orbital"] .progress-bar {
+    border-radius: 1.5px;
+    height: 6px;
+    border: 1px solid rgba(0, 224, 255, 0.16);
+}
+.widget-root[data-skin="orbital"] .progress-fill {
+    border-radius: 1px;
+}
+.widget-root[data-skin="orbital"] .progress-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 5px,
+        var(--orb-tick) 5px,
+        var(--orb-tick) 6px
+    );
+    pointer-events: none;
+}
+/* コア別垂直バー: 水平目盛り付きテレメトリカラム */
+.widget-root[data-skin="orbital"] .core-label {
+    font-family: 'Consolas', monospace;
+    letter-spacing: -0.02em;
+}
+.widget-root[data-skin="orbital"] .core-bar-container {
+    border-radius: 2px;
+    border: 1px solid rgba(0, 224, 255, 0.16);
+}
+.widget-root[data-skin="orbital"] .core-bar {
+    border-radius: 1px;
+}
+.widget-root[data-skin="orbital"] .core-bar-container::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 3px,
+        var(--orb-tick) 3px,
+        var(--orb-tick) 4px
+    );
+    pointer-events: none;
+}
+/* 電源モードスライダーのつまみ: 菱形レチクル風 */
+.widget-root[data-skin="orbital"] .pm-slider::-webkit-slider-thumb {
+    border-radius: 2px;
+    transform: rotate(45deg);
+    width: 11px;
+    height: 11px;
+    margin-top: -3.5px;
+}
+.widget-root[data-skin="orbital"] .pm-slider:hover:not(:disabled)::-webkit-slider-thumb {
+    transform: rotate(45deg) scale(1.18);
+}
+.widget-root[data-skin="orbital"] .plan {
+    border-radius: 2px;
+    font-family: 'Consolas', monospace;
+    background: rgba(0, 224, 255, 0.07);
+}
+
+
+/* ==========================================================================
+   3. 現行 ui/index.html のコンポーネント CSS（そのまま再現）
+   ========================================================================== */
+.container { width: 100%; background: var(--container-bg); padding: 30px 10px 10px 10px; position: relative; cursor: grab; }
+.top-btns { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 100; }
+.top-btn { width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; transition: all 0.2s; }
+.tray-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 14px; line-height: 1; padding: 0 0 5px 0; font-weight: 700; }
+.tray-btn:hover { background: var(--btn-bg-hover); }
+.pin-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 9px; }
+.pin-btn:hover { background: var(--btn-bg-hover); }
+.pin-btn.active { background: #4CAF50; color: #fff; }
+.settings-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
+.settings-btn:hover { background: var(--btn-bg-hover); }
+.compact-btn { background: var(--btn-bg); color: var(--btn-color); font-size: 10px; line-height: 1; }
+.compact-btn:hover { background: var(--btn-bg-hover); }
+.compact-btn.expanded { background: #5aa0ff; color: #fff; font-size: 11px; }
+.compact-btn.expanded:hover { background: #4a90ef; }
+
+.container.compact { padding: 23px 4px 4px 4px; }
+.compact .top-btns { top: 5px; right: 5px; gap: 3px; }
+.compact .top-btn { width: 16px; height: 16px; font-size: 9px; }
+.compact .tray-btn { font-size: 12px; padding: 0 0 4px 0; }
+.compact .compact-btn.expanded { font-size: 10px; }
+.compact .section { padding: 4px 6px; margin-bottom: 3px; }
+.compact .wifi-section { padding: 0; }
+.compact .flip-card > .flip-face { padding: 4px 6px; }
+.compact .section-header { margin-bottom: 0; }
+.compact .section-icon { font-size: 12px; margin-right: 3px; }
+.compact .section-title { font-size: 11px; }
+.compact .section-value { font-size: 11px; }
+.compact .model-name { display: none; }
+.compact .cores-container { display: none; }
+.compact .cpu-progress { display: none; }
+.compact .mem-progress { display: none; }
+.compact .memory-details { display: none; }
+.compact .wifi-info { display: none; }
+.compact .wifi-compact-value { display: inline; }
+.compact .gpu-progress, .compact .npu-progress, .compact .accel-info { display: none; }
+
+.section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
+.section:last-child, .section.last-visible { margin-bottom: 0; }
+.section-header { display: flex; align-items: center; margin-bottom: 6px; }
+.section-icon { font-size: 14px; margin-right: 6px; }
+.section-title { font-size: 12px; font-weight: 600; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--section-title); }
+.section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; flex-shrink: 0; margin-left: auto; }
+.compact .section-title[data-compact] { font-size: 0; }
+.compact .section-title[data-compact]::before { content: attr(data-compact); font-size: 11px; font-weight: 600; }
+
+.model-name { font-size: 10px; line-height: 1.3; color: var(--muted-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cpu-model { margin-bottom: 2px; }
+.npu-model { margin-top: 4px; }
+.model-name.is-empty { display: none; }
+
+.progress-bar { position: relative; height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+.progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+.cpu-fill { background: var(--cpu-fill-grad); }
+.memory-fill { background: var(--mem-fill-grad); }
+
+.clock-row { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; margin-bottom: 4px; }
+.clock-label { color: var(--muted-color); font-size: 11px; white-space: nowrap; }
+.clock-value { color: var(--section-value); font-size: 12px; font-weight: 700; font-family: 'Consolas', monospace; white-space: nowrap; }
+.clock-base { color: var(--muted-color); font-size: 10px; font-family: 'Consolas', monospace; white-space: nowrap; }
+.clock-fill { background: var(--clock-fill-grad); }
+.clock-fill.clk-low { background: linear-gradient(90deg, #7be0a0, #3cc47c); }
+.clock-fill.clk-high { background: linear-gradient(90deg, #ffc46a, #ff7a3c); }
+.clock-base-marker { position: absolute; top: 0; bottom: 0; width: 1.5px; background: rgba(255,255,255,0.65); z-index: 2; }
+.widget-root.theme-light .clock-base-marker { background: rgba(0,0,0,0.40); }
+
+.power-mode { margin-bottom: 6px; --pm-color: #72b6ff; --pm-text: #72b6ff; --pm-fill: 50%; }
+.power-mode.pm-saver { --pm-color: #5bd28e; --pm-text: #5bd28e; --pm-fill: 0%; }
+.power-mode.pm-balanced { --pm-color: #72b6ff; --pm-text: #72b6ff; --pm-fill: 50%; }
+.power-mode.pm-best { --pm-color: #ff9f53; --pm-text: #ff9f53; --pm-fill: 100%; }
+.widget-root.theme-light .power-mode.pm-saver { --pm-text: #12905a; }
+.widget-root.theme-light .power-mode.pm-balanced { --pm-text: #2f7fd0; }
+.widget-root.theme-light .power-mode.pm-best { --pm-text: #d9650f; }
+.pm-slider { -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 14px; margin: 0; background: transparent; cursor: pointer; }
+.pm-slider:focus { outline: none; }
+.pm-slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--pm-color) var(--pm-fill), var(--bar-track) var(--pm-fill)); }
+.pm-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; background: var(--pm-color); border: 2px solid var(--container-bg); box-shadow: 0 0 0 1px var(--pm-color); transition: transform 0.15s; }
+.pm-labels { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr); margin-top: 1px; }
+.pm-labels span:first-child { justify-self: start; }
+.pm-labels span:last-child { justify-self: end; }
+.pm-labels span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: 10px; line-height: 1.3; white-space: nowrap; color: var(--muted-color); cursor: pointer; }
+.pm-labels span.active { color: var(--pm-text); font-weight: 700; }
+.compact .power-mode, .compact .clock-row, .compact .clock-progress { display: none; }
+
+.cores-container { display: grid; grid-template-columns: repeat(4,1fr); gap: 3px; margin-top: 5px; }
+.core-item { text-align: center; }
+.core-label { color: var(--muted-color); font-size: 8px; display: block; margin-bottom: 2px; }
+.core-bar-container { height: 24px; background: var(--core-track); border-radius: 3px; position: relative; overflow: hidden; }
+.core-bar { position: absolute; bottom: 0; width: 100%; background: var(--core-fill-grad); border-radius: 3px; transition: height 0.3s ease; }
+.core-value { display: block; text-align: center; color: #fff; font-size: 9px; font-weight: 600; line-height: 24px; height: 24px; margin-top: -24px; position: relative; text-shadow: 0 1px 2px rgba(0,0,0,0.65); pointer-events: none; z-index: 2; }
+
+.memory-details { text-align: right; font-size: 11px; color: var(--muted-color); font-family: 'Consolas', monospace; }
+.memory-details .used { color: var(--mem-used-color); font-weight: 600; }
+
+.wifi-info { display: flex; flex-direction: column; gap: 4px; }
+.wifi-row { display: flex; justify-content: space-between; align-items: center; }
+.wifi-label { color: var(--muted-color); font-size: 11px; }
+.wifi-value { color: var(--text-color); font-size: 11px; font-weight: 600; font-family: 'Consolas', monospace; }
+.wifi-connected { color: var(--wifi-ok-color); }
+.wifi-compact-value { display: none; }
+
+.accel-section .section-title, .accel-section .section-value { white-space: nowrap; }
+.gpu-fill { background: var(--gpu-fill-grad); }
+.npu-fill { background: var(--npu-fill-grad); }
+.npu-progress { margin-bottom: 0; }
+.accel-info { display: flex; flex-direction: column; gap: 3px; }
+.accel-info .wifi-row { gap: 6px; }
+.accel-info .wifi-label, .accel-info .wifi-value { white-space: nowrap; }
+
+.wifi-section { background: transparent; border: none; padding: 0; perspective: 800px; }
+.flip-card { display: grid; transform-style: preserve-3d; transition: transform 0.55s; }
+.flip-card > .flip-face { grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: var(--section-bg); border: 1px solid var(--section-border); border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.flip-card > .flip-back { transform: rotateY(180deg); display: flex; flex-direction: column; min-height: 108px; }
+.compact .flip-card > .flip-back { min-height: 0; }
+.wifi-section.flipped .flip-card { transform: rotateY(180deg); }
+.wifi-section.ethernet-mode .wifi-wireless-only { display: none; }
+.wifi-ethernet-only { display: none; }
+.wifi-section.ethernet-mode .wifi-ethernet-only { display: flex; }
+.net-peak-toggle { cursor: pointer; padding: 1px 4px; border-radius: 4px; transition: background 0.15s; }
+.compact .net-peak-toggle { margin-right: -4px; }
+.net-peak-toggle:hover { background: var(--btn-bg-hover); }
+.net-canvas { width: 100%; height: 54px; display: block; margin-top: 4px; background: var(--net-canvas-bg); border-radius: 4px; }
+.compact .net-canvas { display: none; }
+.net-legend { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; font-family: 'Consolas', monospace; }
+.net-leg-rx { color: var(--net-rx-color); }
+.net-leg-tx { color: var(--net-tx-color); }
+.compact .net-legend { display: none; }
+
+/* 折りたたみ */
+.chev { margin-left: 4px; width: 18px; height: 18px; flex: none; border: 0; border-radius: 50%; background: transparent; color: var(--muted-color); font-size: 9px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform .2s, background .15s; padding: 0; }
+.chev:hover { background: var(--btn-bg-hover); }
+.section.collapsed .section-header { margin-bottom: 0; }
+.section.collapsed:not(.wifi-section) { padding-top: 3px; padding-bottom: 3px; }
+.wifi-section.collapsed .flip-card > .flip-face { padding-top: 3px; padding-bottom: 3px; }
+.section.collapsed .chev { transform: rotate(-90deg); }
+.section.collapsed > .sec-body { display: none; }
+.wifi-section.collapsed .wifi-info { display: none; }
+.wifi-section.collapsed .flip-card > .flip-back { min-height: 0; }
+.wifi-section.collapsed .net-canvas, .wifi-section.collapsed .net-legend { display: none; }
+.wifi-section.collapsed .wifi-compact-value { display: inline; }
+.compact .chev { display: none; }
+
+/* AI 使用量 */
+.ai-compact { display: none; }
+.ai-section.collapsed .ai-compact { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.ai-section.collapsed .ai-crow { background: transparent; border: none; padding: 1px 0; }
+.compact .ai-section { background: transparent; border: none; padding: 0; }
+.compact .ai-section > .section-header { display: none; }
+.compact .ai-section .sec-body { display: none; }
+.compact .ai-section .ai-compact { display: flex; flex-direction: column; gap: 3px; margin-top: 0; }
+.compact .ai-section .ai-crow { background: var(--section-bg); border: 1px solid var(--section-border); padding: 4px 6px; }
+.ai-crow { display: flex; align-items: center; background: var(--section-bg); border: 1px solid var(--section-border); border-radius: 8px; padding: 4px 6px; }
+.ai-crow i { width: 8px; height: 8px; border-radius: 50%; flex: none; margin-right: 6px; }
+.ai-crow.claude i { background: linear-gradient(135deg, var(--claude-a), var(--claude-b)); }
+.ai-crow.codex i { background: linear-gradient(135deg, var(--codex-a), var(--codex-b)); }
+.ai-cname { font-size: 11px; font-weight: 600; color: var(--section-title); flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-cval { font-size: 11px; font-weight: 700; font-family: 'Consolas', monospace; color: var(--section-value); flex-shrink: 0; margin-left: auto; }
+.ai-cval.warn, .pct.warn { color: var(--warn); }
+.ai-cval.crit, .pct.crit { color: var(--crit); }
+.ai-cval.na, .pct.na { color: var(--muted-color); }
+.ai-refresh { margin-left: 4px; width: 18px; height: 18px; flex: none; border: 0; border-radius: 50%; background: transparent; color: var(--muted-color); font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+.ai-refresh:hover { background: var(--btn-bg-hover); }
+.compact .ai-refresh { display: none; }
+.prov + .prov { margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--section-border); }
+.prov-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.prov-name { font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.prov-name i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.claude .prov-name i { background: linear-gradient(135deg, var(--claude-a), var(--claude-b)); }
+.codex .prov-name i { background: linear-gradient(135deg, var(--codex-a), var(--codex-b)); }
+.plan { font-size: 9px; padding: 0 5px; border-radius: 8px; border: 1px solid var(--section-border); color: var(--muted-color); line-height: 15px; white-space: nowrap; }
+.prov-state { margin-left: auto; font-size: 10px; color: var(--muted-color); cursor: pointer; white-space: nowrap; }
+.prov-state.ok::before { content: '● '; color: var(--ok); }
+.prov-state.inc::before { content: '▲ '; color: var(--warn); }
+.wrow { display: grid; grid-template-columns: 20px 1fr 34px; align-items: center; column-gap: 6px; }
+.wrow .lab { font-size: 11px; color: var(--muted-color); font-family: 'Consolas', monospace; }
+.wrow .progress-bar { margin: 0; height: 6px; }
+.wrow .pct { text-align: right; font-family: 'Consolas', monospace; font-size: 12px; font-weight: 700; }
+.wreset { font-size: 10px; color: var(--muted-color); padding-left: 26px; margin: 1px 0 4px; font-family: 'Consolas', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.claude .progress-fill { background: linear-gradient(90deg, var(--claude-a), var(--claude-b)); }
+.codex .progress-fill { background: linear-gradient(90deg, var(--codex-a), var(--codex-b)); }
+.progress-fill.warn { background: var(--warn) !important; }
+.progress-fill.crit { background: var(--crit) !important; }
+.extra { font-size: 10px; color: var(--muted-color); padding-left: 26px; display: flex; justify-content: space-between; font-family: 'Consolas', monospace; margin-bottom: 2px; gap: 6px; }
+
+
+/* ==========================================================================
+   4. 設定ウィンドウ（ui/settings.html 準拠）+ スキン選択 UI（要件 4）
+   ========================================================================== */
+.settings-mock {
+    --bg: #101016;
+    --nav-bg: #15151d;
+    --card-bg: rgba(255,255,255,0.05);
+    --card-border: rgba(255,255,255,0.10);
+    --text-color: #f0f0f5;
+    --muted-color: #a8a8b8;
+    --title-color: #d8d8e8;
+    --btn-bg: rgba(255,255,255,0.12);
+    --btn-bg-hover: rgba(255,255,255,0.22);
+    --btn-color: #bbb;
+    --input-bg: rgba(255,255,255,0.05);
+    --input-border: rgba(255,255,255,0.14);
+    --accent: #5aa0ff;
+
+    width: 720px;
+    max-width: 100%;
+    background: var(--bg);
+    color: var(--text-color);
+    font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif;
+    font-size: 13px;
+    display: flex;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 14px 38px rgba(0,0,0,0.55);
+}
+.settings-mock.theme-light {
+    --bg: #eef0f8;
+    --nav-bg: #e2e6f3;
+    --card-bg: rgba(255,255,255,0.75);
+    --card-border: rgba(0,0,0,0.10);
+    --text-color: #24263a;
+    --muted-color: #606078;
+    --title-color: #3b3b5a;
+    --btn-bg: rgba(0,0,0,0.08);
+    --btn-bg-hover: rgba(0,0,0,0.16);
+    --btn-color: #444;
+    --input-bg: rgba(0,0,0,0.04);
+    --input-border: rgba(0,0,0,0.15);
+}
+/* 設定ウィンドウ自体の data-skin="orbital" 追従 */
+.settings-mock[data-skin="orbital"] {
+    --bg: #070c16;
+    --nav-bg: #0a1220;
+    --card-bg: rgba(0, 224, 255, 0.045);
+    --card-border: rgba(0, 224, 255, 0.22);
+    --text-color: #e2f1ff;
+    --muted-color: #6b89a8;
+    --title-color: #9ed8f8;
+    --btn-bg: rgba(0, 224, 255, 0.10);
+    --btn-bg-hover: rgba(0, 224, 255, 0.22);
+    --btn-color: #8ad4f8;
+    --input-bg: rgba(0, 224, 255, 0.06);
+    --input-border: rgba(0, 224, 255, 0.24);
+    --accent: #00b4d8;
+    border-radius: 4px;
+    border-color: rgba(0, 224, 255, 0.30);
+}
+.settings-mock.theme-light[data-skin="orbital"] {
+    --bg: #eaf1f8;
+    --nav-bg: #dce7f3;
+    --card-bg: rgba(255, 255, 255, 0.80);
+    --card-border: rgba(0, 118, 185, 0.24);
+    --text-color: #0d2137;
+    --muted-color: #4b6784;
+    --title-color: #133c63;
+    --btn-bg: rgba(0, 110, 175, 0.09);
+    --btn-bg-hover: rgba(0, 110, 175, 0.18);
+    --btn-color: #15406a;
+    --input-bg: rgba(0, 110, 175, 0.06);
+    --input-border: rgba(0, 110, 175, 0.22);
+    --accent: #0077b6;
+}
+.settings-mock nav {
+    width: 176px;
+    flex: none;
+    background: var(--nav-bg);
+    padding: 18px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border-right: 1px solid var(--card-border);
+}
+.settings-mock nav h1 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--title-color);
+    padding: 2px 10px 12px;
+}
+.settings-mock .nav-item {
+    text-align: left;
+    padding: 9px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    cursor: pointer;
+}
+.settings-mock .nav-item.active {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+}
+.settings-mock main {
+    flex: 1;
+    min-width: 0;
+    padding: 20px 24px 26px;
+}
+.settings-mock h2 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--title-color);
+    margin-bottom: 14px;
+}
+.settings-mock .card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 13px 15px;
+    margin-bottom: 11px;
+}
+.settings-mock[data-skin="orbital"] .card {
+    border-radius: 4px;
+}
+.settings-mock .card > .label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted-color);
+    margin-bottom: 8px;
+}
+.new-pill {
+    font-size: 9.5px;
+    font-family: 'Consolas', monospace;
+    font-weight: 700;
+    background: var(--accent);
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+.settings-mock .opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.settings-mock .opt {
+    flex: 0 1 auto;
+    min-width: 84px;
+    text-align: center;
+    padding: 7px 14px;
+    font: inherit;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-color);
+}
+.settings-mock .opt.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.settings-mock .toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    cursor: pointer;
+}
+.settings-mock .hint {
+    font-size: 11.5px;
+    color: var(--muted-color);
+    margin-top: 8px;
+    line-height: 1.5;
+}
+
+/* 新設: スキン選択カードグリッド（settings.html の #panel-display 内） */
+.skin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.skin-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 9px 11px;
+    background: var(--input-bg);
+    border: 1.5px solid var(--input-border);
+    border-radius: 7px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text-color);
+    font: inherit;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.settings-mock[data-skin="orbital"] .skin-card { border-radius: 3px; }
+.skin-card:hover { background: var(--btn-bg-hover); }
+.skin-card.active {
+    border-color: var(--accent);
+    background: rgba(0, 180, 216, 0.10);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+.skin-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+.skin-card-name {
+    font-size: 12.5px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.skin-radio {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 1.5px solid var(--muted-color);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+}
+.skin-card.active .skin-radio {
+    border-color: var(--accent);
+}
+.skin-card.active .skin-radio::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+.skin-preview-strip {
+    height: 22px;
+    border-radius: 4px;
+    padding: 4px 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(255,255,255,0.12);
+    font-family: 'Consolas', monospace;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+.skin-preview-strip.sw-default {
+    background: #121218;
+    color: #7bffe0;
+}
+.skin-preview-strip.sw-default .sw-bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #8a9cff 65%, rgba(255,255,255,0.12) 65%);
+}
+.skin-preview-strip.sw-orbital {
+    background: #060b15;
+    color: #00f0ff;
+    border-radius: 2px;
+    border-color: rgba(0, 224, 255, 0.4);
+}
+.skin-preview-strip.sw-orbital .sw-bar {
+    flex: 1;
+    height: 5px;
+    background:
+        repeating-linear-gradient(90deg, transparent 0 4px, #060b15 4px 5px),
+        linear-gradient(90deg, #00aeff 0%, #00f0ff 72%, rgba(0,224,255,0.15) 72%);
+}
+.skin-card-desc {
+    font-size: 11px;
+    color: var(--muted-color);
+    line-height: 1.35;
+}
+</style>
+</head>
+<body>
+<div class="page-wrap">
+
+    <header class="page-header">
+        <h1>
+            widget-go スキン案モック: 「Orbital Zero-G（軌道テレメトリ）」
+            <span class="badge-concept">data-skin="orbital"</span>
+        </h1>
+        <span class="sub">対象: <code>ui/index.html</code> / <code>ui/settings.html</code>（DOM 構造・クラス名・CSS 変数完全準拠 / 外部通信なし）</span>
+    </header>
+
+    <!-- (5) 冒頭デザインノート -->
+    <section class="design-note">
+        <h2>🛰️ デザインノート — コンセプトと設計方針</h2>
+        <div class="note-grid">
+            <div class="note-block">
+                <h3>1. コンセプト名と狙い</h3>
+                <p><b>コンセプト名: 「Orbital Zero-G（軌道テレメトリ / 無重力計器盤）」</b>（属性値: <code>data-skin="orbital"</code>）</p>
+                <p style="margin-top:4px">宇宙船のフライトデッキ計器（テレメトリ HUD）と無重力空間の光学照準器を着想源としたスキンです。既存の HTML 構造を一切変更せず、CSS 変数の差し替えと <code>[data-skin="orbital"]</code> セレクタのみで「四隅のレチクル（照準ブラケット）」「16px 座標マイクログリッド」「目盛り付きセグメントゲージ」「イオンスラスター調のシアン＆アンバー発光値」を与え、デスクトップの片隅に無重力で浮かぶ精密計器盤へと昇華させます。</p>
+            </div>
+            <div class="note-block">
+                <h3>2. 既存テーマ・透過モードとの関係（完全併存）</h3>
+                <ul>
+                    <li><b>テーマ（ダーク / ライト / システム追従）と併存:</b> スキンは「造形・目盛り・タイポグラフィ・色相体系」を担い、テーマは「明暗パレット」を担う<b>直交（2軸）設計</b>です。ダーク時は深宇宙計器盤（<code>#060b15</code> ベース）、ライト時は月面クリーンルーム計器盤（<code>#f1f6fc</code> ベース）として両立します。</li>
+                    <li><b>透過モードと併存:</b> Go 側のウィンドウ透過（<code>/api/transparent</code>）および背景アルファ値低減とそのまま組み合わせて機能し、デスクトップ壁紙の上に HUD レチクルと目盛りゲージが浮かび上がります。</li>
+                </ul>
+            </div>
+            <div class="note-block">
+                <h3>3. 実装への移行しやすさ</h3>
+                <ul>
+                    <li><code>body</code>（またはルート要素）に <code>data-skin="orbital"</code> を付与するだけで切り替わります（既定は属性なし or <code>data-skin="default"</code>）。</li>
+                    <li>プログレスバーやコア別バーのセグメント目盛りは <code>.progress-bar::after</code> / <code>.core-bar-container::after</code> の <code>repeating-linear-gradient</code> で描画しているため、既存の JS（<code>style.width</code> / <code>style.height</code> 更新）に一切影響しません。</li>
+                </ul>
+            </div>
+        </div>
+
+        <details class="var-spec">
+            <summary>📋 data-skin="orbital" で上書きする CSS 変数一覧（ダーク / ライト比較表を開く）</summary>
+            <div class="var-table-wrap">
+                <table class="var-table">
+                    <thead>
+                        <tr>
+                            <th>CSS 変数名</th>
+                            <th>既定（Default Dark）</th>
+                            <th>Orbital Dark: <code>[data-skin="orbital"]</code></th>
+                            <th>Orbital Light: <code>.theme-light[data-skin="orbital"]</code></th>
+                            <th>用途</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>--container-bg</td>
+                            <td><span class="sw" style="background:rgba(16,16,22,0.97)"></span>rgba(16,16,22,0.97)</td>
+                            <td><span class="sw" style="background:rgba(6,11,21,0.95)"></span>rgba(6,11,21,0.95)</td>
+                            <td><span class="sw" style="background:rgba(241,246,252,0.95)"></span>rgba(241,246,252,0.95)</td>
+                            <td>ウィジェット外枠の背景（+16px 座標グリッド重畳）</td>
+                        </tr>
+                        <tr>
+                            <td>--text-color / --muted-color</td>
+                            <td>#f0f0f5 / #a8a8b8</td>
+                            <td>#e2f1ff / #6b89a8</td>
+                            <td>#0d2137 / #4b6784</td>
+                            <td>主テキスト / 補助ラベル・単位・モデル名</td>
+                        </tr>
+                        <tr>
+                            <td>--section-bg</td>
+                            <td>rgba(255,255,255,0.05)</td>
+                            <td>linear-gradient(180deg, rgba(0,224,255,0.055), rgba(7,17,33,0.72))</td>
+                            <td>linear-gradient(180deg, rgba(255,255,255,0.84), rgba(225,236,248,0.72))</td>
+                            <td>各区画パネル背景（+四隅レチクル L 字線）</td>
+                        </tr>
+                        <tr>
+                            <td>--section-border</td>
+                            <td>rgba(255,255,255,0.10)</td>
+                            <td><span class="sw" style="background:rgba(0,224,255,0.24)"></span>rgba(0,224,255,0.24)</td>
+                            <td><span class="sw" style="background:rgba(0,118,185,0.26)"></span>rgba(0,118,185,0.26)</td>
+                            <td>区画枠線・上部角型ボタン枠線</td>
+                        </tr>
+                        <tr>
+                            <td>--section-title / --section-value</td>
+                            <td>#d8d8e8 / #7bffe0</td>
+                            <td><span class="sw" style="background:#00f0ff"></span>#9ed8f8 / #00f0ff</td>
+                            <td><span class="sw" style="background:#006ba6"></span>#133c63 / #006ba6</td>
+                            <td>区画見出し / 右端の主数値リードアウト</td>
+                        </tr>
+                        <tr>
+                            <td>--bar-track / --core-track</td>
+                            <td>rgba(255,255,255,0.12) / 0.10</td>
+                            <td>rgba(0,224,255,0.12) / 0.09</td>
+                            <td>rgba(0,110,175,0.13) / 0.10</td>
+                            <td>水平ゲージ・コア垂直バーの背景トラック</td>
+                        </tr>
+                        <tr>
+                            <td>--net-canvas-bg</td>
+                            <td>rgba(0,0,0,0.35)</td>
+                            <td>rgba(2,7,16,0.72)</td>
+                            <td>rgba(13,33,55,0.06)</td>
+                            <td>ネットワーク裏面トラフィックグラフ背景</td>
+                        </tr>
+                        <tr>
+                            <td>--btn-bg / --btn-bg-hover / --btn-color</td>
+                            <td>rgba(255,255,255,0.12) / 0.22 / #bbb</td>
+                            <td>rgba(0,224,255,0.09) / 0.24 / #8ad4f8</td>
+                            <td>rgba(0,110,175,0.09) / 0.20 / #15406a</td>
+                            <td>上部ボタン列（ピン留め・設定・コンパクト・格納）</td>
+                        </tr>
+                        <tr>
+                            <td>--claude-a .. --claude-b</td>
+                            <td>#f0a27a → #d06b5b</td>
+                            <td><span class="sw" style="background:#ff6238"></span>#ffaa5c → #ff6238</td>
+                            <td><span class="sw" style="background:#c84620"></span>#e87a30 → #c84620</td>
+                            <td>AI 使用量（Claude バー・ドット）</td>
+                        </tr>
+                        <tr>
+                            <td>--codex-a .. --codex-b</td>
+                            <td>#7be0c0 → #34b3d6</td>
+                            <td><span class="sw" style="background:#00f5d4"></span>#00f5d4 → #00aeff</td>
+                            <td><span class="sw" style="background:#009e86"></span>#009e86 → #0074b8</td>
+                            <td>AI 使用量（Codex バー・ドット）</td>
+                        </tr>
+                        <tr>
+                            <td>--warn / --crit / --ok</td>
+                            <td>#facc15 / #ef6a6a / #7fffaa</td>
+                            <td>#ffbe0b / #ff3864 / #00f5d4</td>
+                            <td>#c98a00 / #cf2246 / #008c72</td>
+                            <td>高使用率警告・上限・稼働中インジケータ</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    </section>
+
+    <!-- インタラクティブ切り替えバー -->
+    <div class="toolbar">
+        <div class="ctl">
+            <span>スキン (`data-skin`)</span>
+            <div class="seg" id="ctlSkin">
+                <button type="button" data-val="orbital" class="on">Orbital Zero-G (提案)</button>
+                <button type="button" data-val="default">標準 (現行 Default)</button>
+            </div>
+        </div>
+        <div class="ctl">
+            <span>テーマ (`theme`)</span>
+            <div class="seg" id="ctlTheme">
+                <button type="button" data-val="dark" class="on">ダーク</button>
+                <button type="button" data-val="light">ライト</button>
+            </div>
+        </div>
+        <div class="ctl">
+            <span>透過モード</span>
+            <div class="seg" id="ctlTrans">
+                <button type="button" data-val="off" class="on">OFF</button>
+                <button type="button" data-val="on">ON (背景半透明)</button>
+            </div>
+        </div>
+        <div class="ctl">
+            <span>ネットワーク表面</span>
+            <div class="seg" id="ctlNetMode">
+                <button type="button" data-val="wifi" class="on">Wi-Fi</button>
+                <button type="button" data-val="eth">Ethernet</button>
+            </div>
+        </div>
+        <div class="ctl">
+            <span>電源モード</span>
+            <div class="seg" id="ctlPm">
+                <button type="button" data-val="saver">省電力</button>
+                <button type="button" data-val="balanced" class="on">バランス</button>
+                <button type="button" data-val="best">パフォーマンス</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================================================
+         ステージ 1: フル表示 (230px) + コンパクト表示 (130px) + 裏面トラフィックグラフ
+         ====================================================================== -->
+    <div class="stage-section-title">
+        ① ウィジェット本体プレビュー（フル表示 230px ＆ コンパクト表示 130px 横並び）
+        <small>— 各区画の「▼」で折りたたみ、Wi-Fi 区画クリックで表裏反転（3D フリップ）、電源スライダー操作も可能</small>
+    </div>
+
+    <div class="stage" id="mainStage">
+
+        <!-- (A) フル表示（幅 230px）: 全区画展開・Wi-Fi 表面 -->
+        <figure class="mock-fig">
+            <div class="widget-root" data-skin="orbital" id="winFull">
+                <div class="container" id="dragAreaFull">
+                    <div class="top-btns">
+                        <button class="top-btn pin-btn active" title="常に前面に表示">📌</button>
+                        <button class="top-btn settings-btn" title="表示オプション">⚙</button>
+                        <button class="top-btn compact-btn" title="コンパクト表示">▬</button>
+                        <button class="top-btn tray-btn" title="タスクバーに格納">_</button>
+                    </div>
+
+                    <!-- CPU 区画 -->
+                    <div class="section" data-sec="cpu">
+                        <div class="section-header">
+                            <span class="section-icon">💻</span>
+                            <span class="section-title">CPU</span>
+                            <span class="section-value">34%</span>
+                            <button class="chev" title="折りたたむ">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar cpu-progress">
+                                <div class="progress-fill cpu-fill" style="width:34%"></div>
+                            </div>
+                            <div class="clock-row">
+                                <span class="clock-label">クロック</span>
+                                <span class="clock-value">3.84 GHz</span>
+                                <span class="clock-base">base 2.40GHz</span>
+                            </div>
+                            <div class="progress-bar clock-progress">
+                                <div class="progress-fill clock-fill clk-high" style="width:76%"></div>
+                                <div class="clock-base-marker" style="left:48%" title="ベースクロック 2.40 GHz"></div>
+                            </div>
+                            <div class="power-mode pm-balanced">
+                                <input type="range" class="pm-slider" min="0" max="2" step="1" value="1" aria-label="電源モード" title="電源モード: バランス">
+                                <div class="pm-labels">
+                                    <span data-mode="saver" title="最適な電力効率">省電力</span>
+                                    <span data-mode="balanced" class="active" title="バランス">バランス</span>
+                                    <span data-mode="best" title="最適なパフォーマンス">パフォーマンス</span>
+                                </div>
+                            </div>
+                            <div class="model-name cpu-model" title="Intel(R) Core(TM) Ultra 7 258V">Intel Core Ultra 7 258V</div>
+                            <div class="cores-container">
+                                <div class="core-item"><span class="core-label">Core 0</span><div class="core-bar-container"><div class="core-bar" style="height:48%"></div></div><span class="core-value">48%</span></div>
+                                <div class="core-item"><span class="core-label">Core 1</span><div class="core-bar-container"><div class="core-bar" style="height:26%"></div></div><span class="core-value">26%</span></div>
+                                <div class="core-item"><span class="core-label">Core 2</span><div class="core-bar-container"><div class="core-bar" style="height:64%"></div></div><span class="core-value">64%</span></div>
+                                <div class="core-item"><span class="core-label">Core 3</span><div class="core-bar-container"><div class="core-bar" style="height:19%"></div></div><span class="core-value">19%</span></div>
+                                <div class="core-item"><span class="core-label">Core 4</span><div class="core-bar-container"><div class="core-bar" style="height:35%"></div></div><span class="core-value">35%</span></div>
+                                <div class="core-item"><span class="core-label">Core 5</span><div class="core-bar-container"><div class="core-bar" style="height:52%"></div></div><span class="core-value">52%</span></div>
+                                <div class="core-item"><span class="core-label">Core 6</span><div class="core-bar-container"><div class="core-bar" style="height:14%"></div></div><span class="core-value">14%</span></div>
+                                <div class="core-item"><span class="core-label">Core 7</span><div class="core-bar-container"><div class="core-bar" style="height:22%"></div></div><span class="core-value">22%</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- メモリ区画 -->
+                    <div class="section" data-sec="memory">
+                        <div class="section-header">
+                            <span class="section-icon">🧠</span>
+                            <span class="section-title">メモリ</span>
+                            <span class="section-value">62%</span>
+                            <button class="chev" title="折りたたむ">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar mem-progress">
+                                <div class="progress-fill memory-fill" style="width:62%"></div>
+                            </div>
+                            <div class="memory-details">
+                                <span class="used">19.8 GB</span><span> / 32.0 GB</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GPU 区画 -->
+                    <div class="section accel-section" data-sec="gpu">
+                        <div class="section-header">
+                            <span class="section-icon">🎮</span>
+                            <span class="section-title">GPU</span>
+                            <span class="section-value">28%</span>
+                            <button class="chev" title="折りたたむ">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar gpu-progress">
+                                <div class="progress-fill gpu-fill" style="width:28%"></div>
+                            </div>
+                            <div class="accel-info">
+                                <div class="model-name" title="Intel(R) Arc(TM) 140V GPU (16GB)">Intel Arc 140V GPU</div>
+                                <div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value">1.2 / 2.0 GB</span></div>
+                                <div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value">3.4 / 16.0 GB</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- NPU 区画 -->
+                    <div class="section accel-section" data-sec="npu">
+                        <div class="section-header">
+                            <span class="section-icon">🧩</span>
+                            <span class="section-title">NPU</span>
+                            <span class="section-value">16%</span>
+                            <button class="chev" title="折りたたむ">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar npu-progress">
+                                <div class="progress-fill npu-fill" style="width:16%"></div>
+                            </div>
+                            <div class="model-name npu-model" title="Intel(R) AI Boost">Intel AI Boost</div>
+                        </div>
+                    </div>
+
+                    <!-- Wi-Fi / Ethernet 区画（クリックで裏面グラフへ反転） -->
+                    <div class="section wifi-section" data-sec="network" title="クリックで表面 (接続情報) ⇔ 裏面 (トラフィックグラフ) を反転">
+                        <div class="flip-card">
+                            <div class="flip-face flip-front">
+                                <div class="section-header">
+                                    <span class="section-icon net-front-icon">📶</span>
+                                    <span class="section-title net-front-title" data-compact="Wi-Fi">Wi-Fi</span>
+                                    <span class="section-value wifi-compact-value net-front-compact">6GHz(37ch)</span>
+                                    <button class="chev" title="折りたたむ">▼</button>
+                                </div>
+                                <div class="wifi-info">
+                                    <div class="model-name net-front-model">Intel Wi-Fi 7 BE201 320MHz</div>
+                                    <div class="wifi-row wifi-detail"><span class="wifi-label net-front-ssid-label">SSID</span><span class="wifi-value wifi-connected net-front-ssid">ORB-LINK-6G</span></div>
+                                    <div class="wifi-row wifi-wireless-only"><span class="wifi-label">帯域</span><span class="wifi-value">6GHz (Ch 37)</span></div>
+                                    <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">規格</span><span class="wifi-value">802.11be (Wi-Fi 7)</span></div>
+                                    <div class="wifi-row wifi-detail wifi-wireless-only"><span class="wifi-label">信号強度</span><span class="wifi-value">94%</span></div>
+                                    <div class="wifi-row wifi-ethernet-only"><span class="wifi-label">速度</span><span class="wifi-value">2.5 Gbps</span></div>
+                                </div>
+                            </div>
+                            <div class="flip-face flip-back">
+                                <div class="section-header">
+                                    <span class="section-icon">📊</span>
+                                    <span class="section-title" data-compact="Net">Network</span>
+                                    <span class="section-value net-peak-toggle" title="グラフのピーク (直近 2 分) / クリックで単位切替 (B ⇔ bit)">842 KB/s</span>
+                                    <button class="chev" title="折りたたむ">▼</button>
+                                </div>
+                                <canvas class="net-canvas"></canvas>
+                                <div class="net-legend">
+                                    <span class="net-leg-rx">↓ <span>618 KB/s</span></span>
+                                    <span class="net-leg-tx">↑ <span>142 KB/s</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI 使用量区画（Claude / Codex 5h・7d） -->
+                    <div class="section ai-section last-visible" data-sec="ai">
+                        <div class="section-header">
+                            <span class="section-icon">🤖</span>
+                            <span class="section-title">AI 使用量</span>
+                            <button class="ai-refresh" type="button" title="今すぐ更新">↻</button>
+                            <button class="chev" title="折りたたむ">▼</button>
+                        </div>
+                        <div class="ai-compact">
+                            <div class="ai-crow claude"><i></i><span class="ai-cname">Claude</span><span class="ai-cval">42%</span></div>
+                            <div class="ai-crow codex"><i></i><span class="ai-cname">Codex</span><span class="ai-cval warn">68%</span></div>
+                        </div>
+                        <div class="sec-body">
+                            <div class="prov claude">
+                                <div class="prov-head">
+                                    <span class="prov-name" title="使用量ページを開く"><i></i>Claude</span>
+                                    <span class="plan">Max 5x</span>
+                                    <span class="prov-state ok" title="ステータスページを開く">稼働中</span>
+                                </div>
+                                <div class="wrow">
+                                    <span class="lab">5h</span>
+                                    <div class="progress-bar"><div class="progress-fill" style="width:42%"></div></div>
+                                    <span class="pct">42%</span>
+                                </div>
+                                <div class="wreset">↻ あと2時間14分</div>
+                                <div class="wrow">
+                                    <span class="lab">7d</span>
+                                    <div class="progress-bar"><div class="progress-fill" style="width:24%"></div></div>
+                                    <span class="pct">24%</span>
+                                </div>
+                                <div class="wreset">↻ 10月25日（日）09:00</div>
+                                <div class="extra"><span>追加利用枠</span><span>$4.50 / $50.00</span></div>
+                            </div>
+                            <div class="prov codex">
+                                <div class="prov-head">
+                                    <span class="prov-name" title="使用量ページを開く"><i></i>Codex</span>
+                                    <span class="plan">Plus</span>
+                                    <span class="prov-state ok" title="ステータスページを開く">稼働中</span>
+                                </div>
+                                <div class="wrow">
+                                    <span class="lab">5h</span>
+                                    <div class="progress-bar"><div class="progress-fill warn" style="width:68%"></div></div>
+                                    <span class="pct warn">68%</span>
+                                </div>
+                                <div class="wreset">↻ あと1時間08分</div>
+                                <div class="wrow">
+                                    <span class="lab">7d</span>
+                                    <div class="progress-bar"><div class="progress-fill" style="width:31%"></div></div>
+                                    <span class="pct">31%</span>
+                                </div>
+                                <div class="wreset">↻ 10月26日（月）21:00</div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <figcaption>
+                <b>① フル表示（幅 230px）</b>
+                全 6 区画（CPU・メモリ・GPU・NPU・Wi-Fi・AI 使用量）を展開した状態。Wi-Fi パネルをクリックすると裏面グラフに反転します。
+            </figcaption>
+        </figure>
+
+        <!-- (B) コンパクト表示（幅 130px）: フル表示のすぐ横に配置（要件 3） -->
+        <figure class="mock-fig">
+            <div class="widget-root compact-frame" data-skin="orbital" id="winCompact">
+                <div class="container compact">
+                    <div class="top-btns">
+                        <button class="top-btn pin-btn active" title="常に前面に表示">📌</button>
+                        <button class="top-btn settings-btn" title="表示オプション">⚙</button>
+                        <button class="top-btn compact-btn expanded" title="フル表示">▢</button>
+                        <button class="top-btn tray-btn" title="タスクバーに格納">_</button>
+                    </div>
+
+                    <div class="section" data-sec="cpu">
+                        <div class="section-header">
+                            <span class="section-icon">💻</span>
+                            <span class="section-title">CPU</span>
+                            <span class="section-value">34%</span>
+                        </div>
+                    </div>
+
+                    <div class="section" data-sec="memory">
+                        <div class="section-header">
+                            <span class="section-icon">🧠</span>
+                            <span class="section-title">メモリ</span>
+                            <span class="section-value">62%</span>
+                        </div>
+                    </div>
+
+                    <div class="section accel-section" data-sec="gpu">
+                        <div class="section-header">
+                            <span class="section-icon">🎮</span>
+                            <span class="section-title">GPU</span>
+                            <span class="section-value">28%</span>
+                        </div>
+                    </div>
+
+                    <div class="section accel-section" data-sec="npu">
+                        <div class="section-header">
+                            <span class="section-icon">🧩</span>
+                            <span class="section-title">NPU</span>
+                            <span class="section-value">16%</span>
+                        </div>
+                    </div>
+
+                    <div class="section wifi-section" data-sec="network" title="クリックで表裏反転">
+                        <div class="flip-card">
+                            <div class="flip-face flip-front">
+                                <div class="section-header">
+                                    <span class="section-icon net-front-icon">📶</span>
+                                    <span class="section-title net-front-title" data-compact="Wi-Fi">Wi-Fi</span>
+                                    <span class="section-value wifi-compact-value net-front-compact">6GHz(37ch)</span>
+                                </div>
+                            </div>
+                            <div class="flip-face flip-back">
+                                <div class="section-header">
+                                    <span class="section-icon">📊</span>
+                                    <span class="section-title" data-compact="Net">Network</span>
+                                    <span class="section-value net-peak-toggle" title="現在の合計スループット (↓+↑)">760 KB/s</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section ai-section last-visible" data-sec="ai">
+                        <div class="section-header">
+                            <span class="section-icon">🤖</span>
+                            <span class="section-title">AI 使用量</span>
+                        </div>
+                        <div class="ai-compact">
+                            <div class="ai-crow claude"><i></i><span class="ai-cname">Claude</span><span class="ai-cval">42%</span></div>
+                            <div class="ai-crow codex"><i></i><span class="ai-cname">Codex</span><span class="ai-cval warn">68%</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <figcaption>
+                <b>② コンパクト表示（幅 130px）</b>
+                <code>.container.compact</code> 適用時。各区画が 1 行レチクル枠に収まり、AI 使用量は Claude / Codex の独立行として並びます。
+            </figcaption>
+        </figure>
+
+        <!-- (C) フル表示・裏面トラフィックグラフ常時確認用 & AI 折りたたみ状態（幅 230px） -->
+        <figure class="mock-fig">
+            <div class="widget-root" data-skin="orbital" id="winFlipped">
+                <div class="container">
+                    <div class="top-btns">
+                        <button class="top-btn pin-btn" title="常に前面に表示">📌</button>
+                        <button class="top-btn settings-btn" title="表示オプション">⚙</button>
+                        <button class="top-btn compact-btn" title="コンパクト表示">▬</button>
+                        <button class="top-btn tray-btn" title="タスクバーに格納">_</button>
+                    </div>
+
+                    <!-- CPU（ターボ高負荷例 + パフォーマンスモード） -->
+                    <div class="section" data-sec="cpu">
+                        <div class="section-header">
+                            <span class="section-icon">💻</span>
+                            <span class="section-title">CPU</span>
+                            <span class="section-value">78%</span>
+                            <button class="chev" title="折りたたむ">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar cpu-progress">
+                                <div class="progress-fill cpu-fill" style="width:78%"></div>
+                            </div>
+                            <div class="clock-row">
+                                <span class="clock-label">クロック</span>
+                                <span class="clock-value">4.52 GHz</span>
+                                <span class="clock-base">base 2.40GHz</span>
+                            </div>
+                            <div class="progress-bar clock-progress">
+                                <div class="progress-fill clock-fill clk-high" style="width:90%"></div>
+                                <div class="clock-base-marker" style="left:48%"></div>
+                            </div>
+                            <div class="power-mode pm-best">
+                                <input type="range" class="pm-slider" min="0" max="2" step="1" value="2" aria-label="電源モード">
+                                <div class="pm-labels">
+                                    <span data-mode="saver">省電力</span>
+                                    <span data-mode="balanced">バランス</span>
+                                    <span data-mode="best" class="active">パフォーマンス</span>
+                                </div>
+                            </div>
+                            <div class="model-name cpu-model">Intel Core Ultra 7 258V</div>
+                            <div class="cores-container">
+                                <div class="core-item"><span class="core-label">Core 0</span><div class="core-bar-container"><div class="core-bar" style="height:92%"></div></div><span class="core-value">92%</span></div>
+                                <div class="core-item"><span class="core-label">Core 1</span><div class="core-bar-container"><div class="core-bar" style="height:84%"></div></div><span class="core-value">84%</span></div>
+                                <div class="core-item"><span class="core-label">Core 2</span><div class="core-bar-container"><div class="core-bar" style="height:76%"></div></div><span class="core-value">76%</span></div>
+                                <div class="core-item"><span class="core-label">Core 3</span><div class="core-bar-container"><div class="core-bar" style="height:88%"></div></div><span class="core-value">88%</span></div>
+                                <div class="core-item"><span class="core-label">Core 4</span><div class="core-bar-container"><div class="core-bar" style="height:65%"></div></div><span class="core-value">65%</span></div>
+                                <div class="core-item"><span class="core-label">Core 5</span><div class="core-bar-container"><div class="core-bar" style="height:71%"></div></div><span class="core-value">71%</span></div>
+                                <div class="core-item"><span class="core-label">Core 6</span><div class="core-bar-container"><div class="core-bar" style="height:59%"></div></div><span class="core-value">59%</span></div>
+                                <div class="core-item"><span class="core-label">Core 7</span><div class="core-bar-container"><div class="core-bar" style="height:81%"></div></div><span class="core-value">81%</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- メモリ / GPU / NPU を折りたたんだ状態の見え方 -->
+                    <div class="section collapsed" data-sec="memory">
+                        <div class="section-header">
+                            <span class="section-icon">🧠</span>
+                            <span class="section-title">メモリ</span>
+                            <span class="section-value">62%</span>
+                            <button class="chev" title="展開">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" style="width:62%"></div></div>
+                            <div class="memory-details"><span class="used">19.8 GB</span><span> / 32.0 GB</span></div>
+                        </div>
+                    </div>
+
+                    <div class="section accel-section collapsed" data-sec="gpu">
+                        <div class="section-header">
+                            <span class="section-icon">🎮</span>
+                            <span class="section-title">GPU</span>
+                            <span class="section-value">28%</span>
+                            <button class="chev" title="展開">▼</button>
+                        </div>
+                        <div class="sec-body">
+                            <div class="progress-bar gpu-progress"><div class="progress-fill gpu-fill" style="width:28%"></div></div>
+                            <div class="accel-info">
+                                <div class="model-name">Intel Arc 140V GPU</div>
+                                <div class="wifi-row"><span class="wifi-label">専用メモリ</span><span class="wifi-value">1.2 / 2.0 GB</span></div>
+                                <div class="wifi-row"><span class="wifi-label">共有メモリ</span><span class="wifi-value">3.4 / 16.0 GB</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Wi-Fi 裏面（Network トラフィックグラフ表示状態 .wifi-section.flipped） -->
+                    <div class="section wifi-section flipped" data-sec="network" title="クリックで表面 (Wi-Fi/Ethernet) へ戻る">
+                        <div class="flip-card">
+                            <div class="flip-face flip-front">
+                                <div class="section-header">
+                                    <span class="section-icon net-front-icon">🔌</span>
+                                    <span class="section-title net-front-title" data-compact="LAN">Ethernet</span>
+                                    <span class="section-value wifi-compact-value net-front-compact">2.5 Gbps</span>
+                                    <button class="chev" title="折りたたむ">▼</button>
+                                </div>
+                                <div class="wifi-info">
+                                    <div class="model-name">Intel Ethernet Controller I226-V</div>
+                                    <div class="wifi-row wifi-detail"><span class="wifi-label">アダプタ</span><span class="wifi-value wifi-connected">イーサネット 2</span></div>
+                                    <div class="wifi-row wifi-ethernet-only" style="display:flex"><span class="wifi-label">速度</span><span class="wifi-value">2.5 Gbps</span></div>
+                                </div>
+                            </div>
+                            <div class="flip-face flip-back">
+                                <div class="section-header">
+                                    <span class="section-icon">📊</span>
+                                    <span class="section-title" data-compact="Net">Network</span>
+                                    <span class="section-value net-peak-toggle" title="グラフのピーク (直近 2 分) / クリックで単位切替 (B ⇔ bit)">842 KB/s</span>
+                                    <button class="chev" title="折りたたむ">▼</button>
+                                </div>
+                                <canvas class="net-canvas"></canvas>
+                                <div class="net-legend">
+                                    <span class="net-leg-rx">↓ <span>618 KB/s</span></span>
+                                    <span class="net-leg-tx">↑ <span>142 KB/s</span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI 使用量（既定の折りたたみ状態 .ai-section.collapsed） -->
+                    <div class="section ai-section collapsed last-visible" data-sec="ai">
+                        <div class="section-header">
+                            <span class="section-icon">🤖</span>
+                            <span class="section-title">AI 使用量</span>
+                            <button class="ai-refresh" type="button" title="今すぐ更新">↻</button>
+                            <button class="chev" title="展開">▼</button>
+                        </div>
+                        <div class="ai-compact">
+                            <div class="ai-crow claude"><i></i><span class="ai-cname">Claude</span><span class="ai-cval">42%</span></div>
+                            <div class="ai-crow codex"><i></i><span class="ai-cname">Codex</span><span class="ai-cval warn">68%</span></div>
+                        </div>
+                        <div class="sec-body">
+                            <div class="prov claude">
+                                <div class="prov-head"><span class="prov-name"><i></i>Claude</span><span class="plan">Max 5x</span><span class="prov-state ok">稼働中</span></div>
+                                <div class="wrow"><span class="lab">5h</span><div class="progress-bar"><div class="progress-fill" style="width:42%"></div></div><span class="pct">42%</span></div>
+                                <div class="wreset">↻ あと2時間14分</div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+            <figcaption>
+                <b>③ 裏面トラフィックグラフ ＆ 折りたたみ状態（幅 230px）</b>
+                ネットワーク区画を裏返した <code>.flip-back</code> のリアルタイム波形グラフ（Rx シアン / Tx アンバー）と、区画折りたたみ時（D8/D10）の表示例です。
+            </figcaption>
+        </figure>
+
+    </div>
+
+    <!-- ======================================================================
+         ステージ 2: 設定ウィンドウ (ui/settings.html) 内のスキン選択 UI（要件 4）
+         ====================================================================== -->
+    <div class="stage-section-title">
+        ② 設定ウィンドウ（<code>ui/settings.html</code>「表示」パネル）に追加するスキン選択 UI
+        <small>— スキンカードやテーマボタンをクリックすると、上のウィジェットとこの設定ウィンドウの両方に即時反映されます</small>
+    </div>
+
+    <div class="stage">
+        <div class="settings-mock" data-skin="orbital" id="settingsMock">
+            <nav>
+                <h1>設定</h1>
+                <button class="nav-item active" type="button">表示</button>
+                <button class="nav-item" type="button">区画</button>
+                <button class="nav-item" type="button">AI 使用量</button>
+                <button class="nav-item" type="button">起動とショートカット</button>
+            </nav>
+            <main>
+                <h2>表示</h2>
+
+                <!-- 追加する「スキン」選択カード -->
+                <div class="card">
+                    <span class="label">スキン <span class="new-pill">NEW</span></span>
+                    <div class="skin-grid" id="settingsSkinGrid">
+                        <button type="button" class="skin-card" data-skin-select="default">
+                            <div class="skin-card-head">
+                                <span class="skin-card-name"><span class="skin-radio"></span>標準</span>
+                            </div>
+                            <div class="skin-preview-strip sw-default">
+                                <span>CPU</span>
+                                <span class="sw-bar"></span>
+                                <span>34%</span>
+                            </div>
+                            <div class="skin-card-desc">角丸カードとグラデーションバーによる既定の落ち着いたデザイン</div>
+                        </button>
+
+                        <button type="button" class="skin-card active" data-skin-select="orbital">
+                            <div class="skin-card-head">
+                                <span class="skin-card-name"><span class="skin-radio"></span>Orbital Zero-G</span>
+                            </div>
+                            <div class="skin-preview-strip sw-orbital">
+                                <span>CPU</span>
+                                <span class="sw-bar"></span>
+                                <span>34%</span>
+                            </div>
+                            <div class="skin-card-desc">四隅の照準レチクルと目盛り付きセグメントゲージの軌道テレメトリ計器盤</div>
+                        </button>
+                    </div>
+                    <p class="hint">スキンは下の「テーマ（ダーク / ライト / システム）」および「透過モード」と組み合わせて使えます。</p>
+                </div>
+
+                <!-- 既存の「テーマ」カード -->
+                <div class="card">
+                    <span class="label">テーマ</span>
+                    <div class="opts" id="settingsThemeOpts">
+                        <button type="button" class="opt active" data-theme-select="dark">ダーク</button>
+                        <button type="button" class="opt" data-theme-select="light">ライト</button>
+                        <button type="button" class="opt" data-theme-select="system">システム</button>
+                    </div>
+                </div>
+
+                <!-- 既存の「透過モード」カード -->
+                <div class="card">
+                    <span class="label">透過モード</span>
+                    <label class="toggle">
+                        <span>背景を半透明にする</span>
+                        <input type="checkbox" id="settingsTransCheck">
+                    </label>
+                </div>
+
+                <!-- 既存の「CPU Core 番号」カード -->
+                <div class="card">
+                    <span class="label">CPU Core 番号</span>
+                    <div class="opts" id="settingsCoreOpts">
+                        <button type="button" class="opt active" data-core-base="0">0 から</button>
+                        <button type="button" class="opt" data-core-base="1">1 から</button>
+                    </div>
+                </div>
+
+                <!-- 既存の「タスクバー (最小化時)」カード -->
+                <div class="card" style="margin-bottom:0">
+                    <span class="label">タスクバー (最小化時)</span>
+                    <div class="opts">
+                        <button type="button" class="opt">アイコンのみ</button>
+                        <button type="button" class="opt active">CPU 使用率</button>
+                        <button type="button" class="opt">AI 使用量</button>
+                    </div>
+                    <p class="hint">「AI 使用量」は、AI 使用量を ON にしたときだけ選べます。</p>
+                </div>
+            </main>
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function() {
+    // 状態管理
+    const state = {
+        skin: 'orbital',
+        theme: 'dark',
+        transparent: false,
+        netMode: 'wifi',
+        pm: 'balanced',
+        coreBase: 0,
+        unitBit: false
+    };
+
+    // トラフィックグラフ用のリアルなダミー波形データ (60 サンプル)
+    const netSamples = [];
+    for (let i = 0; i < 60; i++) {
+        const wave = Math.sin(i * 0.22) * 180 + Math.cos(i * 0.47) * 110;
+        const burst = (i > 38 && i < 46) ? 380 : ((i > 14 && i < 20) ? 240 : 0);
+        const rx = Math.max(24, Math.round(240 + wave + burst + (i % 5) * 18));
+        const tx = Math.max(12, Math.round(72 + Math.sin(i * 0.31) * 45 + (i > 40 && i < 45 ? 95 : 0)));
+        netSamples.push({ rx: rx * 1024, tx: tx * 1024 });
+    }
+
+    function drawAllNetCanvases() {
+        const light = state.theme === 'light';
+        const orbital = state.skin === 'orbital';
+        document.querySelectorAll('.net-canvas').forEach(function(canvas) {
+            const dpr = window.devicePixelRatio || 1;
+            const cssW = canvas.clientWidth || 188;
+            const cssH = canvas.clientHeight || 54;
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, cssW, cssH);
+
+            // Orbital スキン時はオシロスコープ風の水平・垂直レチクル補助線を描画
+            if (orbital) {
+                ctx.strokeStyle = light ? 'rgba(0, 110, 175, 0.12)' : 'rgba(0, 224, 255, 0.12)';
+                ctx.lineWidth = 1;
+                [0.25, 0.5, 0.75].forEach(function(r) {
+                    const y = Math.round(cssH * r) + 0.5;
+                    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cssW, y); ctx.stroke();
+                });
+                for (let x = 24; x < cssW; x += 24) {
+                    ctx.beginPath(); ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, cssH); ctx.stroke();
+                }
+            }
+
+            let peak = 8 * 1024;
+            netSamples.forEach(function(p) {
+                if (p.rx > peak) peak = p.rx;
+                if (p.tx > peak) peak = p.tx;
+            });
+            const step = cssW / (netSamples.length - 1);
+
+            function drawSeries(getter, fill, stroke) {
+                ctx.fillStyle = fill;
+                ctx.beginPath();
+                ctx.moveTo(0, cssH);
+                netSamples.forEach(function(p, i) {
+                    const x = i * step;
+                    const y = cssH - (getter(p) / peak) * (cssH - 6) - 2;
+                    ctx.lineTo(x, y);
+                });
+                ctx.lineTo(cssW, cssH);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = orbital ? 1.5 : 1.2;
+                ctx.beginPath();
+                netSamples.forEach(function(p, i) {
+                    const x = i * step;
+                    const y = cssH - (getter(p) / peak) * (cssH - 6) - 2;
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+
+            if (orbital) {
+                drawSeries(function(p){ return p.rx; },
+                    light ? 'rgba(0, 140, 114, 0.20)' : 'rgba(0, 245, 212, 0.22)',
+                    light ? '#008c72' : '#00f5d4');
+                drawSeries(function(p){ return p.tx; },
+                    light ? 'rgba(217, 93, 30, 0.18)' : 'rgba(255, 158, 94, 0.20)',
+                    light ? '#d95d1e' : '#ff9e5e');
+            } else {
+                drawSeries(function(p){ return p.rx; },
+                    light ? 'rgba(26, 168, 107, 0.20)' : 'rgba(127, 255, 170, 0.25)',
+                    light ? '#1aa86b' : '#7fffaa');
+                drawSeries(function(p){ return p.tx; },
+                    light ? 'rgba(183, 77, 166, 0.18)' : 'rgba(255, 163, 255, 0.22)',
+                    light ? '#b74da6' : '#ffa3ff');
+            }
+        });
+    }
+
+    function applyState() {
+        // 1. ウィジェットと設定ウィンドウへの data-skin / theme-light / transparent-mode 反映
+        document.querySelectorAll('.widget-root, .settings-mock').forEach(function(el) {
+            if (state.skin === 'default') {
+                el.removeAttribute('data-skin');
+            } else {
+                el.setAttribute('data-skin', state.skin);
+            }
+            el.classList.toggle('theme-light', state.theme === 'light');
+            el.classList.toggle('transparent-mode', state.transparent);
+        });
+        document.getElementById('mainStage').classList.toggle('wallpaper-bg', state.transparent);
+
+        // 2. Wi-Fi / Ethernet 表示切替
+        document.querySelectorAll('#winFull .wifi-section, #winCompact .wifi-section').forEach(function(sec) {
+            const isEth = state.netMode === 'eth';
+            sec.classList.toggle('ethernet-mode', isEth);
+            const icon = sec.querySelector('.net-front-icon');
+            const title = sec.querySelector('.net-front-title');
+            const compVal = sec.querySelector('.net-front-compact');
+            const model = sec.querySelector('.net-front-model');
+            const ssidLab = sec.querySelector('.net-front-ssid-label');
+            const ssidVal = sec.querySelector('.net-front-ssid');
+            if (icon) icon.textContent = isEth ? '🔌' : '📶';
+            if (title) {
+                title.textContent = isEth ? 'Ethernet' : 'Wi-Fi';
+                title.setAttribute('data-compact', isEth ? 'LAN' : 'Wi-Fi');
+            }
+            if (compVal) compVal.textContent = isEth ? '2.5 Gbps' : '6GHz(37ch)';
+            if (model) model.textContent = isEth ? 'Intel Ethernet Controller I226-V' : 'Intel Wi-Fi 7 BE201 320MHz';
+            if (ssidLab) ssidLab.textContent = isEth ? 'アダプタ' : 'SSID';
+            if (ssidVal) ssidVal.textContent = isEth ? 'イーサネット 2' : 'ORB-LINK-6G';
+        });
+
+        // 3. 電源モード反映（#winFull のスライダー）
+        const pmModes = ['saver', 'balanced', 'best'];
+        const pmRow = document.querySelector('#winFull .power-mode');
+        if (pmRow) {
+            pmModes.forEach(function(m) { pmRow.classList.toggle('pm-' + m, m === state.pm); });
+            const idx = pmModes.indexOf(state.pm);
+            const slider = pmRow.querySelector('.pm-slider');
+            if (slider) slider.value = idx;
+            pmRow.querySelectorAll('.pm-labels span').forEach(function(sp) {
+                sp.classList.toggle('active', sp.dataset.mode === state.pm);
+            });
+        }
+
+        // 4. Core 番号（0 から / 1 から）
+        document.querySelectorAll('.cores-container').forEach(function(box) {
+            box.querySelectorAll('.core-label').forEach(function(lab, i) {
+                lab.textContent = 'Core ' + (i + state.coreBase);
+            });
+        });
+
+        // 5. ツールバーと設定ウィンドウ内の選択状態の同期
+        document.querySelectorAll('#ctlSkin button').forEach(function(b) { b.classList.toggle('on', b.dataset.val === state.skin); });
+        document.querySelectorAll('#ctlTheme button').forEach(function(b) { b.classList.toggle('on', b.dataset.val === state.theme); });
+        document.querySelectorAll('#ctlTrans button').forEach(function(b) { b.classList.toggle('on', (b.dataset.val === 'on') === state.transparent); });
+        document.querySelectorAll('#ctlNetMode button').forEach(function(b) { b.classList.toggle('on', b.dataset.val === state.netMode); });
+        document.querySelectorAll('#ctlPm button').forEach(function(b) { b.classList.toggle('on', b.dataset.val === state.pm); });
+
+        document.querySelectorAll('#settingsSkinGrid .skin-card').forEach(function(card) {
+            card.classList.toggle('active', card.dataset.skinSelect === state.skin);
+        });
+        document.querySelectorAll('#settingsThemeOpts .opt').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.themeSelect === state.theme);
+        });
+        document.getElementById('settingsTransCheck').checked = state.transparent;
+        document.querySelectorAll('#settingsCoreOpts .opt').forEach(function(btn) {
+            btn.classList.toggle('active', Number(btn.dataset.coreBase) === state.coreBase);
+        });
+
+        drawAllNetCanvases();
+    }
+
+    // ツールバー操作イベント
+    document.getElementById('ctlSkin').addEventListener('click', function(e) {
+        const b = e.target.closest('button'); if (!b) return;
+        state.skin = b.dataset.val; applyState();
+    });
+    document.getElementById('ctlTheme').addEventListener('click', function(e) {
+        const b = e.target.closest('button'); if (!b) return;
+        state.theme = b.dataset.val; applyState();
+    });
+    document.getElementById('ctlTrans').addEventListener('click', function(e) {
+        const b = e.target.closest('button'); if (!b) return;
+        state.transparent = (b.dataset.val === 'on'); applyState();
+    });
+    document.getElementById('ctlNetMode').addEventListener('click', function(e) {
+        const b = e.target.closest('button'); if (!b) return;
+        state.netMode = b.dataset.val; applyState();
+    });
+    document.getElementById('ctlPm').addEventListener('click', function(e) {
+        const b = e.target.closest('button'); if (!b) return;
+        state.pm = b.dataset.val; applyState();
+    });
+
+    // 設定ウィンドウ内の操作イベント
+    document.getElementById('settingsSkinGrid').addEventListener('click', function(e) {
+        const card = e.target.closest('.skin-card'); if (!card) return;
+        state.skin = card.dataset.skinSelect; applyState();
+    });
+    document.getElementById('settingsThemeOpts').addEventListener('click', function(e) {
+        const btn = e.target.closest('.opt'); if (!btn) return;
+        state.theme = btn.dataset.themeSelect === 'light' ? 'light' : 'dark';
+        applyState();
+    });
+    document.getElementById('settingsTransCheck').addEventListener('change', function() {
+        state.transparent = this.checked; applyState();
+    });
+    document.getElementById('settingsCoreOpts').addEventListener('click', function(e) {
+        const btn = e.target.closest('.opt'); if (!btn) return;
+        state.coreBase = Number(btn.dataset.coreBase); applyState();
+    });
+
+    // ウィジェット内のインタラクション（シェブロン折りたたみ・Wi-Fi 表裏反転・電源スライダー・ピン留め）
+    document.addEventListener('click', function(e) {
+        const chev = e.target.closest('.chev');
+        if (chev) {
+            e.stopPropagation();
+            const sec = chev.closest('.section');
+            if (sec) {
+                sec.classList.toggle('collapsed');
+                if (sec.classList.contains('wifi-section') && sec.classList.contains('collapsed')) {
+                    sec.classList.remove('flipped');
+                }
+                setTimeout(drawAllNetCanvases, 50);
+            }
+            return;
+        }
+        const pin = e.target.closest('.pin-btn');
+        if (pin) {
+            e.stopPropagation();
+            pin.classList.toggle('active');
+            return;
+        }
+        const peakToggle = e.target.closest('.net-peak-toggle');
+        if (peakToggle) {
+            e.stopPropagation();
+            state.unitBit = !state.unitBit;
+            document.querySelectorAll('.net-peak-toggle').forEach(function(el) {
+                const isCompact = !!el.closest('.compact');
+                el.textContent = state.unitBit ? (isCompact ? '6.08 Mbps' : '6.74 Mbps') : (isCompact ? '760 KB/s' : '842 KB/s');
+            });
+            document.querySelectorAll('.net-leg-rx span').forEach(function(el) {
+                el.textContent = state.unitBit ? '4.94 Mbps' : '618 KB/s';
+            });
+            document.querySelectorAll('.net-leg-tx span').forEach(function(el) {
+                el.textContent = state.unitBit ? '1.14 Mbps' : '142 KB/s';
+            });
+            return;
+        }
+        const pmLabel = e.target.closest('.pm-labels span');
+        if (pmLabel) {
+            e.stopPropagation();
+            state.pm = pmLabel.dataset.mode;
+            applyState();
+            return;
+        }
+        const wifiSec = e.target.closest('.wifi-section');
+        if (wifiSec) {
+            wifiSec.classList.toggle('flipped');
+            setTimeout(drawAllNetCanvases, 40);
+            setTimeout(drawAllNetCanvases, 580);
+        }
+    });
+
+    document.querySelectorAll('.pm-slider').forEach(function(slider) {
+        slider.addEventListener('input', function() {
+            const modes = ['saver', 'balanced', 'best'];
+            state.pm = modes[Number(this.value)] || 'balanced';
+            applyState();
+        });
+    });
+
+    window.addEventListener('resize', drawAllNetCanvases);
+    applyState();
+})();
+</script>
+</body>
+</html>

@@ -46,6 +46,7 @@ type Config struct {
 	Transparent bool      `json:"transparent"`
 	TrayDisplay string    `json:"trayDisplay"` // "icon" | "cpu" | "usage"
 	Theme       string    `json:"theme"`       // "dark" | "light" | "system"
+	Skin        string    `json:"skin"`        // 空文字または "default" は現行デザイン
 	CoreBase    int       `json:"coreBase"`    // 0 | 1
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
 	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
@@ -220,6 +221,15 @@ var (
 	configPath string
 	config     Config
 )
+
+// appConfigDirectory は設定と利用者スキンに共通の保存先。
+func appConfigDirectory() string {
+	localAppData := os.Getenv("LOCALAPPDATA")
+	if localAppData == "" {
+		localAppData = os.Getenv("APPDATA")
+	}
+	return filepath.Join(localAppData, "widget-go")
+}
 
 func defaultConfig() Config {
 	var c Config

@@ -1,0 +1,307 @@
+/* ==========================================================================
+   Skin: Orbital Zero-G (id: orbital)
+   ========================================================================== */
+
+body[data-skin="orbital"] {
+    /* 深宇宙ダークパレット (Deep Space Telemetry) */
+    --bg-grad:
+        radial-gradient(circle at 88% 8%, rgba(0, 240, 255, 0.16) 0%, transparent 48%),
+        linear-gradient(165deg, #050912 0%, #0a1324 100%);
+    --container-bg: rgba(6, 11, 21, 0.95);
+    --text-color: #e2f1ff;
+    --muted-color: #6b89a8;
+    --section-bg: linear-gradient(180deg, rgba(0, 224, 255, 0.055) 0%, rgba(7, 17, 33, 0.72) 100%);
+    --section-border: rgba(0, 224, 255, 0.24);
+    --section-title: #9ed8f8;
+    --section-value: #00f0ff;
+    --bar-track: rgba(0, 224, 255, 0.12);
+    --core-track: rgba(0, 224, 255, 0.09);
+    --net-canvas-bg: rgba(2, 7, 16, 0.72);
+    --btn-bg: rgba(0, 224, 255, 0.09);
+    --btn-bg-hover: rgba(0, 224, 255, 0.24);
+    --btn-color: #8ad4f8;
+    --input-bg: rgba(0, 224, 255, 0.06);
+    --input-border: rgba(0, 224, 255, 0.26);
+
+    /* AI・ステータス配色（イオンスラスター＆テレメトリ発光色） */
+    --claude-a: #ffaa5c;
+    --claude-b: #ff6238;
+    --codex-a: #00f5d4;
+    --codex-b: #00aeff;
+    --warn: #ffbe0b;
+    --crit: #ff3864;
+    --ok: #00f5d4;
+    --chip-warn-bg: rgba(255, 190, 11, 0.14);
+    --chip-warn-fg: #ffd15c;
+    --chip-login-bg: rgba(0, 224, 255, 0.14);
+    --chip-login-fg: #8ceeff;
+
+    /* §4 本体新設 CSS 変数 */
+    --core-bar-bg: linear-gradient(180deg, #00f0ff, #0077cc);
+    --core-value-color: #fff;
+    --core-value-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+    --memory-used-color: #d68fff;
+    --wifi-ok-color: #00f5d4;
+    --wifi-ng-color: #ff3864;
+    --gpu-fill-bg: linear-gradient(90deg, #38b6ff, #5e60ce);
+    --npu-fill-bg: linear-gradient(90deg, #ffbe0b, #fb5607);
+    --net-rx: #00f5d4;
+    --net-rx-fill: rgba(0, 245, 212, 0.22);
+    --net-tx: #ff9e5e;
+    --net-tx-fill: rgba(255, 158, 94, 0.20);
+    --net-empty-color: rgba(158, 216, 248, 0.45);
+
+    /* ゲージ・レチクル・グリッド・発光用スキントークン */
+    --cpu-fill-grad: linear-gradient(90deg, #00aeff, #00f0ff);
+    --mem-fill-grad: linear-gradient(90deg, #9d6eff, #e066ff);
+    --clock-fill-grad: linear-gradient(90deg, #00f5d4, #00bbf9);
+    --orb-reticle: rgba(0, 240, 255, 0.65);
+    --orb-grid: rgba(0, 224, 255, 0.032);
+    --orb-glow: 0 0 8px rgba(0, 240, 255, 0.32);
+    --orb-tick: rgba(6, 11, 21, 0.62);
+}
+
+/* ライトテーマ併存時: 月面クリーンルーム計器盤 (Lunar Cleanroom Light) */
+body[data-skin="orbital"].theme-light {
+    --bg-grad:
+        radial-gradient(circle at 88% 8%, rgba(0, 140, 215, 0.14) 0%, transparent 48%),
+        linear-gradient(165deg, #eaf1f8 0%, #d7e4f2 100%);
+    --container-bg: rgba(241, 246, 252, 0.95);
+    --text-color: #0d2137;
+    --muted-color: #4b6784;
+    --section-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(225, 236, 248, 0.72) 100%);
+    --section-border: rgba(0, 118, 185, 0.26);
+    --section-title: #133c63;
+    --section-value: #006ba6;
+    --bar-track: rgba(0, 110, 175, 0.13);
+    --core-track: rgba(0, 110, 175, 0.10);
+    --net-canvas-bg: rgba(13, 33, 55, 0.06);
+    --btn-bg: rgba(0, 110, 175, 0.09);
+    --btn-bg-hover: rgba(0, 110, 175, 0.20);
+    --btn-color: #15406a;
+    --input-bg: rgba(0, 110, 175, 0.06);
+    --input-border: rgba(0, 110, 175, 0.24);
+
+    --claude-a: #e87a30;
+    --claude-b: #c84620;
+    --codex-a: #009e86;
+    --codex-b: #0074b8;
+    --warn: #c98a00;
+    --crit: #cf2246;
+    --ok: #008c72;
+    --chip-warn-bg: rgba(201, 138, 0, 0.14);
+    --chip-warn-fg: #7a5200;
+    --chip-login-bg: rgba(0, 118, 185, 0.12);
+    --chip-login-fg: #00558f;
+
+    --core-bar-bg: linear-gradient(180deg, #0096d6, #005fa3);
+    --core-value-color: #fff;
+    --core-value-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+    --memory-used-color: #7b2cbf;
+    --wifi-ok-color: #008c72;
+    --wifi-ng-color: #cf2246;
+    --gpu-fill-bg: linear-gradient(90deg, #1e88e5, #3949ab);
+    --npu-fill-bg: linear-gradient(90deg, #f48c06, #dc2f02);
+    --net-rx: #008c72;
+    --net-rx-fill: rgba(0, 140, 114, 0.20);
+    --net-tx: #d95d1e;
+    --net-tx-fill: rgba(217, 93, 30, 0.18);
+    --net-empty-color: rgba(13, 33, 55, 0.45);
+
+    --cpu-fill-grad: linear-gradient(90deg, #0077cc, #00a8e8);
+    --mem-fill-grad: linear-gradient(90deg, #7b42f6, #b833ff);
+    --clock-fill-grad: linear-gradient(90deg, #00a896, #028090);
+    --orb-reticle: rgba(0, 118, 185, 0.65);
+    --orb-grid: rgba(0, 110, 175, 0.045);
+    --orb-glow: none;
+    --orb-tick: rgba(241, 246, 252, 0.72);
+}
+
+/* 外枠と 16px 座標マイクログリッド */
+body[data-skin="orbital"] .container {
+    background-color: var(--container-bg);
+    background-image:
+        linear-gradient(var(--orb-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--orb-grid) 1px, transparent 1px);
+    background-size: 16px 16px;
+    box-shadow:
+        inset 0 0 0 1px rgba(0, 224, 255, 0.28),
+        inset 0 1px 0 rgba(0, 240, 255, 0.18);
+}
+body[data-skin="orbital"].theme-light .container {
+    box-shadow: inset 0 0 0 1px rgba(0, 118, 185, 0.28);
+}
+
+/* 上部左側のテレメトリ識別コールサイン */
+body[data-skin="orbital"] .container::before {
+    content: "ORB-TELEM // ZERO-G";
+    position: absolute;
+    top: 9px;
+    left: 10px;
+    font-family: 'Consolas', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    color: var(--muted-color);
+    opacity: 0.85;
+    pointer-events: none;
+}
+body[data-skin="orbital"] .container.compact::before {
+    content: "ZERO-G";
+    top: 6px;
+    left: 6px;
+    font-size: 8px;
+    letter-spacing: 0.06em;
+}
+
+/* 四隅のレチクル（照準ブラケット）付き計器区画カード */
+body[data-skin="orbital"] .section:not(.wifi-section),
+body[data-skin="orbital"] .flip-card > .flip-face,
+body[data-skin="orbital"] .compact .ai-section .ai-crow {
+    border-radius: 3px;
+    background:
+        linear-gradient(to right, var(--orb-reticle) 5px, transparent 5px) 0 0 / 100% 1px no-repeat,
+        linear-gradient(to bottom, var(--orb-reticle) 5px, transparent 5px) 0 0 / 1px 100% no-repeat,
+        linear-gradient(to left, var(--orb-reticle) 5px, transparent 5px) 100% 100% / 100% 1px no-repeat,
+        linear-gradient(to top, var(--orb-reticle) 5px, transparent 5px) 100% 100% / 1px 100% no-repeat,
+        var(--section-bg);
+    box-shadow: inset 0 0 14px rgba(0, 224, 255, 0.035);
+}
+body[data-skin="orbital"] .compact .ai-section {
+    background: transparent;
+    box-shadow: none;
+}
+
+body[data-skin="orbital"] .section-title {
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+body[data-skin="orbital"] .section-value {
+    text-shadow: var(--orb-glow);
+    letter-spacing: 0.02em;
+}
+
+/* 上部ボタン列: 角型タクティカルスイッチ */
+body[data-skin="orbital"] .top-btn {
+    border-radius: 3px;
+    border: 1px solid var(--section-border);
+}
+body[data-skin="orbital"] .pin-btn.active {
+    background: rgba(0, 245, 212, 0.22);
+    border-color: var(--ok);
+    color: var(--ok);
+    box-shadow: 0 0 6px rgba(0, 245, 212, 0.35);
+}
+body[data-skin="orbital"] .compact-btn.expanded {
+    background: rgba(0, 224, 255, 0.24);
+    border-color: var(--section-value);
+    color: var(--section-value);
+}
+
+/* 進捗バー: セグメント目盛りオーバーレイ付きの精密ゲージ */
+body[data-skin="orbital"] .progress-bar {
+    border-radius: 1.5px;
+    height: 6px;
+    border: 1px solid rgba(0, 224, 255, 0.16);
+}
+body[data-skin="orbital"] .progress-fill {
+    border-radius: 1px;
+}
+body[data-skin="orbital"] .cpu-fill {
+    background: var(--cpu-fill-grad);
+}
+body[data-skin="orbital"] .memory-fill {
+    background: var(--mem-fill-grad);
+}
+body[data-skin="orbital"] .clock-fill:not(.clk-low):not(.clk-high) {
+    background: var(--clock-fill-grad);
+}
+body[data-skin="orbital"] .gpu-fill {
+    background: var(--gpu-fill-bg);
+}
+body[data-skin="orbital"] .npu-fill {
+    background: var(--npu-fill-bg);
+}
+body[data-skin="orbital"] .progress-bar::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        90deg,
+        transparent 0px,
+        transparent 5px,
+        var(--orb-tick) 5px,
+        var(--orb-tick) 6px
+    );
+    pointer-events: none;
+}
+
+/* コア別垂直バー: 水平目盛り付きテレメトリカラム */
+body[data-skin="orbital"] .core-label {
+    font-family: 'Consolas', monospace;
+    letter-spacing: -0.02em;
+}
+body[data-skin="orbital"] .core-bar-container {
+    border-radius: 2px;
+    border: 1px solid rgba(0, 224, 255, 0.16);
+}
+body[data-skin="orbital"] .core-bar {
+    border-radius: 1px;
+    background: var(--core-bar-bg);
+}
+body[data-skin="orbital"] .core-value {
+    color: var(--core-value-color);
+    text-shadow: var(--core-value-shadow);
+}
+body[data-skin="orbital"] .core-bar-container::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent 0px,
+        transparent 3px,
+        var(--orb-tick) 3px,
+        var(--orb-tick) 4px
+    );
+    pointer-events: none;
+}
+
+/* メモリ・Wi-Fi・ネットワーク凡例の色 */
+body[data-skin="orbital"] .memory-details .used {
+    color: var(--memory-used-color);
+}
+body[data-skin="orbital"] .wifi-connected {
+    color: var(--wifi-ok-color);
+}
+body[data-skin="orbital"] .wifi-disconnected {
+    color: var(--wifi-ng-color);
+}
+body[data-skin="orbital"] .net-leg-rx {
+    color: var(--net-rx);
+}
+body[data-skin="orbital"] .net-leg-tx {
+    color: var(--net-tx);
+}
+
+/* 電源モードスライダーのつまみ: 菱形レチクル風 */
+body[data-skin="orbital"] .pm-slider::-webkit-slider-thumb {
+    border-radius: 2px;
+    transform: rotate(45deg);
+    width: 11px;
+    height: 11px;
+    margin-top: -3.5px;
+}
+body[data-skin="orbital"] .pm-slider:hover:not(:disabled)::-webkit-slider-thumb {
+    transform: rotate(45deg) scale(1.18);
+}
+body[data-skin="orbital"] .plan {
+    border-radius: 2px;
+    font-family: 'Consolas', monospace;
+    background: rgba(0, 224, 255, 0.07);
+}
+
+/* コンパクト(幅 130px): Wi-Fi 見出しは大文字・字間つきのタイトルと帯域の値が重なって、
+   表裏の面(grid の列)が 122px より広がり右へはみ出す。値を一段小さくし、列は内容で広げない。 */
+body[data-skin="orbital"] .compact .flip-card { grid-template-columns: minmax(0, 1fr); }
+body[data-skin="orbital"] .compact .wifi-compact-value { font-size: 10px; letter-spacing: 0; }

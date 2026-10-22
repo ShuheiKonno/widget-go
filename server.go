@@ -106,11 +106,12 @@ func powerModeHandler(set func(mode string) error, refresh func() *sysinfo.Power
 	}
 }
 
-func startServer(ln net.Listener, token string) {
+func newServerMux(token string) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// AI 使用量（Claude / Codex）。securityMiddleware の内側に置かれる。
 	aiusage.RegisterHandlers(mux)
+	skins.register(mux)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -396,6 +397,16 @@ func startServer(ln net.Listener, token string) {
 		key := r.URL.Query().Get("key")
 		val := r.URL.Query().Get("value")
 		switch key {
+		case "skin":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, "許可されていないメソッドです", http.StatusMethodNotAllowed)
+				return
+			}
+			if err := skins.setActive(val); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		case "theme":
 			if val != "dark" && val != "light" && val != "system" {
 				http.Error(w, "invalid theme", http.StatusBadRequest)
@@ -472,6 +483,7 @@ func startServer(ln net.Listener, token string) {
 			"topmost":     c.Topmost,
 			"trayDisplay": c.TrayDisplay,
 			"theme":       c.Theme,
+			"skin":        skins.active(c.Skin),
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
 			"showGPU":     showGPU.Load(),
@@ -504,6 +516,11 @@ func startServer(ln net.Listener, token string) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	return mux
+}
+
+func startServer(ln net.Listener, token string) {
+	mux := newServerMux(token)
 	port := ln.Addr().(*net.TCPAddr).Port
 	if err := http.Serve(ln, securityMiddleware(mux, token, port)); err != nil {
 		// http.Serve は正常時は戻らない。戻った＝致命的（リスナー閉塞など）。
