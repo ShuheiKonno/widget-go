@@ -1,6 +1,7 @@
 package edge
 
 import (
+	"math"
 	"unsafe"
 
 	"github.com/jchv/go-webview2/internal/w32"
@@ -88,6 +89,33 @@ func (i *ICoreWebView2Controller) PutIsVisible(isVisible bool) error {
 	_, _, err = i.vtbl.PutIsVisible.Call(
 		uintptr(unsafe.Pointer(i)),
 		uintptr(boolToInt(isVisible)),
+	)
+	if err != windows.ERROR_SUCCESS {
+		return err
+	}
+	return nil
+}
+
+// GetZoomFactor は ICoreWebView2Controller::get_ZoomFactor（widget-go による追加）。
+func (i *ICoreWebView2Controller) GetZoomFactor() (float64, error) {
+	var factor float64
+	_, _, err := i.vtbl.GetZoomFactor.Call(
+		uintptr(unsafe.Pointer(i)),
+		uintptr(unsafe.Pointer(&factor)),
+	)
+	if err != windows.ERROR_SUCCESS {
+		return 0, err
+	}
+	return factor, nil
+}
+
+// PutZoomFactor は ICoreWebView2Controller::put_ZoomFactor（widget-go による追加）。
+// double の引数は、Go の syscall が amd64 では先頭 4 つの引数を XMM0〜3 にも写すので、
+// ビット列を uintptr で渡せば正しく届く（386 では届かない。release は amd64 のみ）。
+func (i *ICoreWebView2Controller) PutZoomFactor(factor float64) error {
+	_, _, err := i.vtbl.PutZoomFactor.Call(
+		uintptr(unsafe.Pointer(i)),
+		uintptr(math.Float64bits(factor)),
 	)
 	if err != windows.ERROR_SUCCESS {
 		return err

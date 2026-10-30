@@ -45,6 +45,8 @@ type browser interface {
 	NotifyParentWindowPositionChanged() error
 	Focus()
 	Show() error
+	SetZoomFactor(factor float64) error
+	ZoomFactor() (float64, error)
 }
 
 type webview struct {
@@ -85,6 +87,10 @@ type WebViewOptions struct {
 	// AutoFocus will try to keep the WebView2 widget focused when the window
 	// is focused.
 	AutoFocus bool
+
+	// DisableZoomControl は、WebView2 既定のズーム操作（Ctrl+ホイール、Ctrl+プラス / マイナス）を
+	// 無効にする（widget-go による変更）。ズームは呼び出し側が SetZoomFactor で行う。
+	DisableZoomControl bool
 
 	// WindowOptions customizes the window that is created to embed the
 	// WebView2 widget.
@@ -131,6 +137,11 @@ func NewWithOptions(options WebViewOptions) WebView {
 	err = settings.PutAreDevToolsEnabled(options.Debug)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if options.DisableZoomControl {
+		if err := settings.PutIsZoomControlEnabled(false); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	return w
@@ -452,6 +463,14 @@ func (w *webview) SetSize(width int, height int, hints Hint) {
 			w32.SWPNoZOrder|w32.SWPNoActivate|w32.SWPNoMove|w32.SWPFrameChanged)
 		w.browser.Resize()
 	}
+}
+
+func (w *webview) SetZoomFactor(factor float64) error {
+	return w.browser.SetZoomFactor(factor)
+}
+
+func (w *webview) ZoomFactor() (float64, error) {
+	return w.browser.ZoomFactor()
 }
 
 func (w *webview) Init(js string) {

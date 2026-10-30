@@ -172,6 +172,23 @@
                 </div>
             </div>
             <div class="card">
+                <span class="label">拡大率</span>
+                <div class="opts" data-group="zoom">
+                    <button class="opt" data-value="50">50%</button>
+                    <button class="opt" data-value="67">67%</button>
+                    <button class="opt" data-value="75">75%</button>
+                    <button class="opt" data-value="80">80%</button>
+                    <button class="opt" data-value="90">90%</button>
+                    <button class="opt" data-value="100">100%</button>
+                    <button class="opt" data-value="110">110%</button>
+                    <button class="opt" data-value="125">125%</button>
+                    <button class="opt" data-value="150">150%</button>
+                    <button class="opt" data-value="175">175%</button>
+                    <button class="opt" data-value="200">200%</button>
+                </div>
+                <p class="hint">ウィジェット全体を拡大・縮小します（コンパクト表示にも効きます）。区画が増えて画面に収まらないときは、縮小してください。ウィジェットをクリックしてから、Ctrl + プラス（JIS 配列は Ctrl + Shift + ;）で拡大、Ctrl + マイナスで縮小、Ctrl + 0 で 100% に戻せます。Ctrl + ホイールでも変えられます。</p>
+            </div>
+            <div class="card">
                 <span class="label">Disk の I/O 表示</span>
                 <div class="opts" data-group="diskIoView">
                     <button class="opt" data-value="number">数値</button>
@@ -295,7 +312,7 @@
         }
         const $ = function(id){ return document.getElementById(id); };
 
-        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number',
+        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number', zoom: 100,
             hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai'] };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
@@ -565,12 +582,13 @@
                 if (!btn || btn.classList.contains('disabled')) return;
                 const val = btn.dataset.value;
                 touch();
-                settings[key] =(key === 'coreBase') ? Number(val) : val;
+                settings[key] =(key === 'coreBase' || key === 'zoom') ? Number(val) : val;
                 render();
                 let req = null;
                 if (key === 'theme') req = apiFetch('/api/setoption?key=theme&value=' + val);
                 else if (key === 'coreBase') req = apiFetch('/api/setoption?key=coreBase&value=' + val);
                 else if (key === 'diskIoView') req = apiFetch('/api/setoption?key=diskIoView&value=' + val);
+                else if (key === 'zoom') req = apiFetch('/api/setoption?key=zoom&value=' + val);
                 else if (key === 'trayDisplay') req = apiFetch('/api/traydisplay?mode=' + val);
                 if (req) req.then(changed).catch(function(){});
             });
@@ -756,6 +774,7 @@
             if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
             if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
             if (s.diskIoView) settings.diskIoView = s.diskIoView;
+            if (typeof s.zoom === 'number') settings.zoom = s.zoom;
             if (s.hidden) Object.assign(settings.hidden, s.hidden);
             if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
         }

@@ -67,6 +67,13 @@ type WebView interface {
 	// be executed. It is guaranteed that code is executed before window.onload.
 	Init(js string)
 
+	// SetZoomFactor は WebView のズーム率（1.0 = 100%）を設定する（widget-go による追加）。
+	// UI スレッドから呼ぶこと。
+	SetZoomFactor(factor float64) error
+
+	// ZoomFactor は WebView のズーム率を返す（widget-go による追加）。
+	ZoomFactor() (float64, error)
+
 	// Eval evaluates arbitrary JavaScript code. Evaluation happens asynchronously,
 	// also the result of the expression is ignored. Use RPC bindings if you want
 	// to receive notifications about the results of the evaluation.

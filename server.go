@@ -177,6 +177,10 @@ func newServerMux(token string) *http.ServeMux {
 			http.Error(w, "invalid mode", http.StatusBadRequest)
 			return
 		}
+		// 切替の途中は、並走する /api/persistwindow に位置を保存させない（viewModeSwitching を参照）。
+		// モードを変える前に立て、ウィンドウを動かし終えてから下ろす。
+		viewModeSwitching.Store(true)
+		defer viewModeSwitching.Store(false)
 		viewModeMu.Lock()
 		prev := viewMode
 		viewMode = m
@@ -426,6 +430,14 @@ func newServerMux(token string) *http.ServeMux {
 				return
 			}
 			mutateConfig(func(c *Config) { c.NetUnit = val })
+		case "zoom":
+			// 拡大率（%）。zoomSteps のどれか。保存して、ウィンドウの大きさと WebView のズームを変える
+			n, err := strconv.Atoi(val)
+			if err != nil || !isZoomStep(n) {
+				http.Error(w, "invalid zoom", http.StatusBadRequest)
+				return
+			}
+			setZoom(n)
 		case "diskIoView":
 			if val != "number" && val != "graph" {
 				http.Error(w, "invalid diskIoView", http.StatusBadRequest)
@@ -505,6 +517,8 @@ func newServerMux(token string) *http.ServeMux {
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
 			"diskIoView":  c.DiskIOView,
+			"zoom":        normalizeZoom(c.Zoom),
+			"zoomSteps":   zoomSteps,
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
 			"collapsed":   c.Collapsed,

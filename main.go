@@ -657,6 +657,9 @@ func moveWindow(x, y int32) {
 	}
 }
 
+// getWindowSize はウィンドウの大きさをレイアウト px（物理 px ÷ DPI 倍率 ÷ ズーム。フロントの CSS px と
+// 同じ）で返す。フロントとやり取りするサイズと、保存する幅・高さに使う。位置の計算には
+// getWindowDpiLogicalSize を使うこと（zoom.go の先頭を参照）。
 func getWindowSize() (int32, int32) {
 	if windowHandle.Load() == 0 {
 		return windowWidth, windowHeight
@@ -665,10 +668,7 @@ func getWindowSize() (int32, int32) {
 	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	width := rect.Right - rect.Left
 	height := rect.Bottom - rect.Top
-	scale := getWindowDpiScale()
-	if scale <= 0 {
-		scale = 1.0
-	}
+	scale := layoutScale()
 	logicalW := int32(math.Round(float64(width) / scale))
 	logicalH := int32(math.Round(float64(height) / scale))
 	if logicalW <= 0 {
@@ -678,6 +678,13 @@ func getWindowSize() (int32, int32) {
 		logicalH = windowHeight
 	}
 	return logicalW, logicalH
+}
+
+// getWindowDpiLogicalSize はウィンドウの大きさを DPI 論理 px（物理 px ÷ DPI 倍率。ズームを含まない）で
+// 返す。右下の座標（DPI 論理 px）から左上を逆算するなど、位置の計算に使う。
+func getWindowDpiLogicalSize() (int32, int32) {
+	left, top, right, bottom := getWindowLogicalRect()
+	return right - left, bottom - top
 }
 
 func getWindowDpiScale() float64 {
@@ -691,11 +698,14 @@ func getWindowDpiScale() float64 {
 	return float64(dpi) / 96.0
 }
 
-// resizeWindow はウィンドウを width×height（論理px）にリサイズする。
+// resizeWindow はウィンドウを width×height（レイアウト px。ズーム中は物理 px がその分変わる）にリサイズする。
 // anchorTop=false は下端固定（コンパクト化・幾何復元で下端に揃える既定）、
 // anchorTop=true は上端固定（下端エッジを掴んだ手動リサイズで下方向に伸ばす）。
 // minWindowHeight はウィンドウ高さの下限（論理 px）。
 const minWindowHeight = 40
+
+// maxWindowHeight はウィンドウ高さの上限（レイアウト px）。
+const maxWindowHeight = 3000
 
 func resizeWindow(width, height int32, anchorTop bool) {
 	resizeWindowAnchored(width, height, anchorTop, false)
@@ -734,10 +744,12 @@ func resizeWindowAnchored(width, height int32, anchorTop, anchorRight bool) {
 	if height < minWindowHeight {
 		height = minWindowHeight
 	}
-	if height > 1000 {
-		height = 1000
+	// 上限は目安（レイアウト px）。実際に収まる高さは、下の作業領域への矯正が決める。
+	// ズームで縮小しているときは、1000 を超える中身も作業領域に収まるので、大きめにしておく。
+	if height > maxWindowHeight {
+		height = maxWindowHeight
 	}
-	scale := getWindowDpiScale()
+	scale := layoutScale()
 	scaledW := int32(math.Round(float64(width) * scale))
 	scaledH := int32(math.Round(float64(height) * scale))
 
@@ -855,7 +867,8 @@ func moveToRememberedPosition(mode int) bool {
 	default:
 		return false
 	}
-	wid, hei := getWindowSize()
+	// 右下の座標は DPI 論理 px なので、大きさも DPI 論理 px で引く（レイアウト px だとズーム中にずれる）
+	wid, hei := getWindowDpiLogicalSize()
 	moveWindowLogicalClamped(right-wid, bottom-hei)
 	return true
 }
@@ -962,11 +975,20 @@ func getWindowLogicalRect() (left, top, right, bottom int32) {
 	return toLogical(rect.Left), toLogical(rect.Top), toLogical(rect.Right), toLogical(rect.Bottom)
 }
 
+// viewModeSwitching は、表示モードの切替（フル ⇄ コンパクト）の途中で true になる。
+// 切替ボタンの押下は、ドラッグの mouseup で /api/persistwindow を送りつつ /api/setviewmode も送るため、
+// 2 つのリクエストが並走する。モードを切り替えた直後・ウィンドウを動かす前に保存が走ると、
+// 切替前のウィンドウの右下が新しいモードのスロットに書かれて、「前回の位置に戻る」が戻らなくなる。
+// 切替中は保存を見送る（フロントは切替の 300ms 後にもう一度保存を呼ぶ）。ロックにしないのは、
+// ズーム適用が UI スレッドで保存を呼ぶため（切替側の SetWindowPos は UI スレッドの応答を待つので、
+// ロックの取り合いでデッドロックしうる）。
+var viewModeSwitching atomic.Bool
+
 // persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
 func persistCurrentWindowGeometry() {
 	// 起動直後は go-webview2 の初期化が幅と位置をリセットしており、復元が済む前に保存すると
 	// 前回の記憶を既定位置で上書きしてしまう。500ms 後の再適用が済むまでは保存しない。
-	if windowHandle.Load() == 0 || !startupGeometrySettled.Load() {
+	if windowHandle.Load() == 0 || !startupGeometrySettled.Load() || viewModeSwitching.Load() {
 		return
 	}
 	logicalX, logicalY, right, bottom := getWindowLogicalRect()
@@ -974,6 +996,10 @@ func persistCurrentWindowGeometry() {
 	// ドラッグで動かした位置を現在のモードのスロットにも反映する。
 	// configMu の内側で viewModeMu を取らないよう、先に読んでおく。
 	compact := layoutIsCompact()
+	// ウィンドウとモードを読んでいる間に切替が始まっていたら、読んだ組み合わせは食い違いうる
+	if viewModeSwitching.Load() {
+		return
+	}
 	mutateConfig(func(c *Config) {
 		c.Window.X = logicalX
 		c.Window.Y = logicalY
@@ -1185,6 +1211,9 @@ func main() {
 		Debug:     false,
 		AutoFocus: true,
 		DataPath:  dataPath,
+		// 拡大・縮小は自前（zoom.go）で行う。WebView2 既定の Ctrl+ホイール / Ctrl+プラス・マイナスは、
+		// ウィンドウを変えずにページだけを拡大縮小して、下に空白ができてしまうので無効にする。
+		DisableZoomControl: true,
 		WindowOptions: webview2.WindowOptions{
 			Title:  windowTitle,
 			Width:  windowWidth,
@@ -1204,6 +1233,12 @@ func main() {
 	// フレーム除去・位置復元・前面表示を適用する。
 	windowHandle.Store(uintptr(w.Window()))
 	removeWindowFrame(windowHandle.Load())
+	// 保存された拡大率を、最初のサイズ決めと表示より前に適用する（100% の画面が一瞬見えないように）。
+	// ここは UI スレッド（Run の前）なので、ZoomFactor をそのまま設定できる。
+	widgetZoom.Store(int32(normalizeZoom(c.Zoom)))
+	if err := w.SetZoomFactor(zoomFactor()); err != nil {
+		aiusage.Logf("拡大率の適用に失敗しました: %v", err)
+	}
 	applyStartupGeometry(true)
 	// 位置が決まったので、完全な透明のまま表示状態にして描画させる（見せるのは /api/ready か
 	// フォールバックのタイマー）。
