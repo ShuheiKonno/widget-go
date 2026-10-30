@@ -426,6 +426,12 @@ func newServerMux(token string) *http.ServeMux {
 				return
 			}
 			mutateConfig(func(c *Config) { c.NetUnit = val })
+		case "diskIoView":
+			if val != "number" && val != "graph" {
+				http.Error(w, "invalid diskIoView", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.DiskIOView = val })
 		case "powerMode":
 			// 電源モードの切替機能の ON/OFF。OFF にした直後に API 呼び出しと表示を止める
 			// （次の周期を待たない）。ON にしたときも即座に現在の状態を取得する。
@@ -498,6 +504,7 @@ func newServerMux(token string) *http.ServeMux {
 			"skin":        skins.active(c.Skin),
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
+			"diskIoView":  c.DiskIOView,
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
 			"collapsed":   c.Collapsed,

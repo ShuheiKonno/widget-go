@@ -113,7 +113,7 @@
         .compact .wifi-info { display: none; }
         .compact .wifi-compact-value { display: inline; }
         .compact .gpu-progress, .compact .npu-progress, .compact .accel-info { display: none; }
-        .compact .disk-progress, .compact .disk-info { display: none; }
+        .compact .disk-body { display: none; }
         .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
         .section:last-child, .section.last-visible { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
@@ -211,9 +211,18 @@
         .disk-fill { background: var(--disk-fill-bg); }
         .disk-info, .disk-drives, .disk-io { display:flex; flex-direction:column; gap:3px; }
         .disk-io { margin-top:4px; }
-        .disk-info .wifi-row { gap:6px; }
-        .disk-info .wifi-label, .disk-info .wifi-value { white-space:nowrap; }
+        .disk-info .wifi-row, .disk-io .wifi-row { gap:6px; }
+        .disk-info .wifi-label, .disk-info .wifi-value, .disk-io .wifi-label, .disk-io .wifi-value { white-space:nowrap; }
         .disk-drive.disk-warn .wifi-value { color: var(--wifi-ng-color); }
+        /* Disk は Wi-Fi/ネットワークと同じ flip-card（表: 使用量、裏: I/O）。クリックで反転する。
+           裏面は設定（diskIoView）で数値かグラフかが決まり、区画の .disk-io-graph で出し分ける。 */
+        .disk-section:not(.disk-io-graph) .disk-graph-part { display:none; }
+        .disk-section.disk-io-graph .disk-io-num { display:none; }
+        /* 数値表示の裏面は中身の高さに任せる。グラフ表示だけ containment を残し、canvas が余白を埋める */
+        .disk-section:not(.disk-io-graph) .flip-card > .flip-back { contain:none; min-height:0; }
+        #dragArea:not(.compact) .disk-section.disk-io-graph:not(.collapsed) .flip-card > .flip-back { min-height:88px; }
+        /* 折りたたみ中は、表裏とも見出し 1 行だけにする（グラフと凡例は .wifi-section.collapsed が隠す） */
+        .disk-section.collapsed .disk-body { display:none; }
         .accel-info { display:flex; flex-direction:column; gap:3px; }
         .accel-info .wifi-row { gap:6px; }
         .accel-info .wifi-label, .accel-info .wifi-value { white-space:nowrap; }
@@ -393,16 +402,30 @@
                 <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
             </div>
         </div>
-        <div class="section disk-section" id="diskSection" data-sec="disk" style="display:none">
-            <div class="section-header"><span class="section-icon">💽</span><span class="section-title">Disk</span><span class="section-value" id="disk-percent">---</span><button class="chev" data-sec="disk" title="折りたたむ">▼</button></div>
-            <div class="sec-body">
-                <div class="progress-bar disk-progress"><div class="progress-fill disk-fill" id="disk-bar" style="width:0%"></div></div>
-                <div class="disk-info">
-                    <div class="disk-drives" id="disk-drives"></div>
-                    <div class="disk-io">
-                        <div class="wifi-row"><span class="wifi-label">アクティブ</span><span class="wifi-value" id="disk-active">---</span></div>
-                        <div class="wifi-row"><span class="wifi-label">読み取り</span><span class="wifi-value" id="disk-read">---</span></div>
-                        <div class="wifi-row"><span class="wifi-label">書き込み</span><span class="wifi-value" id="disk-write">---</span></div>
+        <!-- Disk は Wi-Fi/ネットワークと同じ flip-card。表は使用量、裏は I/O（クリックで反転）。
+             スキンの .wifi-section / .flip-card 向けの規則をそのまま使うため、同じクラスを付ける -->
+        <div class="section wifi-section disk-section" id="diskSection" data-sec="disk" style="display:none">
+            <div class="flip-card">
+                <div class="flip-face flip-front">
+                    <div class="section-header"><span class="section-icon">💽</span><span class="section-title">Disk</span><span class="section-value" id="disk-percent">---</span><button class="chev" data-sec="disk" title="折りたたむ">▼</button></div>
+                    <div class="disk-body">
+                        <div class="progress-bar disk-progress"><div class="progress-fill disk-fill" id="disk-bar" style="width:0%"></div></div>
+                        <div class="disk-info"><div class="disk-drives" id="disk-drives"></div></div>
+                    </div>
+                </div>
+                <div class="flip-face flip-back">
+                    <div class="section-header"><span class="section-icon">💽</span><span class="section-title" data-compact="I/O">Disk I/O</span><span class="section-value" id="disk-active-head" title="アクティブな時間">---</span><button class="chev" data-sec="disk" title="折りたたむ">▼</button></div>
+                    <div class="disk-body disk-io-num">
+                        <div class="progress-bar disk-progress"><div class="progress-fill disk-fill" id="disk-active-bar" style="width:0%"></div></div>
+                        <div class="disk-io">
+                            <div class="wifi-row"><span class="wifi-label">読み取り</span><span class="wifi-value" id="disk-read">---</span></div>
+                            <div class="wifi-row"><span class="wifi-label">書き込み</span><span class="wifi-value" id="disk-write">---</span></div>
+                        </div>
+                    </div>
+                    <canvas class="net-canvas disk-graph-part" id="diskCanvas"></canvas>
+                    <div class="net-legend disk-graph-part">
+                        <span class="net-leg-rx">読 <span id="disk-read-val">---</span></span>
+                        <span class="net-leg-tx">書 <span id="disk-write-val">---</span></span>
                     </div>
                 </div>
             </div>
@@ -644,6 +667,8 @@
             topmost: false,
             viewMode: 0,
             netUnit: 'byte',
+            // Disk 区画の裏面（I/O）の見せ方: 'number' | 'graph'（config.json の diskIoView）
+            diskIoView: 'number',
             // 有効なスキンの id（Go 側の config.json の skin。'default' はスキンなし = 現行のデザイン）
             skin: 'default',
             // 非表示状態（Go 側の config.json の hidden と同じ）。true が非表示
@@ -733,6 +758,17 @@
                 // アニメーション完了後も含めて二度描画しておく
                 setTimeout(drawNetGraph, 30);
                 setTimeout(drawNetGraph, 600);
+            }
+        });
+        // Disk ⇔ I/O の反転。Wi-Fi と同じく区画のどこをクリックしても反転する
+        const diskSection = document.getElementById('diskSection');
+        diskSection.addEventListener('click', function(e) {
+            if (movedSinceDown) return;
+            e.stopPropagation();
+            diskSection.classList.toggle('flipped');
+            if (diskSection.classList.contains('flipped')) {
+                setTimeout(redrawDiskGraph, 30);
+                setTimeout(redrawDiskGraph, 600);
             }
         });
 
@@ -946,7 +982,13 @@
             el.title = 'グラフのピーク (直近 2 分)' + unitHint;
         }
         function drawNetGraph(){
-            const canvas = document.getElementById('netCanvas');
+            // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
+            drawRateGraph('netCanvas', netHistory, p => p.rx, p => p.tx, 8*1024);
+        }
+        // 2 系列（Network は受信 / 送信、Disk は読み取り / 書き込み）のスループットの折れ線。
+        // 色は --net-rx / --net-tx を使う（Disk の読み取りが受信側、書き込みが送信側の色）。
+        function drawRateGraph(canvasId, history, getA, getB, minScale){
+            const canvas = document.getElementById(canvasId);
             if (!canvas) return;
             // 内部解像度を CSS サイズに合わせる（DPI スケール込み）
             const dpr = window.devicePixelRatio || 1;
@@ -969,42 +1011,46 @@
                 const v = bodyStyle.getPropertyValue(name).trim();
                 return (v && CSS.supports('color', v)) ? v : fallback;
             }
-            if (netHistory.length < 2){
+            if (history.length < 2){
                 ctx.fillStyle = cssColor('--net-empty-color', light ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)');
                 ctx.font = '10px Segoe UI';
                 ctx.fillText('計測中...', 6, cssH/2);
                 return;
             }
-            // 最低スケール 8KB/s — 無通信時に線がベタ貼り付きにならないように
-            const scale = Math.max(netPeak(), 8*1024);
+            // 縦軸は履歴中の最大値。最低スケール minScale を設けて、ほぼ無通信のときに線が上下に振れすぎないようにする
+            let peak = 0;
+            for (const p of history){
+                peak = Math.max(peak, getA(p), getB(p));
+            }
+            const scale = Math.max(peak, minScale);
             const step = cssW / (netMaxSamples - 1);
-            const offset = netMaxSamples - netHistory.length;
+            const offset = netMaxSamples - history.length;
             function drawSeries(getVal, fill, stroke){
                 ctx.fillStyle = fill;
                 ctx.beginPath();
                 ctx.moveTo((offset) * step, cssH);
-                netHistory.forEach((p, i) => {
+                history.forEach((p, i) => {
                     const x = (offset + i) * step;
                     const y = cssH - (getVal(p) / scale) * cssH;
                     ctx.lineTo(x, y);
                 });
-                ctx.lineTo((offset + netHistory.length - 1) * step, cssH);
+                ctx.lineTo((offset + history.length - 1) * step, cssH);
                 ctx.closePath();
                 ctx.fill();
                 ctx.strokeStyle = stroke;
                 ctx.lineWidth = 1.2;
                 ctx.beginPath();
-                netHistory.forEach((p, i) => {
+                history.forEach((p, i) => {
                     const x = (offset + i) * step;
                     const y = cssH - (getVal(p) / scale) * cssH;
                     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                 });
                 ctx.stroke();
             }
-            drawSeries(p => p.rx,
+            drawSeries(getA,
                 cssColor('--net-rx-fill', light ? 'rgba(26,168,107,0.20)' : 'rgba(127,255,170,0.25)'),
                 cssColor('--net-rx', light ? '#1aa86b' : '#7fffaa'));
-            drawSeries(p => p.tx,
+            drawSeries(getB,
                 cssColor('--net-tx-fill', light ? 'rgba(183,77,166,0.18)' : 'rgba(255,163,255,0.22)'),
                 cssColor('--net-tx', light ? '#b74da6' : '#ffa3ff'));
         }
@@ -1017,6 +1063,7 @@
             document.body.classList.toggle('theme-light', effective === 'light');
             // グラフの色は変数で決まるので、反転中ならテーマの切替に合わせて描き直す
             if (wifiSection.classList.contains('flipped')) drawNetGraph();
+            redrawDiskGraph();
         }
         systemThemeMql.addEventListener('change', () => { if (settings.theme === 'system') applyTheme(); });
 
@@ -1069,6 +1116,7 @@
                 // default のままなら何も変わっていない。それ以外は、CSS が同じでも描き直す
                 if (id === 'default' && wasDefault) return;
                 drawNetGraph();
+                redrawDiskGraph();
                 await adjustWindowHeight();
             })();
             return skinLatest;
@@ -1100,7 +1148,7 @@
                 if (!el) return;
                 el.classList.toggle('is-hidden', !!settings.hidden[n]);
                 // 非表示の間は裏面（グラフ）の状態を持ち越さない
-                if (n === 'network' && settings.hidden[n]) el.classList.remove('flipped');
+                if ((n === 'network' || n === 'disk') && settings.hidden[n]) el.classList.remove('flipped');
             });
             applyAccelData(lastGPU, lastNPU);
             applyDiskData(lastDisk);
@@ -1134,8 +1182,8 @@
                 const c = !!(settings.collapsed && settings.collapsed[n]);
                 el.classList.toggle('collapsed', c);
                 el.querySelectorAll('.chev').forEach(function(b){ b.title = c ? '展開' : '折りたたむ'; });
-                // Wi-Fi は折りたたむと表面に戻す。展開後は表面から始まる（裏面のグラフは再描画される）。
-                if (n === 'network' && c) el.classList.remove('flipped');
+                // Wi-Fi と Disk は折りたたむと表面に戻す。展開後は表面から始まる（裏面のグラフは再描画される）。
+                if ((n === 'network' || n === 'disk') && c) el.classList.remove('flipped');
             });
             // net-peak の中身は折りたたみ状態でも変わるので、次の周期を待たずに付け替える
             updateNetValue();
@@ -1433,6 +1481,7 @@
             if (typeof s.topmost === 'boolean') settings.topmost = s.topmost;
             if (typeof s.viewMode === 'number') settings.viewMode = s.viewMode;
             if (s.netUnit) { settings.netUnit = s.netUnit; netUnit = s.netUnit; refreshNetLegend(); }
+            if (s.diskIoView) { settings.diskIoView = s.diskIoView; applyDiskData(lastDisk); redrawDiskGraph(); }
             if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
             if (s.hidden) { Object.assign(settings.hidden, s.hidden); applyHidden(); }
             applyOrder();
@@ -1588,16 +1637,37 @@
             return Math.round(v) + ' B/s';
         }
         const DISK_WARN_PCT = 90; // 使用率がこれ以上のドライブは警告色にする
+        const DISK_GRAPH_MIN_SCALE = 1024*1024; // グラフの縦軸の下限（1 MB/s）。ほぼ無負荷のときに線が上下に振れすぎないように
         let lastDisk = null;
-        // 見えているドライブ構成（表示 + ドライブ数）。変わると行数が変わるので高さを測り直す。
+        // I/O の履歴（読み取り r / 書き込み w、バイト/秒）。Network と同じ直近 60 サンプルを、
+        // 表の面を見ている間や数値表示の間も貯める（反転したときにすぐ線が出る）。
+        const diskHistory = [];
+        // 見えているドライブ構成（表示 + ドライブ数 + I/O の見せ方）。変わると高さが変わるので測り直す。
         let lastDiskKey = '';
-        function applyDiskData(disk){
+        // 裏面を見ていて、グラフ表示のときだけ描く
+        function redrawDiskGraph(){
+            if (!document.getElementById('diskSection').classList.contains('flipped') || settings.diskIoView !== 'graph') return;
+            drawRateGraph('diskCanvas', diskHistory, p => p.r, p => p.w, DISK_GRAPH_MIN_SCALE);
+        }
+        // fresh は /api/system で届いた新しい値のとき true。設定や表示/非表示の変更による描き直しでは
+        // 同じ値を履歴に二重に積まないよう false で呼ぶ。
+        function applyDiskData(disk, fresh){
             lastDisk = disk || null;
             const sec = document.getElementById('diskSection');
             const drives = (lastDisk && lastDisk.Drives) || [];
             const io = lastDisk && lastDisk.IO;
+            const graph = settings.diskIoView === 'graph';
+            if (fresh) {
+                if (!lastDisk) diskHistory.length = 0;   // 収集が止まると間が空くので捨てる
+                else if (io && (io.ReadBps != null || io.WriteBps != null)) {
+                    diskHistory.push({ r: Number(io.ReadBps) || 0, w: Number(io.WriteBps) || 0 });
+                    if (diskHistory.length > netMaxSamples) diskHistory.shift();
+                }
+            }
             const show = !settings.hidden.disk && !!(lastDisk && (drives.length || io));
             sec.style.display = show ? '' : 'none';
+            sec.classList.toggle('disk-io-graph', graph);
+            if (!show) sec.classList.remove('flipped');
             if (show) {
                 let used = 0, total = 0;
                 drives.forEach(function(d){ used += Number(d.Used) || 0; total += Number(d.Total) || 0; });
@@ -1626,12 +1696,18 @@
                     row.querySelector('.wifi-value').textContent = formatDiskSize(d.Used) + ' / ' + formatDiskSize(d.Total) + ' (' + Math.round(p) + '%)';
                     row.classList.toggle('disk-warn', p >= DISK_WARN_PCT);
                 });
+                // 裏面（I/O）。見出しにはアクティブな時間を出す（コンパクト・折りたたみ時はこれだけが見える）
                 const active = io ? accelPct(io.ActivePct) : null;
-                document.getElementById('disk-active').textContent = active === null ? '---' : Math.round(active) + '%';
-                document.getElementById('disk-read').textContent = formatDiskRate(io ? io.ReadBps : null);
-                document.getElementById('disk-write').textContent = formatDiskRate(io ? io.WriteBps : null);
+                document.getElementById('disk-active-head').textContent = active === null ? '---' : Math.round(active) + '%';
+                document.getElementById('disk-active-bar').style.width = (active === null ? 0 : active).toFixed(1) + '%';
+                const rd = formatDiskRate(io ? io.ReadBps : null), wr = formatDiskRate(io ? io.WriteBps : null);
+                document.getElementById('disk-read').textContent = rd;
+                document.getElementById('disk-write').textContent = wr;
+                document.getElementById('disk-read-val').textContent = rd;
+                document.getElementById('disk-write-val').textContent = wr;
+                if (fresh) redrawDiskGraph();
             }
-            const key = show ? 'D' + drives.length : '-';
+            const key = show ? 'D' + drives.length + (graph ? 'g' : 'n') : '-';
             if (key !== lastDiskKey) {
                 const first = lastDiskKey === '';
                 lastDiskKey = key;
@@ -1653,7 +1729,7 @@
                 updatePowerMode(data.PowerMode);
                 updateClock(data.CPUFreq);
                 applyAccelData(data.GPU, data.NPU);
-                applyDiskData(data.Disk);
+                applyDiskData(data.Disk, true);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); updateNetValue(); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');

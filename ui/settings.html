@@ -172,6 +172,14 @@
                 </div>
             </div>
             <div class="card">
+                <span class="label">Disk の I/O 表示</span>
+                <div class="opts" data-group="diskIoView">
+                    <button class="opt" data-value="number">数値</button>
+                    <button class="opt" data-value="graph">グラフ</button>
+                </div>
+                <p class="hint">Disk 区画をクリックすると、使用量と I/O（アクティブな時間・読み取り・書き込み）が反転して切り替わります。ここでは I/O の見せ方を、数値かグラフ（直近 2 分）から選びます。</p>
+            </div>
+            <div class="card">
                 <span class="label">タスクバー (最小化時)</span>
                 <div class="opts" data-group="trayDisplay">
                     <button class="opt" data-value="icon">アイコンのみ</button>
@@ -287,7 +295,7 @@
         }
         const $ = function(id){ return document.getElementById(id); };
 
-        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon',
+        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number',
             hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai'] };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
@@ -562,6 +570,7 @@
                 let req = null;
                 if (key === 'theme') req = apiFetch('/api/setoption?key=theme&value=' + val);
                 else if (key === 'coreBase') req = apiFetch('/api/setoption?key=coreBase&value=' + val);
+                else if (key === 'diskIoView') req = apiFetch('/api/setoption?key=diskIoView&value=' + val);
                 else if (key === 'trayDisplay') req = apiFetch('/api/traydisplay?mode=' + val);
                 if (req) req.then(changed).catch(function(){});
             });
@@ -746,6 +755,7 @@
             if (typeof s.powerMode === 'boolean') settings.powerMode = s.powerMode;
             if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
             if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
+            if (s.diskIoView) settings.diskIoView = s.diskIoView;
             if (s.hidden) Object.assign(settings.hidden, s.hidden);
             if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
         }

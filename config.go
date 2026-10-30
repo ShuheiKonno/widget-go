@@ -50,6 +50,7 @@ type Config struct {
 	Skin        string    `json:"skin"`        // 空文字または "default" は現行デザイン
 	CoreBase    int       `json:"coreBase"`    // 0 | 1
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
+	DiskIOView  string    `json:"diskIoView"`  // Disk 区画の裏面（I/O）の見せ方。"number" | "graph"
 	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
 	IME         IMEConfig `json:"ime"`
 	// PowerModeEnabled は電源モード（設定アプリの「電源モード」）の切替機能の ON/OFF。既定は OFF。
@@ -253,6 +254,7 @@ func defaultConfig() Config {
 	c.Theme = "system"
 	c.CoreBase = 0
 	c.NetUnit = "byte"
+	c.DiskIOView = "number" // キーが無い旧バージョンの config.json でも数値のまま残る
 	// v1.8.0 以前の config.json にはキーが無い。既定値を先に入れておくと
 	// loadConfig の Unmarshal で上書きされず ON のまま残る。
 	c.ShowGPU = true
