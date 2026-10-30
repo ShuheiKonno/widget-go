@@ -129,6 +129,7 @@
         <button class="nav-item active" data-panel="display">表示</button>
         <button class="nav-item" data-panel="sections">区画</button>
         <button class="nav-item" data-panel="ai">AI 使用量</button>
+        <button class="nav-item" data-panel="work">勤務時間</button>
         <button class="nav-item" data-panel="system">起動とショートカット</button>
     </nav>
     <main>
@@ -215,21 +216,12 @@
             <div class="card">
                 <span class="label">区画の表示と順序</span>
                 <div id="orderList"></div>
-                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。Disk は固定ドライブの使用量と I/O を表示し、OFF にすると収集も止まります。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。勤務時間は AI 使用量とは別の区画で、既定は非表示です（OFF にしても計測は止まらず、状態は保たれます）。</p>
+                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。Disk は固定ドライブの使用量と I/O を表示し、OFF にすると収集も止まります。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。勤務時間は AI 使用量とは別の区画で、既定は非表示です（OFF にしても計測は止まらず、状態は保たれます。詳しい設定は「勤務時間」のタブにあります）。</p>
             </div>
             <div class="card">
                 <span class="label">電源モードの切替</span>
                 <label class="toggle"><span>CPU 区画のスライダーで切り替える</span><input type="checkbox" id="optPowerMode"></label>
                 <p class="hint">ON にすると、CPU 区画に電源モードのスライダーが出て、Windows の電源モードを切り替えられます。OFF（既定）のときは、電源モードの読み取りも切り替えも行わず、Windows の設定・制御のままです。スライダーは非表示です。クロックのバーとトレイの帯の色は、この設定にかかわらず、ベースクロックとの差で決まります（-10% 〜 +20%: 青、-11% 以下: 緑、+21% 以上: オレンジ）。</p>
-            </div>
-            <div class="card" id="workCard">
-                <span class="label">勤務時間タイマー</span>
-                <label class="toggle"><span>15 分切り下げの時間も表示する<span class="sub-text">OFF にすると、実勤務時間だけを表示します（例 7:52）。</span></span><input type="checkbox" id="optWorkFloor"></label>
-                <label class="toggle"><span>勤務開始の補正（打刻から押すまでの遅れ）<span class="sub-text">「勤務開始」を押した時刻から、この分数を引いた時刻を開始時刻にします。0 で押した時刻から数えます。</span></span><span class="nowrap"><input class="num" type="number" min="0" max="60" step="1" id="optWorkLag"> 分</span></label>
-                <label class="toggle"><span>勤務時間<span class="sub-text">実勤務時間がこの時間に達すると黄色で表示します。</span></span><input class="num" type="time" id="optWorkTarget"></label>
-                <label class="toggle"><span>昼休み（この間は計測を止める）<span class="sub-text">昼休み中は、数値を灰色で表示します。</span></span><span id="workLunchPair"><input class="num" type="time" id="optWorkLunchStart"> 〜 <input class="num" type="time" id="optWorkLunchEnd"></span></label>
-                <label class="toggle"><span>赤く表示する時刻<span class="sub-text">勤務開始日のこの時刻以降は、赤で表示します（黄色より優先）。</span></span><input class="num" type="time" id="optWorkRed"></label>
-                <div class="note err" id="workErr" role="alert" hidden></div>
             </div>
         </section>
 
@@ -291,6 +283,22 @@
                     <div class="acct" id="aiAcctCodex"><span>Codex</span><button class="quiet" data-ai-logout="codex">ログアウト</button></div>
                     <p class="hint">ログアウトすると、認証データを消して未ログインに戻ります。再びログインするには、ウィジェットの AI 使用量の区画から行います。</p>
                 </div>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-work">
+            <h2>勤務時間タイマー</h2>
+            <div class="card">
+                <label class="toggle"><span>勤務時間を表示する<span class="sub-text">AI 使用量とは別の区画です。OFF にしても計測は止まらず、状態は保たれます。「区画」の一覧のチェックと同じ設定です。</span></span><input type="checkbox" id="optWorkVisible"></label>
+            </div>
+            <div class="card" id="workCard">
+                <span class="label">表示と計算</span>
+                <label class="toggle"><span>15 分切り下げの時間も表示する<span class="sub-text">OFF にすると、実勤務時間だけを表示します（例 7:52）。</span></span><input type="checkbox" id="optWorkFloor"></label>
+                <label class="toggle"><span>勤務開始の補正（打刻から押すまでの遅れ）<span class="sub-text">「勤務開始」を押した時刻から、この分数を引いた時刻を開始時刻にします。0 で押した時刻から数えます。</span></span><span class="nowrap"><input class="num" type="number" min="0" max="60" step="1" id="optWorkLag"> 分</span></label>
+                <label class="toggle"><span>勤務時間<span class="sub-text">実勤務時間がこの時間に達すると黄色で表示します。</span></span><input class="num" type="time" id="optWorkTarget"></label>
+                <label class="toggle"><span>昼休み（この間は計測を止める）<span class="sub-text">昼休み中は、数値を灰色で表示します。</span></span><span id="workLunchPair"><input class="num" type="time" id="optWorkLunchStart"> 〜 <input class="num" type="time" id="optWorkLunchEnd"></span></label>
+                <label class="toggle"><span>赤く表示する時刻<span class="sub-text">勤務開始日のこの時刻以降は、赤で表示します（黄色より優先）。</span></span><input class="num" type="time" id="optWorkRed"></label>
+                <div class="note err" id="workErr" role="alert" hidden></div>
             </div>
         </section>
 
@@ -573,6 +581,7 @@
         function setSectionVisible(n, visible){
             touch();
             settings.hidden[n] = !visible;
+            if (n === 'work') $('optWorkVisible').checked = visible;   // 「勤務時間」タブのチェックと同じ設定
             apiFetch('/api/setoption?key=hide.' + n + '&value=' + (settings.hidden[n] ? 'true' : 'false'))
                 .then(changed).catch(function(){});
         }
@@ -624,6 +633,7 @@
         function renderWork(force){
             const w = settings.workTimer;
             if (!w) return;
+            $('optWorkVisible').checked = !settings.hidden.work;
             $('optWorkFloor').checked = !!w.showFloor;
             setIfIdle('optWorkLag', w.startLagMinutes, force);
             setIfIdle('optWorkTarget', clockText(w.targetMinutes), force);
@@ -644,6 +654,7 @@
             await reloadAll();
             if (!ok) renderWork(true);
         }
+        $('optWorkVisible').addEventListener('change', function(){ setSectionVisible('work', this.checked); renderOrderList(); });
         $('optWorkFloor').addEventListener('change', function(){ setWorkOption('workFloor', this.checked ? 'true' : 'false'); });
         $('optWorkLag').addEventListener('change', function(){ setWorkOption('workLag', String(Math.round(Number(this.value) || 0))); });
         // <input type="time"> は、時の 1 桁を打っただけで値が有効になり change が発火する。打ちかけで保存すると
