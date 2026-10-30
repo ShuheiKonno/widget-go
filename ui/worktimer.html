@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>勤務時間 - システムモニター</title>
+    <style>
+        /* コンパクト表示から開く、勤務時間の入力ウィンドウ。区画の CSS・マークアップ・JS は、本体（ui/index.html）と
+           同じ断片（ui/work/）を差し込む。ここに書くのは、本体の :root と区画の外枠にあたる最小限の部分だけ。
+           スキンは反映しない（設定ウィンドウと同じ）。 */
+        :root {
+            --container-bg: rgb(22,22,28);
+            --text-color: #f0f0f5;
+            --muted-color: #a8a8b8;
+            --section-bg: rgba(255,255,255,0.05);
+            --section-border: rgba(255,255,255,0.10);
+            --section-title: #d8d8e8;
+            --section-value: #7bffe0;
+            --bar-track: rgba(255,255,255,0.12);
+            --btn-bg-hover: rgba(255,255,255,0.22);
+            --input-bg: rgba(255,255,255,0.05);
+            --input-border: rgba(255,255,255,0.14);
+            --work-fill-bg: linear-gradient(90deg,#7bd0ff,#5a8cff);
+            --work-over: #facc15;
+            --work-late: #ef6a6a;
+        }
+        body.theme-light {
+            --container-bg: rgb(245,246,252);
+            --text-color: #24263a;
+            --muted-color: #606078;
+            --section-bg: rgba(0,0,0,0.04);
+            --section-border: rgba(0,0,0,0.1);
+            --section-title: #3b3b5a;
+            --section-value: #0a7f68;
+            --bar-track: rgba(0,0,0,0.1);
+            --btn-bg-hover: rgba(0,0,0,0.16);
+            --input-bg: rgba(0,0,0,0.04);
+            --input-border: rgba(0,0,0,0.15);
+            --work-over: #d9a400;
+            --work-late: #d33;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; }
+        body { font-family: 'Segoe UI', 'Yu Gothic UI', sans-serif; background: var(--container-bg); color: var(--text-color); font-size: 13px; user-select: none; padding: 12px; overflow: hidden; }
+        .section { background: var(--section-bg); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--section-border); }
+        .section-header { display: flex; align-items: center; margin-bottom: 8px; }
+        .section-icon { font-size: 14px; margin-right: 6px; }
+        .section-title { font-size: 12px; font-weight: 600; flex-grow: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--section-title); }
+        .section-value { color: var(--section-value); font-size: 13px; font-weight: 700; font-family: 'Consolas', monospace; flex-shrink: 0; margin-left: auto; }
+        .progress-bar { position: relative; height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+        .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+        .wifi-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+        .wifi-label { color: var(--muted-color); font-size: 11px; white-space: nowrap; }
+        .wifi-value { color: var(--text-color); font-size: 11px; font-weight: 600; font-family: 'Consolas', monospace; white-space: nowrap; }
+        /* ここでは折りたたまない */
+        .chev { display: none; }
+        .hint { margin-top: 8px; font-size: 10px; color: var(--muted-color); }
+        __WORK_CSS__
+    </style>
+</head>
+<body>
+    __WORK_HTML__
+    <p class="hint">Esc で閉じます。開始時刻は、クリックして入力し、Enter で確定します。</p>
+    <script nonce="__WIDGET_TOKEN__">
+        // 全 /api 呼び出しに付与する CSRF トークン（Go 側が起動毎に生成し埋め込む）。
+        const WIDGET_TOKEN = '__WIDGET_TOKEN__';
+        function apiFetch(url, opts){
+            opts = opts || {};
+            opts.headers = Object.assign({}, opts.headers, { 'X-Widget-Token': WIDGET_TOKEN });
+            return fetch(url, opts);
+        }
+        // 固定の大きさのウィンドウなので、行の増減で高さを測り直す必要はない
+        const workHooks = { heightChanged: function(){} };
+        __WORK_JS__
+
+        // ---------- テーマ（設定ウィンドウと同じ。"system" は OS の設定に追従）----------
+        let theme = 'system';
+        const systemThemeMql = window.matchMedia('(prefers-color-scheme: light)');
+        function applyTheme(){
+            const effective = theme === 'system' ? (systemThemeMql.matches ? 'light' : 'dark') : theme;
+            document.body.classList.toggle('theme-light', effective === 'light');
+        }
+        systemThemeMql.addEventListener('change', applyTheme);
+
+        // ---------- 起動 ----------
+        // 最初の描画（テーマと勤務時間）が済んだら、Go 側へ知らせて、非表示で作ったウィンドウを見せる。
+        (async function(){
+            try {
+                const s = await (await apiFetch('/api/settings')).json();
+                if (s.theme) theme = s.theme;
+            } catch (e) {}
+            applyTheme();
+            try {
+                const d = await (await apiFetch('/api/system')).json();
+                applyWorkTimer(d.WorkTimer);
+            } catch (e) {}
+            apiFetch('/api/worktimerready').catch(function(){});
+        })();
+        // 本体や設定ウィンドウでの変更（時刻・設定・昼休みの切替）にも追従する
+        setInterval(function(){ window.__workChanged(); }, 2000);
+        // 入力欄の Escape は編集の取り消し（伝播を止めている）。それ以外の Escape でウィンドウを閉じる。
+        document.addEventListener('keydown', function(e){
+            if (e.key === 'Escape') apiFetch('/api/closeworktimer').catch(function(){});
+        });
+    </script>
+</body>
+</html>

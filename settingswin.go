@@ -14,7 +14,8 @@ import (
 	"github.com/jchv/go-webview2"
 )
 
-// 設定は別ウィンドウ（ui/settings.html、/settings）で開く。メインのウィジェットは狭いので、
+// 設定は別ウィンドウ（ui/settings.html、/settings）で開く。同じ作りのウィンドウを、勤務時間の入力用にも使う
+// （worktimerwin.go の workWin。タイトル・URL・位置だけが違う）。メインのウィジェットは狭いので、
 // 広い画面で設定できるようにする。ウィンドウはメインと同じ UI スレッド・同じ Run ループの上に
 // 作る（aiusage の補助ウィンドウと同じ作り）。閉じると破棄してメモリを解放し、開くたびに作り直す。
 //
@@ -39,29 +40,36 @@ var (
 	serverPort      int
 	webviewDataPath string
 
-	settingsWin settingsWindow
+	// 設定ウィンドウ。勤務時間のウィンドウ（workWin）も同じ型で、タイトル・URL・位置の決め方だけが違う。
+	settingsWin = settingsWindow{title: settingsTitle, path: "/settings", rect: settingsWindowRect}
 
 	procSetWindowLongPtr = user32.NewProc("SetWindowLongPtrW")
 	procCallWindowProc   = user32.NewProc("CallWindowProcW")
-
-	settingsWndProcCallback = syscall.NewCallback(settingsWndProc)
 )
 
+// settingsWindow は、メインとは別の WebView2 ウィンドウ 1 つ分（設定、勤務時間）。
 type settingsWindow struct {
+	title string                                  // ウィンドウのタイトル。メインの「システムモニター」と完全一致させない（多重起動の判定が FindWindow のため）
+	path  string                                  // 開くページのパス
+	rect  func(scale float64) (x, y, w, h int32) // 開くときの位置と大きさ（物理 px）
+
 	mu       sync.Mutex
 	inst     webview2.WebView
 	hwnd     uintptr
 	revealed bool
 	orig     atomic.Uintptr // サブクラス化前のウィンドウプロシージャ
+	cb       uintptr        // このウィンドウのサブクラス化プロシージャ（初回の open で作る）
 }
 
 // openSettingsWindow は設定ウィンドウを開く（開いていれば前面に出す）。どの goroutine からでも呼べる。
 func openSettingsWindow() { dispatchUI(settingsWin.open) }
 
 // closeSettingsWindow は設定ウィンドウを閉じる。どの goroutine からでも呼べる。
-func closeSettingsWindow() {
+func closeSettingsWindow() { settingsWin.closeWindow() }
+
+// closeWindow はウィンドウを閉じる。どの goroutine からでも呼べる。
+func (s *settingsWindow) closeWindow() {
 	dispatchUI(func() {
-		s := &settingsWin
 		s.mu.Lock()
 		hwnd := s.hwnd
 		s.mu.Unlock()
@@ -86,12 +94,12 @@ func (s *settingsWindow) open() {
 	}
 
 	scale := getWindowDpiScale()
-	x, y, w, h := settingsWindowRect(scale)
+	x, y, w, h := s.rect(scale)
 	inst := webview2.NewWithOptions(webview2.WebViewOptions{
 		Debug:    false,
 		DataPath: webviewDataPath,
 		WindowOptions: webview2.WindowOptions{
-			Title:  settingsTitle,
+			Title:  s.title,
 			Width:  uint(w),
 			Height: uint(h),
 			Hidden: true,
@@ -109,13 +117,16 @@ func (s *settingsWindow) open() {
 
 	// go-webview2 は WM_DESTROY で PostQuitMessage を呼び、メインを含むアプリ全体を終了させる。
 	// サブクラス化して握りつぶす（aiusage の補助ウィンドウと同じ）。
-	orig, _, _ := procSetWindowLongPtr.Call(hwnd, uintptr(gwlpWndProcIdx), settingsWndProcCallback)
+	if s.cb == 0 {
+		s.cb = syscall.NewCallback(s.wndProc)
+	}
+	orig, _, _ := procSetWindowLongPtr.Call(hwnd, uintptr(gwlpWndProcIdx), s.cb)
 	s.orig.Store(orig)
 
 	applySettingsWindowTheme(hwnd)
 	procSetWindowPos.Call(hwnd, 0, uintptr(uint32(x)), uintptr(uint32(y)), uintptr(w), uintptr(h), SWP_NOZORDER)
 	showTransparent(hwnd)
-	inst.Navigate(fmt.Sprintf("http://127.0.0.1:%d/settings", serverPort))
+	inst.Navigate(fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, s.path))
 	// このウィンドウ（hwnd）にだけ効くタイマー。閉じてすぐ開き直したとき、前のタイマーが
 	// 読み込み前の新しいウィンドウを見せてしまわないようにする。
 	time.AfterFunc(settingsRevealMax, func() { s.revealWindow(hwnd) })
@@ -160,19 +171,19 @@ func (s *settingsWindow) currentHwnd() uintptr {
 	return s.hwnd
 }
 
-// settingsWndProc は設定ウィンドウのサブクラス化プロシージャ。
+// wndProc はこのウィンドウのサブクラス化プロシージャ。
 //   - WM_DESTROY: 握りつぶす（go-webview2 が PostQuitMessage を呼び、アプリ全体が終了するため）。
 //   - WM_NCDESTROY: 破棄が済んだので、状態を片づけて元のプロシージャへ進む。
 //
 // × で閉じたとき（WM_CLOSE）は、go-webview2 の本来の処理（DestroyWindow）に任せる。
-func settingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
+func (s *settingsWindow) wndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case WM_DESTROY:
 		return 0
 	case wmNCDestroy:
-		settingsWin.onDestroyed()
+		s.onDestroyed()
 	}
-	r, _, _ := procCallWindowProc.Call(settingsWin.orig.Load(), hwnd, msg, wParam, lParam)
+	r, _, _ := procCallWindowProc.Call(s.orig.Load(), hwnd, msg, wParam, lParam)
 	return r
 }
 
@@ -246,5 +257,6 @@ func notifyMainSettingsChanged() {
 			(*p).Eval("window.__settingsChanged&&window.__settingsChanged()")
 		}
 		applySettingsWindowTheme(settingsWin.currentHwnd())
+		applySettingsWindowTheme(workWin.currentHwnd())
 	})
 }

@@ -397,6 +397,7 @@ func workTimerActionHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
+	notifyWorkTimerChanged() // 別のウィンドウ（本体 / 入力ウィンドウ）にも、次の周期を待たずに反映させる
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(workTimerSnapshot(snapshotConfig().WorkTimer, now))
 }
