@@ -31,6 +31,7 @@
             --wifi-ng-color: #ff8a8a;
             --gpu-fill-bg: linear-gradient(90deg,#6ad7ff,#5a8cff);
             --npu-fill-bg: linear-gradient(90deg,#ffd36a,#ff9f5a);
+            --disk-fill-bg: linear-gradient(90deg,#7bffb8,#2fbf8f);
             --net-rx: #7fffaa;
             --net-rx-fill: rgba(127,255,170,0.25);
             --net-tx: #ffa3ff;
@@ -62,6 +63,7 @@
             --wifi-ng-color: #d33;
             --gpu-fill-bg: linear-gradient(90deg,#6ad7ff,#5a8cff);
             --npu-fill-bg: linear-gradient(90deg,#ffd36a,#ff9f5a);
+            --disk-fill-bg: linear-gradient(90deg,#7bffb8,#2fbf8f);
             --net-rx: #1aa86b;
             --net-rx-fill: rgba(26,168,107,0.20);
             --net-tx: #b74da6;
@@ -111,6 +113,7 @@
         .compact .wifi-info { display: none; }
         .compact .wifi-compact-value { display: inline; }
         .compact .gpu-progress, .compact .npu-progress, .compact .accel-info { display: none; }
+        .compact .disk-progress, .compact .disk-info { display: none; }
         .section { background: var(--section-bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid var(--section-border); }
         .section:last-child, .section.last-visible { margin-bottom: 0; }
         .section-header { display: flex; align-items: center; margin-bottom: 6px; }
@@ -203,6 +206,14 @@
         .gpu-fill { background: var(--gpu-fill-bg); }
         .npu-fill { background: var(--npu-fill-bg); }
         .npu-progress { margin-bottom: 0; } /* NPU はバーで終わるので下余白を詰める */
+        /* Disk。ドライブ別の行と I/O の行は、ラベル・値を nowrap にして 1 行に収める */
+        .disk-section .section-title, .disk-section .section-value { white-space:nowrap; }
+        .disk-fill { background: var(--disk-fill-bg); }
+        .disk-info, .disk-drives, .disk-io { display:flex; flex-direction:column; gap:3px; }
+        .disk-io { margin-top:4px; }
+        .disk-info .wifi-row { gap:6px; }
+        .disk-info .wifi-label, .disk-info .wifi-value { white-space:nowrap; }
+        .disk-drive.disk-warn .wifi-value { color: var(--wifi-ng-color); }
         .accel-info { display:flex; flex-direction:column; gap:3px; }
         .accel-info .wifi-row { gap:6px; }
         .accel-info .wifi-label, .accel-info .wifi-value { white-space:nowrap; }
@@ -380,6 +391,20 @@
             <div class="sec-body">
                 <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" id="memory-bar" style="width:0%"></div></div>
                 <div class="memory-details"><span class="used" id="memory-used">0 GB</span><span id="memory-total">/ 0 GB</span></div>
+            </div>
+        </div>
+        <div class="section disk-section" id="diskSection" data-sec="disk" style="display:none">
+            <div class="section-header"><span class="section-icon">💽</span><span class="section-title">Disk</span><span class="section-value" id="disk-percent">---</span><button class="chev" data-sec="disk" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="progress-bar disk-progress"><div class="progress-fill disk-fill" id="disk-bar" style="width:0%"></div></div>
+                <div class="disk-info">
+                    <div class="disk-drives" id="disk-drives"></div>
+                    <div class="disk-io">
+                        <div class="wifi-row"><span class="wifi-label">アクティブ</span><span class="wifi-value" id="disk-active">---</span></div>
+                        <div class="wifi-row"><span class="wifi-label">読み取り</span><span class="wifi-value" id="disk-read">---</span></div>
+                        <div class="wifi-row"><span class="wifi-label">書き込み</span><span class="wifi-value" id="disk-write">---</span></div>
+                    </div>
+                </div>
             </div>
         </div>
         <!-- GPU/NPU は wifi の前に置く（後ろに置くと非表示でも .section:last-child を奪い、下に余白が残る） -->
@@ -622,11 +647,11 @@
             // 有効なスキンの id（Go 側の config.json の skin。'default' はスキンなし = 現行のデザイン）
             skin: 'default',
             // 非表示状態（Go 側の config.json の hidden と同じ）。true が非表示
-            hidden: { cpu: false, memory: false, gpu: false, npu: false, network: false },
+            hidden: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false },
             // 区画の表示順（Go 側の config.json の order と同じ）
-            order: ['cpu', 'memory', 'gpu', 'npu', 'network', 'ai'],
+            order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai'],
             // 折りたたみ状態（Go 側の config.json の collapsed と同じ）。AI は既定で折りたたみ（D8）
-            collapsed: { cpu: false, memory: false, gpu: false, npu: false, network: false, ai: true }
+            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true }
         };
 
         // Close button (✕): タスクトレイに格納する
@@ -1057,9 +1082,9 @@
         }
 
         // ============ 区画の表示/非表示 ============
-        // CPU / メモリ / Wi-Fi は .is-hidden で隠す。GPU / NPU はデバイスの有無でも出し分けるので
-        // applyAccelData が settings.hidden を見て表示を決める。
-        const hideableSections = { cpu: 'cpu', memory: 'memory', network: 'wifiSection' };
+        // CPU / メモリ / Disk / Wi-Fi は .is-hidden で隠す。GPU / NPU はデバイスの有無でも出し分けるので
+        // applyAccelData が settings.hidden を見て表示を決める。Disk は取得できないときの出し分けを applyDiskData が持つ。
+        const hideableSections = { cpu: 'cpu', memory: 'memory', disk: 'disk', network: 'wifiSection' };
         function updateLastSection(){
             // 最後に見えている区画だけ下余白を 0 にする（:last-child は非表示の区画も数えてしまう）
             const secs = Array.from(document.querySelectorAll('#dragArea > .section')).filter(function(el){
@@ -1078,6 +1103,7 @@
                 if (n === 'network' && settings.hidden[n]) el.classList.remove('flipped');
             });
             applyAccelData(lastGPU, lastNPU);
+            applyDiskData(lastDisk);
             updateLastSection();
         }
         // ============ 区画の表示順 ============
@@ -1100,7 +1126,7 @@
         // ============ 区画の折りたたみ（D10）============
         // 開閉は各見出しのシェブロン（▼）のクリックだけ。Wi-Fi は区画のどこをクリックしても表裏が
         // 反転するため、見出し全体のクリックにはしない。状態は Go 側の config.json に保存される。
-        const collapsibleSections = ['cpu', 'memory', 'gpu', 'npu', 'network', 'ai'];
+        const collapsibleSections = ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai'];
         function applyCollapsed(){
             collapsibleSections.forEach(function(n){
                 const el = document.querySelector('.section[data-sec="' + n + '"]');
@@ -1543,6 +1569,80 @@
             }
         }
 
+        // ============ Disk ============
+        // 容量は 1 TB 以上なら TB、100 GB 以上なら整数の GB、それ未満は小数 1 桁の GB、1 GB 未満は MB。
+        function formatDiskSize(b){
+            b = Number(b) || 0;
+            const GB = 1024*1024*1024, MB = 1024*1024, TB = GB*1024;
+            if (b >= TB) return (b/TB).toFixed(2) + ' TB';
+            if (b >= GB) return (b/GB).toFixed(b >= 100*GB ? 0 : 1) + ' GB';
+            return Math.round(b/MB) + ' MB';
+        }
+        // I/O の速度（バイト/秒）。ネットワークと違い、単位の切替設定には従わず常にバイト系で出す。
+        function formatDiskRate(v){
+            if (v === null || v === undefined || !isFinite(v)) return '---';
+            const KB = 1024, MB = KB*1024, GB = MB*1024;
+            if (v >= GB) return (v/GB).toFixed(1) + ' GB/s';
+            if (v >= MB) return (v/MB).toFixed(v >= 10*MB ? 0 : 1) + ' MB/s';
+            if (v >= KB) return Math.round(v/KB) + ' KB/s';
+            return Math.round(v) + ' B/s';
+        }
+        const DISK_WARN_PCT = 90; // 使用率がこれ以上のドライブは警告色にする
+        let lastDisk = null;
+        // 見えているドライブ構成（表示 + ドライブ数）。変わると行数が変わるので高さを測り直す。
+        let lastDiskKey = '';
+        function applyDiskData(disk){
+            lastDisk = disk || null;
+            const sec = document.getElementById('diskSection');
+            const drives = (lastDisk && lastDisk.Drives) || [];
+            const io = lastDisk && lastDisk.IO;
+            const show = !settings.hidden.disk && !!(lastDisk && (drives.length || io));
+            sec.style.display = show ? '' : 'none';
+            if (show) {
+                let used = 0, total = 0;
+                drives.forEach(function(d){ used += Number(d.Used) || 0; total += Number(d.Total) || 0; });
+                const pct = total > 0 ? Math.min(100, used * 100 / total) : null;
+                document.getElementById('disk-percent').textContent = pct === null ? '---' : Math.round(pct) + '%';
+                document.getElementById('disk-bar').style.width = (pct === null ? 0 : pct).toFixed(1) + '%';
+                const box = document.getElementById('disk-drives');
+                // 構成（ドライブ文字）が変わったときだけ行を作り直し、普段は値の書き換えだけにする
+                const letters = drives.map(function(d){ return d.Letter; }).join(',');
+                if (box.dataset.letters !== letters) {
+                    box.dataset.letters = letters;
+                    box.textContent = '';
+                    drives.forEach(function(d){
+                        const row = document.createElement('div');
+                        row.className = 'wifi-row disk-drive';
+                        const lab = document.createElement('span'); lab.className = 'wifi-label'; lab.textContent = d.Letter;
+                        const val = document.createElement('span'); val.className = 'wifi-value';
+                        row.appendChild(lab); row.appendChild(val);
+                        box.appendChild(row);
+                    });
+                }
+                drives.forEach(function(d, i){
+                    const row = box.children[i];
+                    if (!row) return;
+                    const p = Number(d.UsedPercent) || 0;
+                    row.querySelector('.wifi-value').textContent = formatDiskSize(d.Used) + ' / ' + formatDiskSize(d.Total) + ' (' + Math.round(p) + '%)';
+                    row.classList.toggle('disk-warn', p >= DISK_WARN_PCT);
+                });
+                const active = io ? accelPct(io.ActivePct) : null;
+                document.getElementById('disk-active').textContent = active === null ? '---' : Math.round(active) + '%';
+                document.getElementById('disk-read').textContent = formatDiskRate(io ? io.ReadBps : null);
+                document.getElementById('disk-write').textContent = formatDiskRate(io ? io.WriteBps : null);
+            }
+            const key = show ? 'D' + drives.length : '-';
+            if (key !== lastDiskKey) {
+                const first = lastDiskKey === '';
+                lastDiskKey = key;
+                if (!first) {
+                    setTimeout(adjustWindowHeight, 50);
+                    // adjustWindowHeight の resize 完了後に保存する（直後だと変更前のサイズが残る）
+                    setTimeout(() => apiFetch('/api/persistwindow').catch(()=>{}), 300);
+                }
+            }
+        }
+
         // 接続種別（Wi-Fi / Ethernet / 未接続）で情報行数が変わり、必要な高さも変わる。
         // 起動直後は未確定のまま高さを測ってしまうので、種別が変わったら測り直す。
         let lastConnMode = '';
@@ -1553,6 +1653,7 @@
                 updatePowerMode(data.PowerMode);
                 updateClock(data.CPUFreq);
                 applyAccelData(data.GPU, data.NPU);
+                applyDiskData(data.Disk);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); updateNetValue(); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');

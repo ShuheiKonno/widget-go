@@ -91,10 +91,13 @@ func TestNormalizeOrder(t *testing.T) {
 		in   []string
 		want string
 	}{
-		{"nil は既定順", nil, "cpu,memory,gpu,npu,network,ai"},
-		{"並べ替えを保つ", []string{"ai", "cpu", "memory", "gpu", "npu", "network"}, "ai,cpu,memory,gpu,npu,network"},
-		{"欠けた区画は末尾に足す", []string{"network", "cpu"}, "network,cpu,memory,gpu,npu,ai"},
-		{"未知と重複は捨てる", []string{"x", "gpu", "gpu", "cpu"}, "gpu,cpu,memory,npu,network,ai"},
+		{"nil は既定順", nil, "cpu,memory,disk,gpu,npu,network,ai"},
+		{"並べ替えを保つ", []string{"ai", "cpu", "memory", "disk", "gpu", "npu", "network"}, "ai,cpu,memory,disk,gpu,npu,network"},
+		{"欠けた区画は末尾に足す", []string{"network", "cpu"}, "network,cpu,memory,disk,gpu,npu,ai"},
+		{"未知と重複は捨てる", []string{"x", "gpu", "gpu", "cpu"}, "gpu,cpu,memory,disk,npu,network,ai"},
+		// v2.7 より前の config.json には disk が無い。末尾（AI の後ろ）ではなくメモリの直後に入れる。
+		{"disk が無い保存済みの順はメモリの直後に足す", []string{"ai", "cpu", "memory", "gpu", "npu", "network"}, "ai,cpu,memory,disk,gpu,npu,network"},
+		{"メモリが先頭側でなくても直後に足す", []string{"network", "memory", "cpu", "gpu", "npu", "ai"}, "network,memory,disk,cpu,gpu,npu,ai"},
 	}
 	for _, c := range cases {
 		if got := strings.Join(normalizeOrder(c.in), ","); got != c.want {
@@ -105,22 +108,44 @@ func TestNormalizeOrder(t *testing.T) {
 
 func TestSetOrder(t *testing.T) {
 	withConfigFile(t, "")
-	if got := strings.Join(snapshotConfig().Order, ","); got != "cpu,memory,gpu,npu,network,ai" {
+	if got := strings.Join(snapshotConfig().Order, ","); got != "cpu,memory,disk,gpu,npu,network,ai" {
 		t.Fatalf("既定の順が違う: %s", got)
 	}
-	if err := setOrder("network,ai,cpu,memory,gpu,npu"); err != nil {
+	if err := setOrder("network,ai,cpu,memory,disk,gpu,npu"); err != nil {
 		t.Fatal(err)
 	}
 	loadConfig()
-	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,gpu,npu" {
+	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,disk,gpu,npu" {
 		t.Errorf("再読込で順が変わった: %s", got)
 	}
-	for _, bad := range []string{"", "cpu", "cpu,cpu,memory,gpu,npu,network", "cpu,memory,gpu,npu,network,x"} {
+	for _, bad := range []string{"", "cpu", "cpu,cpu,memory,disk,gpu,npu,network", "cpu,memory,disk,gpu,npu,network,x", "cpu,memory,gpu,npu,network,ai"} {
 		if err := setOrder(bad); err == nil {
 			t.Errorf("setOrder(%q) は拒否するはず", bad)
 		}
 	}
-	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,gpu,npu" {
+	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,disk,gpu,npu" {
 		t.Errorf("エラー時に設定が変わった: %s", got)
+	}
+}
+
+// Disk 区画は GPU/NPU の収集（ShowGPU）とは独立に、非表示を保存して再読込でも保つ。
+func TestSetHiddenDisk(t *testing.T) {
+	withConfigFile(t, "")
+	if err := setHidden("disk", "true"); err != nil {
+		t.Fatal(err)
+	}
+	c := snapshotConfig()
+	if !c.Hidden.Disk || !c.ShowGPU {
+		t.Errorf("disk だけ非表示のはず（GPU の収集は続く）: %+v ShowGPU=%v", c.Hidden, c.ShowGPU)
+	}
+	loadConfig()
+	if !snapshotConfig().Hidden.Disk {
+		t.Error("再読込で disk の非表示が失われた")
+	}
+	if err := setCollapsed("disk", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if !snapshotConfig().Collapsed.Disk {
+		t.Error("disk の折りたたみが保存されない")
 	}
 }

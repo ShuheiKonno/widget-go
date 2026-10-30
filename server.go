@@ -436,7 +436,7 @@ func newServerMux(token string) *http.ServeMux {
 			refreshPowerMode()
 			kickTray()
 		case "order":
-			// 区画の表示順: value=cpu,memory,gpu,npu,network,ai を並べ替えたもの
+			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai を並べ替えたもの
 			if err := setOrder(val); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -454,6 +454,18 @@ func newServerMux(token string) *http.ServeMux {
 				if !enable {
 					// 次の /api/system が古い GPU/NPU を返して一瞬再表示されないよう即座に捨てる
 					clearGPUCache()
+				}
+				// Disk 区画も同じく、非表示の間は収集を止める。表示に戻したときは容量をすぐ取り直す。
+				hideDisk := snapshotConfig().Hidden.Disk
+				if showDisk.Swap(!hideDisk) == hideDisk { // 表示状態が変わった
+					if hideDisk {
+						clearDiskCache()
+					} else {
+						select {
+						case diskKick <- struct{}{}:
+						default:
+						}
+					}
 				}
 				break
 			}

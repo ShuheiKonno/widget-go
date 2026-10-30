@@ -270,6 +270,8 @@ type SystemData struct {
 	Network  *sysinfo.NetworkInfo  `json:"Network"`
 	GPU      *sysinfo.GPUInfo      `json:"GPU"`
 	NPU      *sysinfo.NPUInfo      `json:"NPU"`
+	// Disk は固定ドライブの容量と Disk I/O。区画を非表示にしている間と、取得できないときは null。
+	Disk *sysinfo.DiskInfo `json:"Disk"`
 	// PowerMode は電源モード（設定アプリの「電源モード」）の状態。取得できない環境では null。
 	PowerMode *sysinfo.PowerModeInfo `json:"PowerMode"`
 	ViewMode  int                    `json:"ViewMode"`
@@ -288,7 +290,16 @@ var (
 	cachedGPU      *sysinfo.GPUInfo
 	cachedNPU      *sysinfo.NPUInfo
 	cachedPower    *sysinfo.PowerModeInfo
+	cachedDrives   []sysinfo.DriveInfo
+	cachedDiskIO   *sysinfo.DiskIOInfo
 )
+
+// showDisk は Disk 区画を表示しているか（Hidden.Disk の逆）。OFF の間は Disk の収集自体を止める。
+// showGPU と同じく、HTTP ハンドラと collector goroutine から並行に読み書きされる。
+var showDisk atomic.Bool
+
+// diskKick は Disk 区画を表示に戻したときに、容量の取得を次の周期を待たず即座に走らせる合図。
+var diskKick = make(chan struct{}, 1)
 
 // startupGeometrySettled は、起動時のジオメトリ復元（遅延再適用まで）が済んだかどうか。
 // 済むまでは persistCurrentWindowGeometry が何も保存しない。
@@ -299,7 +310,10 @@ var startupGeometrySettled atomic.Bool
 // 読むのでロック順序の問題が起きない atomic で持つ。
 var showGPU atomic.Bool
 
-func init() { showGPU.Store(true) }
+func init() {
+	showGPU.Store(true)
+	showDisk.Store(true)
+}
 
 // ドラッグ開始時の状態（物理ピクセル）。
 // ドラッグ中の差分計算をすべてサーバー側で行い、
@@ -390,10 +404,57 @@ func getSystemData() SystemData {
 		Network:  cachedNet,
 		GPU:      cachedGPU,
 		NPU:      cachedNPU,
+		Disk:     diskSnapshotLocked(),
 		// 設定アプリなど外部での変更にも追従するため、2 秒周期の収集で更新する。
 		PowerMode: cachedPower,
 		ViewMode:  vm,
 	}
+}
+
+// diskSnapshotLocked はキャッシュから DiskInfo を組み立てる。cacheMu を保持して呼ぶこと。
+// 容量も I/O も無ければ nil（UI は区画ごと隠す）。
+func diskSnapshotLocked() *sysinfo.DiskInfo {
+	if !showDisk.Load() || (len(cachedDrives) == 0 && cachedDiskIO == nil) {
+		return nil
+	}
+	return &sysinfo.DiskInfo{Drives: cachedDrives, IO: cachedDiskIO}
+}
+
+// refreshDiskIO は Disk I/O を取得してキャッシュに反映する。
+// 区画が非表示の間は PDH クエリを閉じ、収集しない。
+func refreshDiskIO() {
+	if !showDisk.Load() {
+		sysinfo.CloseDiskIO()
+		clearDiskCache()
+		return
+	}
+	io := sysinfo.GetDiskIO()
+	cacheMu.Lock()
+	// 取得中に OFF にされた場合は、ハンドラがクリアしたキャッシュを上書きしない
+	if showDisk.Load() {
+		cachedDiskIO = io
+	}
+	cacheMu.Unlock()
+}
+
+// refreshDrives は固定ドライブの容量を取得してキャッシュに反映する。
+func refreshDrives() {
+	if !showDisk.Load() {
+		return
+	}
+	drives := sysinfo.GetDrives()
+	cacheMu.Lock()
+	if showDisk.Load() {
+		cachedDrives = drives
+	}
+	cacheMu.Unlock()
+}
+
+func clearDiskCache() {
+	cacheMu.Lock()
+	cachedDrives = nil
+	cachedDiskIO = nil
+	cacheMu.Unlock()
 }
 
 func refreshNetwork() {
@@ -545,6 +606,22 @@ func startCollector() {
 			refreshPowerMode()
 			refreshNetwork()
 			refreshGPU()
+			refreshDiskIO()
+		}
+	}()
+
+	// ドライブの容量は変化が遅く、応答の遅いドライブ（スピンアップ待ちの外付け HDD など）に
+	// 待たされることもあるので、2 秒周期の収集とは別の goroutine で 10 秒ごとに取る。
+	go func() {
+		refreshDrives()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+			case <-diskKick:
+			}
+			refreshDrives()
 		}
 	}()
 
@@ -1069,6 +1146,7 @@ func main() {
 	}
 	trayDisplayMu.Unlock()
 	showGPU.Store(c.ShowGPU)
+	showDisk.Store(!c.Hidden.Disk)
 
 	apiToken := generateToken()
 	ln, port := listenLocal()

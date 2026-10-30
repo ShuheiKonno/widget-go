@@ -224,6 +224,7 @@ body[data-skin="paper-tape"] .claude .progress-fill {
     background-image: repeating-linear-gradient(90deg, rgba(0, 0, 0, .30) 0 1px, transparent 1px 6px);
 }
 body[data-skin="paper-tape"] .memory-fill,
+body[data-skin="paper-tape"] .disk-fill,
 body[data-skin="paper-tape"] .gpu-fill,
 body[data-skin="paper-tape"] .codex .progress-fill {
     border-radius: 0;

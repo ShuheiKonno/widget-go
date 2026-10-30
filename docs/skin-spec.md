@@ -209,6 +209,7 @@ default-src 'none'; script-src 'nonce-…'; style-src 'unsafe-inline'; connect-s
 | `--wifi-ng-color` | 未接続の表示(`.wifi-disconnected`)の色 | `#ff8a8a` | `#d33` |
 | `--gpu-fill-bg` | GPU のバー(`.gpu-fill`)の `background` | `linear-gradient(90deg,#6ad7ff,#5a8cff)` | 同左 |
 | `--npu-fill-bg` | NPU のバー(`.npu-fill`)の `background` | `linear-gradient(90deg,#ffd36a,#ff9f5a)` | 同左 |
+| `--disk-fill-bg` | Disk のバー(`.disk-fill`)の `background` | `linear-gradient(90deg,#7bffb8,#2fbf8f)` | 同左 |
 | `--net-rx` | 受信(↓)の凡例の色と、グラフの線の色 | `#7fffaa` | `#1aa86b` |
 | `--net-rx-fill` | 受信のグラフの塗り | `rgba(127,255,170,0.25)` | `rgba(26,168,107,0.20)` |
 | `--net-tx` | 送信(↑)の凡例の色と、グラフの線の色 | `#ffa3ff` | `#b74da6` |
@@ -273,6 +274,7 @@ body[data-skin="<id>"]  (テーマがライトのとき .theme-light も付く)
 |---|---|---|
 | `cpu` | CPU | `.progress-bar.cpu-progress` > `.progress-fill.cpu-fill`、`.clock-row`(`.clock-label` `.clock-value` `.clock-base`)、`.progress-bar.clock-progress` > `.clock-fill`(+ `.clock-base-marker`)、`.power-mode`(`.pm-slider` `.pm-labels`)、`.model-name.cpu-model`、`.cores-container` > `.core-item`(`.core-label` `.core-bar-container` > `.core-bar`、`.core-value`) |
 | `memory` | メモリ | `.progress-bar.mem-progress` > `.progress-fill.memory-fill`、`.memory-details`(`.used`) |
+| `disk` | Disk(`.disk-section`) | `.progress-bar.disk-progress` > `.progress-fill.disk-fill`、`.disk-info` > `.disk-drives`(ドライブごとの `.wifi-row.disk-drive`。使用率 90% 以上で `.disk-warn`)と `.disk-io`(`.wifi-row` > `.wifi-label` `.wifi-value`)。コンパクトでは `.disk-progress` と `.disk-info` が隠れる |
 | `gpu` | GPU(`.accel-section`) | `.progress-bar.gpu-progress` > `.progress-fill.gpu-fill`、`.accel-info`(`.model-name`、`.wifi-row` > `.wifi-label` `.wifi-value`) |
 | `npu` | NPU(`.accel-section`) | `.progress-bar.npu-progress` > `.progress-fill.npu-fill`、`.model-name.npu-model` |
 | `network` | Wi-Fi / Ethernet とトラフィック(`.wifi-section`) | `.flip-card` > 表 `.flip-face.flip-front`(`.wifi-info`、`.wifi-row`、`.wifi-label`、`.wifi-value`、`.wifi-connected` / `.wifi-disconnected`)と、裏 `.flip-face.flip-back`(`.net-peak-toggle`、`canvas.net-canvas`、`.net-legend` > `.net-leg-rx` `.net-leg-tx`) |
