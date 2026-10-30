@@ -49,8 +49,8 @@ var (
 
 // settingsWindow は、メインとは別の WebView2 ウィンドウ 1 つ分（設定、勤務時間）。
 type settingsWindow struct {
-	title string                                  // ウィンドウのタイトル。メインの「システムモニター」と完全一致させない（多重起動の判定が FindWindow のため）
-	path  string                                  // 開くページのパス
+	title string                                 // ウィンドウのタイトル。メインの「システムモニター」と完全一致させない（多重起動の判定が FindWindow のため）
+	path  string                                 // 開くページのパス
 	rect  func(scale float64) (x, y, w, h int32) // 開くときの位置と大きさ（物理 px）
 
 	mu       sync.Mutex
