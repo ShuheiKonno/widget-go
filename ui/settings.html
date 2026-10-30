@@ -106,6 +106,9 @@
         .field:first-child { margin-top: 0; }
         .field > .label { display: block; font-size: 12px; color: var(--muted-color); margin-bottom: 6px; }
         .num { width: 80px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; color: var(--text-color); font: inherit; padding: 4px 6px; text-align: right; }
+        .nowrap { white-space: nowrap; }
+        input[type=time].num { width: 104px; text-align: left; color-scheme: dark; }
+        body.theme-light input[type=time].num { color-scheme: light; }
         .acct { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
         .acct + .acct { margin-top: 6px; }
         .quiet { border: 0; border-radius: 5px; background: var(--btn-bg); color: var(--text-color); font: inherit; padding: 5px 12px; cursor: pointer; }
@@ -212,12 +215,21 @@
             <div class="card">
                 <span class="label">区画の表示と順序</span>
                 <div id="orderList"></div>
-                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。Disk は固定ドライブの使用量と I/O を表示し、OFF にすると収集も止まります。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。</p>
+                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。Disk は固定ドライブの使用量と I/O を表示し、OFF にすると収集も止まります。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。勤務時間は AI 使用量とは別の区画で、既定は非表示です（OFF にしても計測は止まらず、状態は保たれます）。</p>
             </div>
             <div class="card">
                 <span class="label">電源モードの切替</span>
                 <label class="toggle"><span>CPU 区画のスライダーで切り替える</span><input type="checkbox" id="optPowerMode"></label>
                 <p class="hint">ON にすると、CPU 区画に電源モードのスライダーが出て、Windows の電源モードを切り替えられます。OFF（既定）のときは、電源モードの読み取りも切り替えも行わず、Windows の設定・制御のままです。スライダーは非表示です。クロックのバーとトレイの帯の色は、この設定にかかわらず、ベースクロックとの差で決まります（-10% 〜 +20%: 青、-11% 以下: 緑、+21% 以上: オレンジ）。</p>
+            </div>
+            <div class="card" id="workCard">
+                <span class="label">勤務時間タイマー</span>
+                <label class="toggle"><span>15 分切り下げの時間も表示する<span class="sub-text">OFF にすると、実勤務時間だけを表示します（例 7:52）。</span></span><input type="checkbox" id="optWorkFloor"></label>
+                <label class="toggle"><span>勤務開始の補正（打刻から押すまでの遅れ）<span class="sub-text">「勤務開始」を押した時刻から、この分数を引いた時刻を開始時刻にします。0 で押した時刻から数えます。</span></span><span class="nowrap"><input class="num" type="number" min="0" max="60" step="1" id="optWorkLag"> 分</span></label>
+                <label class="toggle"><span>勤務時間<span class="sub-text">実勤務時間がこの時間に達すると黄色で表示します。</span></span><input class="num" type="time" id="optWorkTarget"></label>
+                <label class="toggle"><span>昼休み（この間は計測を止める）<span class="sub-text">昼休み中は、数値を灰色で表示します。</span></span><span><input class="num" type="time" id="optWorkLunchStart"> 〜 <input class="num" type="time" id="optWorkLunchEnd"></span></label>
+                <label class="toggle"><span>赤く表示する時刻<span class="sub-text">勤務開始日のこの時刻以降は、赤で表示します（黄色より優先）。</span></span><input class="num" type="time" id="optWorkRed"></label>
+                <div class="note err" id="workErr" role="alert" hidden></div>
             </div>
         </section>
 
@@ -313,10 +325,10 @@
         const $ = function(id){ return document.getElementById(id); };
 
         const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number', zoom: 100,
-            hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai'] };
+            hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'], workTimer: null };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
-        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', disk: 'Disk', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量' };
+        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', disk: 'Disk', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量', work: '勤務時間' };
 
         // こちらで設定を変える操作の最初に呼ぶ。読み込み中の古い結果を捨てるための版番号（reloadAll）。
         let rev = 0;
@@ -348,6 +360,7 @@
             $('optTransparent').checked = !!settings.transparent;
             $('optPowerMode').checked = !!settings.powerMode;
             renderOrderList();
+            renderWork();
             renderAI();
             renderShortcuts();
             renderSkinState();
@@ -604,6 +617,44 @@
             apiFetch('/api/setoption?key=powerMode&value=' + (settings.powerMode ? 'true' : 'false')).then(changed).catch(function(){});
         });
 
+        // ---------- 勤務時間タイマー ----------
+        function clockText(min){ return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
+        // 入力中の欄は上書きしない（フォーカスを得たときの読み直しで、打っている途中の値が消えないように）
+        function setIfIdle(id, v, force){ const el = $(id); if (force || document.activeElement !== el) el.value = v; }
+        function renderWork(force){
+            const w = settings.workTimer;
+            if (!w) return;
+            $('optWorkFloor').checked = !!w.showFloor;
+            setIfIdle('optWorkLag', w.startLagMinutes, force);
+            setIfIdle('optWorkTarget', clockText(w.targetMinutes), force);
+            setIfIdle('optWorkLunchStart', w.lunchStart, force);
+            setIfIdle('optWorkLunchEnd', w.lunchEnd, force);
+            setIfIdle('optWorkRed', w.redAfter, force);
+        }
+        function showWorkErr(msg){ $('workErr').textContent = msg; $('workErr').hidden = !msg; }
+        // 保存に失敗したら、画面をサーバーの値に戻してエラーを見せる（範囲外・昼休みの前後が逆など）
+        async function setWorkOption(key, val){
+            touch();
+            let ok = false;
+            try {
+                const r = await apiFetch('/api/setoption?key=' + key + '&value=' + encodeURIComponent(val), { method: 'POST' });
+                if (r.ok) { ok = true; showWorkErr(''); changed(); }
+                else showWorkErr('設定できません: ' + (await r.text()).trim());
+            } catch (e) { showWorkErr('通信に失敗しました'); }
+            await reloadAll();
+            if (!ok) renderWork(true);
+        }
+        $('optWorkFloor').addEventListener('change', function(){ setWorkOption('workFloor', this.checked ? 'true' : 'false'); });
+        $('optWorkLag').addEventListener('change', function(){ setWorkOption('workLag', String(Math.round(Number(this.value) || 0))); });
+        $('optWorkTarget').addEventListener('change', function(){ if (this.value) setWorkOption('workTarget', this.value); else renderWork(); });
+        $('optWorkRed').addEventListener('change', function(){ if (this.value) setWorkOption('workRed', this.value); else renderWork(); });
+        ['optWorkLunchStart', 'optWorkLunchEnd'].forEach(function(id){
+            $(id).addEventListener('change', function(){
+                const a = $('optWorkLunchStart').value, b = $('optWorkLunchEnd').value;
+                if (a && b) setWorkOption('workLunch', a + '-' + b); else renderWork();
+            });
+        });
+
         // ---------- AI 使用量 ----------
         function aiPost(path, obj){
             return apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj || {}) });
@@ -777,6 +828,7 @@
             if (typeof s.zoom === 'number') settings.zoom = s.zoom;
             if (s.hidden) Object.assign(settings.hidden, s.hidden);
             if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
+            if (s.workTimer) settings.workTimer = s.workTimer;
         }
         async function fetchJSON(url){
             try { const r = await apiFetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; }

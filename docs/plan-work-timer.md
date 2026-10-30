@@ -2,7 +2,7 @@
 
 - ブランチ: `ShuheiKonno/勤務時間`（ワークツリー。ベース v2.7.0 / `78f1155`）
 - モック: [`mockup-work-timer.html`](mockup-work-timer.html)（実寸。計算も動く。ユーザー確認済み）
-- ステータス: 計画とモックを 2026-10-31 に確定。実装はこれから。
+- ステータス: 計画とモックを 2026-10-31 に確定。T1〜T5 は 2026-10-31 に実装済み（`go vet` / `go test ./...` / `golangci-lint` は通過）。T6 は一部未了（下記「未検証」）。
 
 ## 決定事項（2026-10-31、ユーザー確認済み）
 
@@ -38,14 +38,20 @@
 
 ## 作業ステップ
 
-- [ ] T1 `config.go` と `worktimer.go`：設定の型・既定値・検証・計算の純関数、`worktimer_test.go`
-- [ ] T2 `server.go` / `main.go`：`/api/worktimer`、`setoption` のキー、`/api/settings`、`SystemData.WorkTimer`、ハンドラのテスト
-- [ ] T3 `ui/index.html`：区画、操作、色、コンパクト、高さ調整
-- [ ] T4 `ui/settings.html`：区画一覧と設定カード
-- [ ] T5 スキンの確認、`docs/skin-spec.md`、README
+- [x] T1 `config.go` と `worktimer.go`：設定の型・既定値・検証・計算の純関数、`worktimer_test.go`
+- [x] T2 `server.go` / `main.go`：`/api/worktimer`、`setoption` のキー、`/api/settings`、`SystemData.WorkTimer`、ハンドラのテスト
+- [x] T3 `ui/index.html`：区画、操作、色、コンパクト、高さ調整
+- [x] T4 `ui/settings.html`：区画一覧と設定カード
+- [x] T5 スキンの確認、`docs/skin-spec.md`、README
 - [ ] T6 `go vet` / `go test` / `go test -race` / `golangci-lint`、実機確認
+
+## 検証結果（2026-10-31）
+
+- 純関数・操作・ハンドラ・設定の検証は `worktimer_test.go`（境界値: 7:44/7:45、21:59/22:00、昼休みの前・中・後、日付またぎ、24 時間、補正 0/3 分）。
+- ブラウザ（テスト用に隔離した設定で起動した exe の `/` と `/settings`）で、計測中・昼休み中（灰色）・黄・赤・終了後・切り下げ OFF・ライトテーマの表示、組み込み 4 スキン、設定ページの入力欄の配置を目視確認した。サーバーの状態を変えるクリック操作（開始・終了・微調整・手入力）は、ブラウザからは行っていない。
 
 ## 未検証
 
-- 実機での操作感（ボタン、手入力、微調整、コンパクト、高さの自動調整）
-- 組み込み 4 スキンでの見た目
+- `CGO_ENABLED=1 go test -race ./...`（この環境に gcc が無い。CI で実行される）
+- 実機（WebView2 のウィンドウ）での操作感: ボタン、手入力、微調整、コンパクトへの切替、高さの自動調整、ドラッグとの干渉、設定ウィンドウとの同期
+- 再起動をまたいだ継続、日付またぎ・スリープ復帰の挙動
