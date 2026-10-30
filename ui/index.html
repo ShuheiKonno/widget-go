@@ -1377,13 +1377,15 @@
             if (lastWork) applyWorkTimer(lastWork);
         }
         let workCommitting = false;
-        async function commitWorkStart(){
+        // fromBlur: フォーカスが外れての確定。失敗したら編集を閉じて元の表示に戻し、エラーだけを残す
+        // （フォーカスのない入力欄を残さない）。Enter での確定は、失敗したら欄を残して打ち直せるようにする。
+        async function commitWorkStart(fromBlur){
             const input = document.getElementById('work-start-input');
             if (workCommitting || !input.value) return;
             workCommitting = true;
             try {
                 const ok = await workAction('setstart', input.value);
-                if (ok) setWorkEditing(false);   // 失敗したときは入力欄を残して、エラーを見せる
+                if (ok || fromBlur) setWorkEditing(false);
             } finally { workCommitting = false; }
         }
         document.getElementById('workSection').addEventListener('click', function(e){
@@ -1405,12 +1407,12 @@
             // そのため確定は Enter と、値を変えてフォーカスが外れたときだけにする。Escape で取り消す。
             input.addEventListener('keydown', function(e){
                 e.stopPropagation();
-                if (e.key === 'Enter') { e.preventDefault(); commitWorkStart(); }
+                if (e.key === 'Enter') { e.preventDefault(); commitWorkStart(false); }
                 else if (e.key === 'Escape') { showWorkErr(''); setWorkEditing(false); }
             });
             input.addEventListener('blur', function(){
                 if (!workEditing || workCommitting) return;
-                if (input.value && input.value !== workEditInitial) commitWorkStart();
+                if (input.value && input.value !== workEditInitial) commitWorkStart(true);
                 else setWorkEditing(false);
             });
         })();
@@ -1784,7 +1786,7 @@
                 const key = [settings.hidden.work, t.targetMinutes, t.lunchStart, t.lunchEnd, t.redAfter, t.showFloor, t.startLagMinutes].join('|');
                 const workChanged = key !== workSettingsKey;
                 workSettingsKey = key;
-                if (!initial && workChanged) updateData();
+                if (!initial && workChanged) updateData().then(scheduleHeightAdjust);
             }
             scheduleHeightAdjust();
             // 区画の表示/非表示・並び順が変わると高さが変わるので、落ち着いてから位置とサイズを保存する
