@@ -210,6 +210,7 @@
         .disk-section .section-title, .disk-section .section-value { white-space:nowrap; }
         .disk-fill { background: var(--disk-fill-bg); }
         .disk-info, .disk-drives, .disk-io { display:flex; flex-direction:column; gap:3px; }
+        .disk-models { display:flex; flex-direction:column; }
         .disk-io { margin-top:4px; }
         .disk-info .wifi-row, .disk-io .wifi-row { gap:6px; }
         .disk-info .wifi-label, .disk-info .wifi-value, .disk-io .wifi-label, .disk-io .wifi-value { white-space:nowrap; }
@@ -410,7 +411,10 @@
                     <div class="section-header"><span class="section-icon">💽</span><span class="section-title">Disk</span><span class="section-value" id="disk-percent">---</span><button class="chev" data-sec="disk" title="折りたたむ">▼</button></div>
                     <div class="disk-body">
                         <div class="progress-bar disk-progress"><div class="progress-fill disk-fill" id="disk-bar" style="width:0%"></div></div>
-                        <div class="disk-info"><div class="disk-drives" id="disk-drives"></div></div>
+                        <div class="disk-info">
+                            <div class="disk-models" id="disk-models"></div>
+                            <div class="disk-drives" id="disk-drives"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="flip-face flip-back">
@@ -1642,7 +1646,7 @@
         // I/O の履歴（読み取り r / 書き込み w、バイト/秒）。Network と同じ直近 60 サンプルを、
         // 表の面を見ている間や数値表示の間も貯める（反転したときにすぐ線が出る）。
         const diskHistory = [];
-        // 見えているドライブ構成（表示 + ドライブ数 + I/O の見せ方）。変わると高さが変わるので測り直す。
+        // 見えているドライブ構成（表示 + ドライブ数 + I/O の見せ方 + モデル名の行数）。変わると高さが変わるので測り直す。
         let lastDiskKey = '';
         // 裏面を見ていて、グラフ表示のときだけ描く
         function redrawDiskGraph(){
@@ -1674,6 +1678,22 @@
                 const pct = total > 0 ? Math.min(100, used * 100 / total) : null;
                 document.getElementById('disk-percent').textContent = pct === null ? '---' : Math.round(pct) + '%';
                 document.getElementById('disk-bar').style.width = (pct === null ? 0 : pct).toFixed(1) + '%';
+                // モデル名（物理ディスクの製品名）。ドライブごとの重複は 1 つにまとめ、1 つにつき 1 行。
+                // 構成が変わったときだけ作り直す。取れなければ行ごと無し。
+                const models = [];
+                drives.forEach(function(d){ if (d.Model && models.indexOf(d.Model) < 0) models.push(d.Model); });
+                const modelBox = document.getElementById('disk-models');
+                if (modelBox.dataset.models !== models.join('\n')) {
+                    modelBox.dataset.models = models.join('\n');
+                    modelBox.textContent = '';
+                    models.forEach(function(m){
+                        const row = document.createElement('div');
+                        row.className = 'model-name';
+                        row.textContent = m;
+                        row.title = m;
+                        modelBox.appendChild(row);
+                    });
+                }
                 const box = document.getElementById('disk-drives');
                 // 構成（ドライブ文字）が変わったときだけ行を作り直し、普段は値の書き換えだけにする
                 const letters = drives.map(function(d){ return d.Letter; }).join(',');
@@ -1707,7 +1727,7 @@
                 document.getElementById('disk-write-val').textContent = wr;
                 if (fresh) redrawDiskGraph();
             }
-            const key = show ? 'D' + drives.length + (graph ? 'g' : 'n') : '-';
+            const key = show ? 'D' + drives.length + (graph ? 'g' : 'n') + 'm' + document.getElementById('disk-models').children.length : '-';
             if (key !== lastDiskKey) {
                 const first = lastDiskKey === '';
                 lastDiskKey = key;

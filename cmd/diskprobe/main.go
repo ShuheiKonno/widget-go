@@ -21,7 +21,7 @@ func main() {
 	duration := flag.Duration("duration", 10*time.Second, "run duration (0: until interrupted)")
 	flag.Parse()
 	for _, d := range sysinfo.GetDrives() {
-		fmt.Printf("%s used=%d total=%d (%.1f%%)\n", d.Letter, d.Used, d.Total, d.UsedPercent)
+		fmt.Printf("%s used=%d total=%d (%.1f%%) model=%q\n", d.Letter, d.Used, d.Total, d.UsedPercent, d.Model)
 	}
 	sysinfo.InitDiskIO()
 	start := time.Now()

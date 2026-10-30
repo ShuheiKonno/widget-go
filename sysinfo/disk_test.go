@@ -72,3 +72,68 @@ func TestExtentsTotalLength(t *testing.T) {
 		t.Errorf("空: %d", got)
 	}
 }
+
+func TestExtentsDiskNumbers(t *testing.T) {
+	// 件数(4) + 詰め物(4) の後ろに、1 件 24 バイトの DISK_EXTENT（先頭 4 バイトが DiskNumber）が続く
+	buf := make([]byte, 8+3*24)
+	binary.LittleEndian.PutUint32(buf, 3)
+	binary.LittleEndian.PutUint32(buf[8:], 2)
+	binary.LittleEndian.PutUint32(buf[8+24:], 0)
+	binary.LittleEndian.PutUint32(buf[8+48:], 2) // 同じディスクの別領域は 1 つにまとめる
+	got := extentsDiskNumbers(buf)
+	if len(got) != 2 || got[0] != 2 || got[1] != 0 {
+		t.Errorf("extentsDiskNumbers = %v, want [2 0]", got)
+	}
+	// 件数がバッファより大きくても、読める分だけ返す
+	short := make([]byte, 8+24)
+	binary.LittleEndian.PutUint32(short, 5)
+	binary.LittleEndian.PutUint32(short[8:], 7)
+	if got := extentsDiskNumbers(short); len(got) != 1 || got[0] != 7 {
+		t.Errorf("バッファ不足: %v", got)
+	}
+	if got := extentsDiskNumbers(nil); got != nil {
+		t.Errorf("空: %v", got)
+	}
+}
+
+// descriptor は STORAGE_DEVICE_DESCRIPTOR の、ベンダー（12）と製品（16）のオフセットだけを持つ最小の buffer を作る。
+func descriptor(vendor, product string) []byte {
+	buf := make([]byte, 40)
+	put := func(field int, s string) {
+		if s == "" {
+			return
+		}
+		binary.LittleEndian.PutUint32(buf[field:], uint32(len(buf)))
+		buf = append(buf, s...)
+		buf = append(buf, 0)
+	}
+	put(12, vendor)
+	put(16, product)
+	return buf
+}
+
+func TestModelFromDescriptor(t *testing.T) {
+	cases := []struct{ vendor, product, want string }{
+		{"", "Samsung SSD 980 PRO 1TB", "Samsung SSD 980 PRO 1TB"},             // NVMe: ベンダー無し
+		{"ATA     ", "Samsung SSD 860 EVO 500GB", "Samsung SSD 860 EVO 500GB"}, // SATA: バス名はベンダーではない
+		{"NVMe", "KXG60ZNV512G KIOXIA", "KXG60ZNV512G KIOXIA"},                 // 同上
+		{"WDC", "WD10EZEX-00BN5A0", "WDC WD10EZEX-00BN5A0"},                    // 実ベンダーは付ける
+		{"Samsung", "Samsung Portable SSD T7", "Samsung Portable SSD T7"},      // 製品名が名乗っているなら重ねない
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		if got := modelFromDescriptor(descriptor(c.vendor, c.product)); got != c.want {
+			t.Errorf("modelFromDescriptor(%q, %q) = %q, want %q", c.vendor, c.product, got, c.want)
+		}
+	}
+	if got := modelFromDescriptor(nil); got != "" {
+		t.Errorf("空の buffer: %q", got)
+	}
+	// オフセットが buffer の外を指していても落ちない
+	bad := make([]byte, 40)
+	binary.LittleEndian.PutUint32(bad[12:], 9999)
+	binary.LittleEndian.PutUint32(bad[16:], 9999)
+	if got := modelFromDescriptor(bad); got != "" {
+		t.Errorf("範囲外のオフセット: %q", got)
+	}
+}
