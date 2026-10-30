@@ -133,7 +133,10 @@
         .cpu-model { margin-bottom: 2px; }
         .npu-model { margin-top: 4px; }
         .model-name.is-empty { display: none; }
-        .progress-bar { position: relative; height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+        /* will-change: transform は、画面の拡大率が 100% 以外のとき、バーの太さが区画の縦位置の小数部分で
+           1px ずれるのを防ぐ（125% で 6px は 7.5px になり、位置しだいで 7px か 8px に丸められて、
+           Disk だけ他より細く見えた）。バーを自前のレイヤーにして、すべて同じ太さで描く。 */
+        .progress-bar { position: relative; height: 5px; background: var(--bar-track); border-radius: 3px; overflow: hidden; margin-bottom: 6px; will-change: transform; }
         .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
         .cpu-fill { background: linear-gradient(90deg, #8a9cff, #b07cff); }
         .memory-fill { background: linear-gradient(90deg, #ffa3ff, #ff7a8a); }
