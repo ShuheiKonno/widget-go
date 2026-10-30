@@ -757,29 +757,25 @@
         // Wi-Fi ⇔ ネットワークグラフ の反転トグル
         // ドラッグとクリックを区別するため、mousedown からの移動量で判定する
         let mouseDownX = 0, mouseDownY = 0, movedSinceDown = false;
+        // 表裏の反転（Wi-Fi ⇔ ネットワークグラフ、Disk ⇔ I/O）。区画のどこをクリックしても反転する。
+        // redraw は裏面のグラフを描く関数。
+        function bindFlip(sec, redraw) {
+            sec.addEventListener('click', function(e) {
+                if (movedSinceDown) return;
+                e.stopPropagation();
+                sec.classList.toggle('flipped');
+                if (sec.classList.contains('flipped')) {
+                    // フリップ直後はキャンバスの clientWidth が 0 のことがあるので
+                    // アニメーション完了後も含めて二度描画しておく
+                    setTimeout(redraw, 30);
+                    setTimeout(redraw, 600);
+                }
+            });
+        }
         const wifiSection = document.getElementById('wifiSection');
-        wifiSection.addEventListener('click', function(e) {
-            if (movedSinceDown) return;
-            e.stopPropagation();
-            wifiSection.classList.toggle('flipped');
-            if (wifiSection.classList.contains('flipped')) {
-                // フリップ直後はキャンバスの clientWidth が 0 のことがあるので
-                // アニメーション完了後も含めて二度描画しておく
-                setTimeout(drawNetGraph, 30);
-                setTimeout(drawNetGraph, 600);
-            }
-        });
-        // Disk ⇔ I/O の反転。Wi-Fi と同じく区画のどこをクリックしても反転する
+        bindFlip(wifiSection, drawNetGraph);
         const diskSection = document.getElementById('diskSection');
-        diskSection.addEventListener('click', function(e) {
-            if (movedSinceDown) return;
-            e.stopPropagation();
-            diskSection.classList.toggle('flipped');
-            if (diskSection.classList.contains('flipped')) {
-                setTimeout(redrawDiskGraph, 30);
-                setTimeout(redrawDiskGraph, 600);
-            }
-        });
+        bindFlip(diskSection, redrawDiskGraph);
 
         // Drag functionality
         let isDragging = false;
@@ -1668,8 +1664,10 @@
             const graph = settings.diskIoView === 'graph';
             if (fresh) {
                 if (!lastDisk) diskHistory.length = 0;   // 収集が止まると間が空くので捨てる
-                else if (io && (io.ReadBps != null || io.WriteBps != null)) {
-                    diskHistory.push({ r: Number(io.ReadBps) || 0, w: Number(io.WriteBps) || 0 });
+                else {
+                    // 取れなかった周期（ベースライン直後や PDH の一時的な失敗）も 0 として積む。積まないと、
+                    // グラフが直前の値のまま止まり（数値は --- になる）、時間軸も詰まってしまう。
+                    diskHistory.push({ r: Number(io && io.ReadBps) || 0, w: Number(io && io.WriteBps) || 0 });
                     if (diskHistory.length > netMaxSamples) diskHistory.shift();
                 }
             }
