@@ -1288,6 +1288,8 @@
         let workEditing = false;
         let workErrTimer = 0;
         let workLayoutKey = '';
+        let workSettingsKey = '';
+        let workEditInitial = '';
         function fmtWorkMin(m){ return Math.floor(m / 60) + ':' + String(m % 60).padStart(2, '0'); }
         function showWorkErr(msg){
             const el = document.getElementById('work-err');
@@ -1369,6 +1371,7 @@
                 document.getElementById('work-nudge').hidden = true;
                 const d = new Date();
                 input.value = (lastWork && lastWork.start) || (String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'));
+                workEditInitial = input.value;
                 input.focus();
             }
             if (lastWork) applyWorkTimer(lastWork);
@@ -1398,14 +1401,18 @@
         });
         (function(){
             const input = document.getElementById('work-start-input');
-            input.addEventListener('change', commitWorkStart);
+            // <input type="time"> は、時の 1 桁を打っただけで値が有効になり change が発火する（打ちかけで確定してしまう）。
+            // そのため確定は Enter と、値を変えてフォーカスが外れたときだけにする。Escape で取り消す。
             input.addEventListener('keydown', function(e){
                 e.stopPropagation();
                 if (e.key === 'Enter') { e.preventDefault(); commitWorkStart(); }
                 else if (e.key === 'Escape') { showWorkErr(''); setWorkEditing(false); }
             });
-            // フォーカスが外れたら編集をやめる（確定の処理中は残す）
-            input.addEventListener('blur', function(){ if (!workCommitting) setWorkEditing(false); });
+            input.addEventListener('blur', function(){
+                if (!workEditing || workCommitting) return;
+                if (input.value && input.value !== workEditInitial) commitWorkStart();
+                else setWorkEditing(false);
+            });
         })();
 
         // ============ AI 使用量（Claude / Codex）============
@@ -1770,8 +1777,15 @@
             }
             applyCompactBtn();
             applyCollapsed();
-            // 勤務時間の設定（補正・昼休み・表示）や表示/非表示の変更は、次の周期を待たずに描き直す
-            if (!initial && s.workTimer) updateData();
+            // 勤務時間の設定（補正・昼休み・表示）や表示/非表示が変わったときだけ、次の周期を待たずに描き直す。
+            // 無関係な設定変更で呼ぶと、Network / Disk のグラフ履歴に同じサンプルが二重に積まれる。
+            if (s.workTimer) {
+                const t = s.workTimer;
+                const key = [settings.hidden.work, t.targetMinutes, t.lunchStart, t.lunchEnd, t.redAfter, t.showFloor, t.startLagMinutes].join('|');
+                const workChanged = key !== workSettingsKey;
+                workSettingsKey = key;
+                if (!initial && workChanged) updateData();
+            }
             scheduleHeightAdjust();
             // 区画の表示/非表示・並び順が変わると高さが変わるので、落ち着いてから位置とサイズを保存する
             if (!initial) setTimeout(function(){ apiFetch('/api/persistwindow').catch(function(){}); }, 300);

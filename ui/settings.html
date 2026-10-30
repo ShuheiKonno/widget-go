@@ -227,7 +227,7 @@
                 <label class="toggle"><span>15 分切り下げの時間も表示する<span class="sub-text">OFF にすると、実勤務時間だけを表示します（例 7:52）。</span></span><input type="checkbox" id="optWorkFloor"></label>
                 <label class="toggle"><span>勤務開始の補正（打刻から押すまでの遅れ）<span class="sub-text">「勤務開始」を押した時刻から、この分数を引いた時刻を開始時刻にします。0 で押した時刻から数えます。</span></span><span class="nowrap"><input class="num" type="number" min="0" max="60" step="1" id="optWorkLag"> 分</span></label>
                 <label class="toggle"><span>勤務時間<span class="sub-text">実勤務時間がこの時間に達すると黄色で表示します。</span></span><input class="num" type="time" id="optWorkTarget"></label>
-                <label class="toggle"><span>昼休み（この間は計測を止める）<span class="sub-text">昼休み中は、数値を灰色で表示します。</span></span><span><input class="num" type="time" id="optWorkLunchStart"> 〜 <input class="num" type="time" id="optWorkLunchEnd"></span></label>
+                <label class="toggle"><span>昼休み（この間は計測を止める）<span class="sub-text">昼休み中は、数値を灰色で表示します。</span></span><span id="workLunchPair"><input class="num" type="time" id="optWorkLunchStart"> 〜 <input class="num" type="time" id="optWorkLunchEnd"></span></label>
                 <label class="toggle"><span>赤く表示する時刻<span class="sub-text">勤務開始日のこの時刻以降は、赤で表示します（黄色より優先）。</span></span><input class="num" type="time" id="optWorkRed"></label>
                 <div class="note err" id="workErr" role="alert" hidden></div>
             </div>
@@ -646,14 +646,27 @@
         }
         $('optWorkFloor').addEventListener('change', function(){ setWorkOption('workFloor', this.checked ? 'true' : 'false'); });
         $('optWorkLag').addEventListener('change', function(){ setWorkOption('workLag', String(Math.round(Number(this.value) || 0))); });
-        $('optWorkTarget').addEventListener('change', function(){ if (this.value) setWorkOption('workTarget', this.value); else renderWork(); });
-        $('optWorkRed').addEventListener('change', function(){ if (this.value) setWorkOption('workRed', this.value); else renderWork(); });
-        ['optWorkLunchStart', 'optWorkLunchEnd'].forEach(function(id){
-            $(id).addEventListener('change', function(){
-                const a = $('optWorkLunchStart').value, b = $('optWorkLunchEnd').value;
-                if (a && b) setWorkOption('workLunch', a + '-' + b); else renderWork();
-            });
-        });
+        // <input type="time"> は、時の 1 桁を打っただけで値が有効になり change が発火する。打ちかけで保存すると
+        // 「12:00-12:00」のような途中の値が拒否され、入力中の欄が書き戻されるので、保存は Enter と、
+        // 欄（昼休みは 2 つの欄の組）からフォーカスが外れたときだけにする。値が変わっていなければ何もしない。
+        function bindWorkCommit(root, read, send){
+            let initial = '';
+            function commit(){
+                const v = read();
+                if (v === initial) return;
+                initial = v;
+                if (v) send(v); else renderWork(true);   // 打ちかけ（空）のまま離れたら、元の値に戻す
+            }
+            root.addEventListener('focusin', function(e){ if (!root.contains(e.relatedTarget)) initial = read(); });
+            root.addEventListener('focusout', function(e){ if (!root.contains(e.relatedTarget)) commit(); });
+            root.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+        }
+        bindWorkCommit($('optWorkTarget'), function(){ return $('optWorkTarget').value; }, function(v){ setWorkOption('workTarget', v); });
+        bindWorkCommit($('optWorkRed'), function(){ return $('optWorkRed').value; }, function(v){ setWorkOption('workRed', v); });
+        bindWorkCommit($('workLunchPair'), function(){
+            const a = $('optWorkLunchStart').value, b = $('optWorkLunchEnd').value;
+            return a && b ? a + '-' + b : '';
+        }, function(v){ setWorkOption('workLunch', v); });
 
         // ---------- AI 使用量 ----------
         function aiPost(path, obj){
