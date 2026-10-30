@@ -36,6 +36,27 @@ func TestPlaceBeside(t *testing.T) {
 	}
 }
 
+func TestFitWindowHeight(t *testing.T) {
+	cases := []struct {
+		name       string
+		cssH       int32
+		scale      float64
+		ncH        int32
+		minH, maxH int32
+		want       int32
+	}{
+		{"内容 + 枠", 280, 1.0, 40, 160, 350, 320},
+		{"拡大率をかける", 280, 1.25, 50, 200, 438, 400},
+		{"上限を超えない", 400, 1.0, 40, 160, 350, 350},
+		{"下限を割らない", 50, 1.0, 40, 160, 350, 160},
+	}
+	for _, c := range cases {
+		if got := fitWindowHeight(c.cssH, c.scale, c.ncH, c.minH, c.maxH); got != c.want {
+			t.Errorf("%s: got %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 // 勤務時間の区画の断片は、本体と入力ウィンドウの両方に差し込まれ、置き換え前の目印が残らない。
 func TestWorkPartsExpanded(t *testing.T) {
 	const token = "tok123"

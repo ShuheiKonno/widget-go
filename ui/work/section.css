@@ -28,6 +28,11 @@
         .wk-btn:hover { background:var(--btn-bg-hover); }
         .wk-btn.primary { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
         .wk-btn.primary:hover { background:#4a90ef; }
+        /* クリックできるところは、マウスオーバーで指（pointer）にする。本体の #dragArea は cursor:grab なので、明示が要る */
+        .work-section [data-wk], .wk-time::-webkit-calendar-picker-indicator { cursor:pointer; }
+        /* コンパクトは区画そのものがボタン（クリックで入力ウィンドウを開く）。ドラッグ中だけは、移動の手（grabbing）のまま */
+        .compact .work-section { cursor:pointer; }
+        #dragArea.dragging.compact .work-section { cursor:grabbing; }
         /* コンパクトは見出し 1 行だけ（アイコンと値）。タイトルは AI 使用量と同じく出さない */
         .compact .work-section .sec-body { display:none; }
         .compact .work-section .section-title { display:none; }

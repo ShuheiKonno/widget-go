@@ -59,8 +59,10 @@
     </style>
 </head>
 <body>
-    __WORK_HTML__
-    <p class="hint">Esc で閉じます。開始時刻は、クリックして入力し、Enter で確定します。</p>
+    <div id="wrap">
+        __WORK_HTML__
+        <p class="hint">Esc で閉じます。開始時刻は、クリックして入力し、Enter で確定します。</p>
+    </div>
     <script nonce="__WIDGET_TOKEN__">
         // 全 /api 呼び出しに付与する CSRF トークン（Go 側が起動毎に生成し埋め込む）。
         const WIDGET_TOKEN = '__WIDGET_TOKEN__';
@@ -69,8 +71,16 @@
             opts.headers = Object.assign({}, opts.headers, { 'X-Widget-Token': WIDGET_TOKEN });
             return fetch(url, opts);
         }
-        // 固定の大きさのウィンドウなので、行の増減で高さを測り直す必要はない
-        const workHooks = { heightChanged: function(){} };
+        // ウィンドウの高さは、内容に合わせる（余白を残さない）。行（補正の注記・チップ・エラー・入力欄）が増減したら、
+        // 内容の高さ（CSS px。body の上下の余白 12px ずつを含む）を Go 側へ送って、ウィンドウを合わせる。
+        let lastFit = 0;
+        function fitWindow(){
+            const h = Math.ceil(document.getElementById('wrap').getBoundingClientRect().height) + 24;
+            if (h === lastFit) return Promise.resolve();
+            lastFit = h;
+            return apiFetch('/api/resizeworktimer?h=' + h).catch(function(){});
+        }
+        const workHooks = { heightChanged: function(){ setTimeout(fitWindow, 30); } };
         __WORK_JS__
 
         // ---------- テーマ（設定ウィンドウと同じ。"system" は OS の設定に追従）----------
@@ -94,6 +104,7 @@
                 const d = await (await apiFetch('/api/system')).json();
                 applyWorkTimer(d.WorkTimer);
             } catch (e) {}
+            await fitWindow();   // 見せる前に、内容の高さに合わせる
             apiFetch('/api/worktimerready').catch(function(){});
         })();
         // 本体や設定ウィンドウでの変更（時刻・設定・昼休みの切替）にも追従する

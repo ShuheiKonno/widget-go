@@ -155,6 +155,16 @@ func newServerMux(token string) *http.ServeMux {
 		workWin.closeWindow()
 		w.WriteHeader(http.StatusOK)
 	})
+	// 入力ウィンドウの高さを、ページが測った内容の高さ（CSS px）に合わせる。
+	mux.HandleFunc("/api/resizeworktimer", func(w http.ResponseWriter, r *http.Request) {
+		h, err := strconv.Atoi(r.URL.Query().Get("h"))
+		if err != nil || h <= 0 || h > 4000 {
+			http.Error(w, "invalid h", http.StatusBadRequest)
+			return
+		}
+		resizeWorkWindow(int32(h))
+		w.WriteHeader(http.StatusOK)
+	})
 	// 勤務時間ページの初回の描画が済んだ合図。非表示で作ったウィンドウを見せる。
 	mux.HandleFunc("/api/worktimerready", func(w http.ResponseWriter, r *http.Request) {
 		workWin.reveal()
