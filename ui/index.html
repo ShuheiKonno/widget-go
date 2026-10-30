@@ -211,6 +211,8 @@
         .disk-fill { background: var(--disk-fill-bg); }
         .disk-info, .disk-drives, .disk-io { display:flex; flex-direction:column; gap:3px; }
         .disk-models { display:flex; flex-direction:column; }
+        /* 長いモデル名で区画が広がらないよう、grid のトラックを区画の幅に抑える（折り返さない .model-name は省略表示になる） */
+        .disk-section .flip-card { grid-template-columns: minmax(0, 1fr); }
         .disk-io { margin-top:4px; }
         .disk-info .wifi-row, .disk-io .wifi-row { gap:6px; }
         .disk-info .wifi-label, .disk-info .wifi-value, .disk-io .wifi-label, .disk-io .wifi-value { white-space:nowrap; }
