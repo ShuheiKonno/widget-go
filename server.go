@@ -395,6 +395,9 @@ func newServerMux(token string) *http.ServeMux {
 		return info
 	}))
 
+	// 勤務時間タイマーの操作（開始・終了・リセット・開始時刻の変更・1 分調整）。応答は操作後のスナップショット。
+	mux.HandleFunc("/api/worktimer", workTimerActionHandler)
+
 	// theme / coreBase / netUnit などフロント向け設定を保存する。
 	// hide.gpu / hide.npu は Go 側の GPU/NPU 収集の ON/OFF にも使う。
 	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
@@ -453,8 +456,14 @@ func newServerMux(token string) *http.ServeMux {
 			}
 			refreshPowerMode()
 			kickTray()
+		case "workTarget", "workLunch", "workRed", "workFloor", "workLag":
+			// 勤務時間タイマーの設定（worktimer.go の setWorkTimerOption に検証がある）
+			if err := setWorkTimerOption(key, val); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		case "order":
-			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai を並べ替えたもの
+			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai,work を並べ替えたもの
 			if err := setOrder(val); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -524,6 +533,7 @@ func newServerMux(token string) *http.ServeMux {
 			"collapsed":   c.Collapsed,
 			"hidden":      c.Hidden,
 			"order":       c.Order,
+			"workTimer":   c.WorkTimer,
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。

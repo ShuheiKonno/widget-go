@@ -61,6 +61,8 @@ type Config struct {
 	PowerModeEnabled bool `json:"powerModeEnabled"`
 	// AI は Claude / Codex の使用量モニター（旧 ClaudeMonitor）の設定。既定は OFF。
 	AI aiusage.Settings `json:"ai"`
+	// WorkTimer は勤務時間タイマー（区画 work）の設定と、計測中の状態。区画の表示は Hidden.Work。
+	WorkTimer WorkTimerConfig `json:"workTimer"`
 	// Collapsed は各区画の折りたたみ状態（D10）。
 	Collapsed CollapsedConfig `json:"collapsed"`
 	// Hidden は各区画の非表示設定。true が非表示。既定はすべて表示。
@@ -71,7 +73,7 @@ type Config struct {
 }
 
 // defaultOrder は区画の既定の表示順。区画名は CollapsedConfig / HiddenConfig と同じ。
-var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai"}
+var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work"}
 
 // normalizeOrder は保存された表示順を矯正する。未知・重複は捨て、欠けた区画は既定の順で末尾に足す。
 // 手編集や、区画が増えた将来のバージョンから戻ったときでも全区画が必ず含まれる。
@@ -129,6 +131,8 @@ type HiddenConfig struct {
 	GPU     bool `json:"gpu"`
 	NPU     bool `json:"npu"`
 	Network bool `json:"network"`
+	// Work は勤務時間タイマー。既定は非表示（defaultConfig）。
+	Work bool `json:"work"`
 }
 
 // field は区画名に対応するフィールドを返す。未知の名前は nil。
@@ -146,6 +150,8 @@ func (h *HiddenConfig) field(name string) *bool {
 		return &h.NPU
 	case "network":
 		return &h.Network
+	case "work":
+		return &h.Work
 	}
 	return nil
 }
@@ -155,7 +161,7 @@ func (h *HiddenConfig) field(name string) *bool {
 func (c *Config) syncShowGPU() { c.ShowGPU = !c.Hidden.GPU || !c.Hidden.NPU }
 
 // setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
-// network）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+// network / work）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setHidden(name, val string) error {
 	if val != "true" && val != "false" {
 		return fmt.Errorf("invalid hide value %q", val)
@@ -180,6 +186,7 @@ type CollapsedConfig struct {
 	NPU     bool `json:"npu"`
 	Network bool `json:"network"`
 	AI      bool `json:"ai"`
+	Work    bool `json:"work"`
 }
 
 // field は区画名に対応するフィールドを返す。未知の名前は nil。
@@ -199,12 +206,14 @@ func (c *CollapsedConfig) field(name string) *bool {
 		return &c.Network
 	case "ai":
 		return &c.AI
+	case "work":
+		return &c.Work
 	}
 	return nil
 }
 
 // setCollapsed は区画の折りたたみ状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
-// network / ai）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+// network / ai / work）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setCollapsed(name, val string) error {
 	if val != "true" && val != "false" {
 		return fmt.Errorf("invalid collapse value %q", val)
@@ -268,6 +277,9 @@ func defaultConfig() Config {
 	c.AI = aiusage.DefaultSettings()
 	// 区画は既定で展開。AI だけは既定で折りたたみ（D8）。旧 config にキーが無くても残る。
 	c.Collapsed.AI = true
+	// 勤務時間タイマーは既定で非表示（利用者が設定で ON にするまで出さない）。旧 config にキーが無くても残る。
+	c.Hidden.Work = true
+	c.WorkTimer = defaultWorkTimer()
 	c.Order = append([]string(nil), defaultOrder...)
 	c.IME = IMEConfig{
 		Enabled:     true,
@@ -296,6 +308,7 @@ func loadConfig() {
 	}
 	// 手編集や旧バージョンで範囲外・欠損になった値を安全な値へ矯正する。
 	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
+	tmp.WorkTimer = normalizeWorkTimer(tmp.WorkTimer)
 	// v2.0.1 以前は「GPU/NPU を表示」(showGPU) 1 つだけだった。OFF だった設定は両区画の非表示に引き継ぐ。
 	if !tmp.ShowGPU {
 		tmp.Hidden.GPU, tmp.Hidden.NPU = true, true
