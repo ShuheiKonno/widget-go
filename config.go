@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -49,6 +50,8 @@ type Config struct {
 	Skin        string    `json:"skin"`        // 空文字または "default" は現行デザイン
 	CoreBase    int       `json:"coreBase"`    // 0 | 1
 	NetUnit     string    `json:"netUnit"`     // "byte" | "bit"
+	DiskIOView  string    `json:"diskIoView"`  // Disk 区画の裏面（I/O）の見せ方。"number" | "graph"
+	Zoom        int       `json:"zoom"`        // 拡大率（%）。zoomSteps のどれか。既定 100
 	ShowGPU     bool      `json:"showGPU"`     // GPU/NPU の表示と収集
 	IME         IMEConfig `json:"ime"`
 	// PowerModeEnabled は電源モード（設定アプリの「電源モード」）の切替機能の ON/OFF。既定は OFF。
@@ -68,7 +71,7 @@ type Config struct {
 }
 
 // defaultOrder は区画の既定の表示順。区画名は CollapsedConfig / HiddenConfig と同じ。
-var defaultOrder = []string{"cpu", "memory", "gpu", "npu", "network", "ai"}
+var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai"}
 
 // normalizeOrder は保存された表示順を矯正する。未知・重複は捨て、欠けた区画は既定の順で末尾に足す。
 // 手編集や、区画が増えた将来のバージョンから戻ったときでも全区画が必ず含まれる。
@@ -86,9 +89,18 @@ func normalizeOrder(in []string) []string {
 		}
 	}
 	for _, n := range defaultOrder {
-		if !seen[n] {
-			out = append(out, n)
+		if seen[n] {
+			continue
 		}
+		// disk は v2.7 で足した区画。保存済みの順に無い場合は、末尾ではなくメモリの直後に入れる
+		// （容量系の区画をメモリの隣に置くのが自然で、AI の後ろに回ると見つけにくい）。
+		if n == "disk" {
+			if i := slices.Index(out, "memory"); i >= 0 {
+				out = slices.Insert(out, i+1, n)
+				continue
+			}
+		}
+		out = append(out, n)
 	}
 	return out
 }
@@ -113,6 +125,7 @@ func setOrder(val string) error {
 type HiddenConfig struct {
 	CPU     bool `json:"cpu"`
 	Memory  bool `json:"memory"`
+	Disk    bool `json:"disk"`
 	GPU     bool `json:"gpu"`
 	NPU     bool `json:"npu"`
 	Network bool `json:"network"`
@@ -125,6 +138,8 @@ func (h *HiddenConfig) field(name string) *bool {
 		return &h.CPU
 	case "memory":
 		return &h.Memory
+	case "disk":
+		return &h.Disk
 	case "gpu":
 		return &h.GPU
 	case "npu":
@@ -139,7 +154,7 @@ func (h *HiddenConfig) field(name string) *bool {
 // GPU と NPU の両方が非表示のときだけ収集を止める。
 func (c *Config) syncShowGPU() { c.ShowGPU = !c.Hidden.GPU || !c.Hidden.NPU }
 
-// setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / gpu / npu /
+// setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
 // network）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setHidden(name, val string) error {
 	if val != "true" && val != "false" {
@@ -160,6 +175,7 @@ func setHidden(name, val string) error {
 type CollapsedConfig struct {
 	CPU     bool `json:"cpu"`
 	Memory  bool `json:"memory"`
+	Disk    bool `json:"disk"`
 	GPU     bool `json:"gpu"`
 	NPU     bool `json:"npu"`
 	Network bool `json:"network"`
@@ -173,6 +189,8 @@ func (c *CollapsedConfig) field(name string) *bool {
 		return &c.CPU
 	case "memory":
 		return &c.Memory
+	case "disk":
+		return &c.Disk
 	case "gpu":
 		return &c.GPU
 	case "npu":
@@ -185,7 +203,7 @@ func (c *CollapsedConfig) field(name string) *bool {
 	return nil
 }
 
-// setCollapsed は区画の折りたたみ状態を保存する。name は許可リスト（cpu / memory / gpu / npu /
+// setCollapsed は区画の折りたたみ状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
 // network / ai）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setCollapsed(name, val string) error {
 	if val != "true" && val != "false" {
@@ -237,6 +255,8 @@ func defaultConfig() Config {
 	c.Theme = "system"
 	c.CoreBase = 0
 	c.NetUnit = "byte"
+	c.DiskIOView = "number" // キーが無い旧バージョンの config.json でも数値のまま残る
+	c.Zoom = defaultZoomPercent
 	// v1.8.0 以前の config.json にはキーが無い。既定値を先に入れておくと
 	// loadConfig の Unmarshal で上書きされず ON のまま残る。
 	c.ShowGPU = true

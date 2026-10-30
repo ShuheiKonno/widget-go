@@ -210,7 +210,8 @@ body[data-skin="orbital"] .progress-fill {
 body[data-skin="orbital"] .cpu-fill {
     background: var(--cpu-fill-grad);
 }
-body[data-skin="orbital"] .memory-fill {
+body[data-skin="orbital"] .memory-fill,
+body[data-skin="orbital"] .disk-fill {
     background: var(--mem-fill-grad);
 }
 body[data-skin="orbital"] .clock-fill:not(.clk-low):not(.clk-high) {

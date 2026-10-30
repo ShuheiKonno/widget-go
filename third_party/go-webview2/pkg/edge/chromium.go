@@ -4,6 +4,7 @@
 package edge
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -327,6 +328,22 @@ func (e *Chromium) GetSettings() (*ICoreWebViewSettings, error) {
 
 func (e *Chromium) GetController() *ICoreWebView2Controller {
 	return e.controller
+}
+
+// SetZoomFactor は WebView のズーム率（1.0 = 100%）を設定する（widget-go による追加）。UI スレッドから呼ぶこと。
+func (e *Chromium) SetZoomFactor(factor float64) error {
+	if e.controller == nil {
+		return errors.New("webview2: controller is not ready")
+	}
+	return e.controller.PutZoomFactor(factor)
+}
+
+// ZoomFactor は WebView のズーム率を読む（widget-go による追加）。
+func (e *Chromium) ZoomFactor() (float64, error) {
+	if e.controller == nil {
+		return 0, errors.New("webview2: controller is not ready")
+	}
+	return e.controller.GetZoomFactor()
 }
 
 func boolToInt(input bool) int {

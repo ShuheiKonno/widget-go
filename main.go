@@ -270,6 +270,8 @@ type SystemData struct {
 	Network  *sysinfo.NetworkInfo  `json:"Network"`
 	GPU      *sysinfo.GPUInfo      `json:"GPU"`
 	NPU      *sysinfo.NPUInfo      `json:"NPU"`
+	// Disk は固定ドライブの容量と Disk I/O。区画を非表示にしている間と、取得できないときは null。
+	Disk *sysinfo.DiskInfo `json:"Disk"`
 	// PowerMode は電源モード（設定アプリの「電源モード」）の状態。取得できない環境では null。
 	PowerMode *sysinfo.PowerModeInfo `json:"PowerMode"`
 	ViewMode  int                    `json:"ViewMode"`
@@ -288,14 +290,30 @@ var (
 	cachedGPU      *sysinfo.GPUInfo
 	cachedNPU      *sysinfo.NPUInfo
 	cachedPower    *sysinfo.PowerModeInfo
+	cachedDrives   []sysinfo.DriveInfo
+	cachedDiskIO   *sysinfo.DiskIOInfo
 )
+
+// showDisk は Disk 区画を表示しているか（Hidden.Disk の逆）。OFF の間は Disk の収集自体を止める。
+// showGPU と同じく、HTTP ハンドラと collector goroutine から並行に読み書きされる。
+var showDisk atomic.Bool
+
+// diskKick は Disk 区画を表示に戻したときに、容量の取得を次の周期を待たず即座に走らせる合図。
+var diskKick = make(chan struct{}, 1)
+
+// startupGeometrySettled は、起動時のジオメトリ復元（遅延再適用まで）が済んだかどうか。
+// 済むまでは persistCurrentWindowGeometry が何も保存しない。
+var startupGeometrySettled atomic.Bool
 
 // showGPU は「GPU/NPU を表示」設定の実行時状態。OFF の間は GPU/NPU の収集自体を止める。
 // HTTP ハンドラと collector goroutine から並行に読み書きされ、cacheMu の内外どちらからも
 // 読むのでロック順序の問題が起きない atomic で持つ。
 var showGPU atomic.Bool
 
-func init() { showGPU.Store(true) }
+func init() {
+	showGPU.Store(true)
+	showDisk.Store(true)
+}
 
 // ドラッグ開始時の状態（物理ピクセル）。
 // ドラッグ中の差分計算をすべてサーバー側で行い、
@@ -386,10 +404,57 @@ func getSystemData() SystemData {
 		Network:  cachedNet,
 		GPU:      cachedGPU,
 		NPU:      cachedNPU,
+		Disk:     diskSnapshotLocked(),
 		// 設定アプリなど外部での変更にも追従するため、2 秒周期の収集で更新する。
 		PowerMode: cachedPower,
 		ViewMode:  vm,
 	}
+}
+
+// diskSnapshotLocked はキャッシュから DiskInfo を組み立てる。cacheMu を保持して呼ぶこと。
+// 容量も I/O も無ければ nil（UI は区画ごと隠す）。
+func diskSnapshotLocked() *sysinfo.DiskInfo {
+	if !showDisk.Load() || (len(cachedDrives) == 0 && cachedDiskIO == nil) {
+		return nil
+	}
+	return &sysinfo.DiskInfo{Drives: cachedDrives, IO: cachedDiskIO}
+}
+
+// refreshDiskIO は Disk I/O を取得してキャッシュに反映する。
+// 区画が非表示の間は PDH クエリを閉じ、収集しない。
+func refreshDiskIO() {
+	if !showDisk.Load() {
+		sysinfo.CloseDiskIO()
+		clearDiskCache()
+		return
+	}
+	io := sysinfo.GetDiskIO()
+	cacheMu.Lock()
+	// 取得中に OFF にされた場合は、ハンドラがクリアしたキャッシュを上書きしない
+	if showDisk.Load() {
+		cachedDiskIO = io
+	}
+	cacheMu.Unlock()
+}
+
+// refreshDrives は固定ドライブの容量を取得してキャッシュに反映する。
+func refreshDrives() {
+	if !showDisk.Load() {
+		return
+	}
+	drives := sysinfo.GetDrives()
+	cacheMu.Lock()
+	if showDisk.Load() {
+		cachedDrives = drives
+	}
+	cacheMu.Unlock()
+}
+
+func clearDiskCache() {
+	cacheMu.Lock()
+	cachedDrives = nil
+	cachedDiskIO = nil
+	cacheMu.Unlock()
 }
 
 func refreshNetwork() {
@@ -534,6 +599,8 @@ func startCollector() {
 	go func() {
 		// GPU の初期化はこの goroutine で行う（main スレッドで COM に触れない）
 		refreshGPU()
+		// Disk I/O の PDH クエリも先に開き、最初のベースラインを取っておく（最初の周期から値を出すため）
+		refreshDiskIO()
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
@@ -541,6 +608,22 @@ func startCollector() {
 			refreshPowerMode()
 			refreshNetwork()
 			refreshGPU()
+			refreshDiskIO()
+		}
+	}()
+
+	// ドライブの容量は変化が遅く、応答の遅いドライブ（スピンアップ待ちの外付け HDD など）に
+	// 待たされることもあるので、2 秒周期の収集とは別の goroutine で 10 秒ごとに取る。
+	go func() {
+		refreshDrives()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+			case <-diskKick:
+			}
+			refreshDrives()
 		}
 	}()
 
@@ -574,6 +657,9 @@ func moveWindow(x, y int32) {
 	}
 }
 
+// getWindowSize はウィンドウの大きさをレイアウト px（物理 px ÷ DPI 倍率 ÷ ズーム。フロントの CSS px と
+// 同じ）で返す。フロントとやり取りするサイズと、保存する幅・高さに使う。位置の計算には
+// getWindowDpiLogicalSize を使うこと（zoom.go の先頭を参照）。
 func getWindowSize() (int32, int32) {
 	if windowHandle.Load() == 0 {
 		return windowWidth, windowHeight
@@ -582,10 +668,7 @@ func getWindowSize() (int32, int32) {
 	procGetWindowRect.Call(windowHandle.Load(), uintptr(unsafe.Pointer(&rect)))
 	width := rect.Right - rect.Left
 	height := rect.Bottom - rect.Top
-	scale := getWindowDpiScale()
-	if scale <= 0 {
-		scale = 1.0
-	}
+	scale := layoutScale()
 	logicalW := int32(math.Round(float64(width) / scale))
 	logicalH := int32(math.Round(float64(height) / scale))
 	if logicalW <= 0 {
@@ -595,6 +678,13 @@ func getWindowSize() (int32, int32) {
 		logicalH = windowHeight
 	}
 	return logicalW, logicalH
+}
+
+// getWindowDpiLogicalSize はウィンドウの大きさを DPI 論理 px（物理 px ÷ DPI 倍率。ズームを含まない）で
+// 返す。右下の座標（DPI 論理 px）から左上を逆算するなど、位置の計算に使う。
+func getWindowDpiLogicalSize() (int32, int32) {
+	left, top, right, bottom := getWindowLogicalRect()
+	return right - left, bottom - top
 }
 
 func getWindowDpiScale() float64 {
@@ -608,11 +698,14 @@ func getWindowDpiScale() float64 {
 	return float64(dpi) / 96.0
 }
 
-// resizeWindow はウィンドウを width×height（論理px）にリサイズする。
+// resizeWindow はウィンドウを width×height（レイアウト px。ズーム中は物理 px がその分変わる）にリサイズする。
 // anchorTop=false は下端固定（コンパクト化・幾何復元で下端に揃える既定）、
 // anchorTop=true は上端固定（下端エッジを掴んだ手動リサイズで下方向に伸ばす）。
 // minWindowHeight はウィンドウ高さの下限（論理 px）。
 const minWindowHeight = 40
+
+// maxWindowHeight はウィンドウ高さの上限（レイアウト px）。
+const maxWindowHeight = 3000
 
 func resizeWindow(width, height int32, anchorTop bool) {
 	resizeWindowAnchored(width, height, anchorTop, false)
@@ -651,10 +744,12 @@ func resizeWindowAnchored(width, height int32, anchorTop, anchorRight bool) {
 	if height < minWindowHeight {
 		height = minWindowHeight
 	}
-	if height > 1000 {
-		height = 1000
+	// 上限は目安（レイアウト px）。実際に収まる高さは、下の作業領域への矯正が決める。
+	// ズームで縮小しているときは、1000 を超える中身も作業領域に収まるので、大きめにしておく。
+	if height > maxWindowHeight {
+		height = maxWindowHeight
 	}
-	scale := getWindowDpiScale()
+	scale := layoutScale()
 	scaledW := int32(math.Round(float64(width) * scale))
 	scaledH := int32(math.Round(float64(height) * scale))
 
@@ -772,15 +867,42 @@ func moveToRememberedPosition(mode int) bool {
 	default:
 		return false
 	}
-	wid, hei := getWindowSize()
+	// 右下の座標は DPI 論理 px なので、大きさも DPI 論理 px で引く（レイアウト px だとズーム中にずれる）
+	wid, hei := getWindowDpiLogicalSize()
 	moveWindowLogicalClamped(right-wid, bottom-hei)
 	return true
 }
 
+// normalizeViewMode は保存されたビューモードを起動時に使える値へ矯正する。
+// フル (0) とコンパクト (1) 以外は、手編集や将来の値でもフル表示に倒す。
+// トレイ (2) は実行時の状態で、起動時の復元対象ではない。
+func normalizeViewMode(m int) int {
+	if m == viewModeCompact {
+		return viewModeCompact
+	}
+	return viewModeNormal
+}
+
+// startupWidth は起動時に使うウィンドウ幅を返す。コンパクトは専用幅。フル表示は前回
+// ユーザーがリサイズした値を尊重する（コンパクト中に終了した場合の width は専用幅なので、
+// フル表示の幅を持つ normalWidth を優先して見る）。
+func startupWidth(mode int, normalWidth, width int32) int32 {
+	if mode == viewModeCompact {
+		return compactWindowWidth
+	}
+	if normalWidth > 0 {
+		return normalWidth
+	}
+	if width > 0 {
+		return width
+	}
+	return windowWidth
+}
+
 // applyStartupGeometry は起動時のジオメトリを適用する。
-// 起動は前回のモードや位置を引き継がず、常に「フル表示・画面右下」から始める。
-// 幅だけは前回ユーザーがリサイズした値を尊重する（コンパクト中に終了した場合の
-// Width は専用幅なので、フル表示の幅を持つ NormalWidth を優先して見る）。
+// 前回終了したモードの幅にして、そのモードで最後にいた位置へ戻す。位置の記憶が無い
+// 初回（と、記憶の無い旧バージョンの設定）は画面右下から始める。
+// 位置は右下で覚えているので、フロントが高さを下端固定で詰めても位置はずれない。
 //
 // applyHeight=false のときは高さに触れない。起動直後の遅延再適用では、フロントが
 // 内容の実寸に合わせて詰めた高さを上書きしないようにするため。
@@ -789,19 +911,15 @@ func applyStartupGeometry(applyHeight bool) {
 		return
 	}
 	c := snapshotConfig()
-	width := c.Window.NormalWidth
-	if width <= 0 {
-		width = c.Window.Width
-	}
-	if width <= 0 {
-		width = windowWidth
-	}
+	mode := normalizeViewMode(c.ViewMode)
 	var height int32 // 0 は「現在の高さを維持」
 	if applyHeight {
 		height = windowHeight
 	}
-	resizeWindow(width, height, false)
-	moveToBottomRight()
+	resizeWindow(startupWidth(mode, c.Window.NormalWidth, c.Window.Width), height, false)
+	if !moveToRememberedPosition(mode) {
+		moveToBottomRight()
+	}
 }
 
 // moveWindowLogicalClamped は論理ピクセル座標でウィンドウを移動する。
@@ -857,9 +975,20 @@ func getWindowLogicalRect() (left, top, right, bottom int32) {
 	return toLogical(rect.Left), toLogical(rect.Top), toLogical(rect.Right), toLogical(rect.Bottom)
 }
 
+// viewModeSwitching は、表示モードの切替（フル ⇄ コンパクト）の途中で true になる。
+// 切替ボタンの押下は、ドラッグの mouseup で /api/persistwindow を送りつつ /api/setviewmode も送るため、
+// 2 つのリクエストが並走する。モードを切り替えた直後・ウィンドウを動かす前に保存が走ると、
+// 切替前のウィンドウの右下が新しいモードのスロットに書かれて、「前回の位置に戻る」が戻らなくなる。
+// 切替中は保存を見送る（フロントは切替の 300ms 後にもう一度保存を呼ぶ）。ロックにしないのは、
+// ズーム適用が UI スレッドで保存を呼ぶため（切替側の SetWindowPos は UI スレッドの応答を待つので、
+// ロックの取り合いでデッドロックしうる）。
+var viewModeSwitching atomic.Bool
+
 // persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
 func persistCurrentWindowGeometry() {
-	if windowHandle.Load() == 0 {
+	// 起動直後は go-webview2 の初期化が幅と位置をリセットしており、復元が済む前に保存すると
+	// 前回の記憶を既定位置で上書きしてしまう。500ms 後の再適用が済むまでは保存しない。
+	if windowHandle.Load() == 0 || !startupGeometrySettled.Load() || viewModeSwitching.Load() {
 		return
 	}
 	logicalX, logicalY, right, bottom := getWindowLogicalRect()
@@ -867,6 +996,10 @@ func persistCurrentWindowGeometry() {
 	// ドラッグで動かした位置を現在のモードのスロットにも反映する。
 	// configMu の内側で viewModeMu を取らないよう、先に読んでおく。
 	compact := layoutIsCompact()
+	// ウィンドウとモードを読んでいる間に切替が始まっていたら、読んだ組み合わせは食い違いうる
+	if viewModeSwitching.Load() {
+		return
+	}
 	mutateConfig(func(c *Config) {
 		c.Window.X = logicalX
 		c.Window.Y = logicalY
@@ -1023,14 +1156,13 @@ func main() {
 	alwaysOnTopMu.Lock()
 	alwaysOnTop = c.Topmost
 	alwaysOnTopMu.Unlock()
-	// 起動は常にフル表示から始める（前回のモードは引き継がない）。
-	// コンパクト表示の位置だけは Window.Compact* に残っており、次にコンパクト化
-	// したときにそこへ戻る。
+	// 前回終了したときのモード（フル / コンパクト）で起動する。トレイ格納中に終了しても、
+	// 保存されているのは格納前のモード（/api/setviewmode は 0 と 1 しか保存しない）。
+	startMode := normalizeViewMode(c.ViewMode)
 	viewModeMu.Lock()
-	viewMode = viewModeNormal
-	viewModeBeforeTray = viewModeNormal
+	viewMode = startMode
+	viewModeBeforeTray = startMode
 	viewModeMu.Unlock()
-	mutateConfig(func(c *Config) { c.ViewMode = viewModeNormal })
 	trayDisplayMu.Lock()
 	switch c.TrayDisplay {
 	case "cpu":
@@ -1042,6 +1174,7 @@ func main() {
 	}
 	trayDisplayMu.Unlock()
 	showGPU.Store(c.ShowGPU)
+	showDisk.Store(!c.Hidden.Disk)
 
 	apiToken := generateToken()
 	ln, port := listenLocal()
@@ -1078,6 +1211,9 @@ func main() {
 		Debug:     false,
 		AutoFocus: true,
 		DataPath:  dataPath,
+		// 拡大・縮小は自前（zoom.go）で行う。WebView2 既定の Ctrl+ホイール / Ctrl+プラス・マイナスは、
+		// ウィンドウを変えずにページだけを拡大縮小して、下に空白ができてしまうので無効にする。
+		DisableZoomControl: true,
 		WindowOptions: webview2.WindowOptions{
 			Title:  windowTitle,
 			Width:  windowWidth,
@@ -1097,6 +1233,12 @@ func main() {
 	// フレーム除去・位置復元・前面表示を適用する。
 	windowHandle.Store(uintptr(w.Window()))
 	removeWindowFrame(windowHandle.Load())
+	// 保存された拡大率を、最初のサイズ決めと表示より前に適用する（100% の画面が一瞬見えないように）。
+	// ここは UI スレッド（Run の前）なので、ZoomFactor をそのまま設定できる。
+	widgetZoom.Store(int32(normalizeZoom(c.Zoom)))
+	if err := w.SetZoomFactor(zoomFactor()); err != nil {
+		aiusage.Logf("拡大率の適用に失敗しました: %v", err)
+	}
 	applyStartupGeometry(true)
 	// 位置が決まったので、完全な透明のまま表示状態にして描画させる（見せるのは /api/ready か
 	// フォールバックのタイマー）。
@@ -1106,6 +1248,7 @@ func main() {
 	// 高さを詰めているので、高さには触れない。
 	time.AfterFunc(500*time.Millisecond, func() {
 		applyStartupGeometry(false)
+		startupGeometrySettled.Store(true)
 	})
 	// 常に前面表示の復元
 	alwaysOnTopMu.Lock()

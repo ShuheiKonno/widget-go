@@ -209,10 +209,11 @@ default-src 'none'; script-src 'nonce-…'; style-src 'unsafe-inline'; connect-s
 | `--wifi-ng-color` | 未接続の表示(`.wifi-disconnected`)の色 | `#ff8a8a` | `#d33` |
 | `--gpu-fill-bg` | GPU のバー(`.gpu-fill`)の `background` | `linear-gradient(90deg,#6ad7ff,#5a8cff)` | 同左 |
 | `--npu-fill-bg` | NPU のバー(`.npu-fill`)の `background` | `linear-gradient(90deg,#ffd36a,#ff9f5a)` | 同左 |
-| `--net-rx` | 受信(↓)の凡例の色と、グラフの線の色 | `#7fffaa` | `#1aa86b` |
-| `--net-rx-fill` | 受信のグラフの塗り | `rgba(127,255,170,0.25)` | `rgba(26,168,107,0.20)` |
-| `--net-tx` | 送信(↑)の凡例の色と、グラフの線の色 | `#ffa3ff` | `#b74da6` |
-| `--net-tx-fill` | 送信のグラフの塗り | `rgba(255,163,255,0.22)` | `rgba(183,77,166,0.18)` |
+| `--disk-fill-bg` | Disk のバー(`.disk-fill`)の `background` | `linear-gradient(90deg,#7bffb8,#2fbf8f)` | 同左 |
+| `--net-rx` | 受信(↓)の凡例の色と、グラフの線の色。Disk の読み取りにも使う | `#7fffaa` | `#1aa86b` |
+| `--net-rx-fill` | 受信のグラフの塗り。Disk の読み取りにも使う | `rgba(127,255,170,0.25)` | `rgba(26,168,107,0.20)` |
+| `--net-tx` | 送信(↑)の凡例の色と、グラフの線の色。Disk の書き込みにも使う | `#ffa3ff` | `#b74da6` |
+| `--net-tx-fill` | 送信のグラフの塗り。Disk の書き込みにも使う | `rgba(255,163,255,0.22)` | `rgba(183,77,166,0.18)` |
 | `--net-empty-color` | グラフの「計測中...」の文字色 | `rgba(255,255,255,0.35)` | `rgba(0,0,0,0.4)` |
 
 ### AI 使用量の変数
@@ -273,12 +274,13 @@ body[data-skin="<id>"]  (テーマがライトのとき .theme-light も付く)
 |---|---|---|
 | `cpu` | CPU | `.progress-bar.cpu-progress` > `.progress-fill.cpu-fill`、`.clock-row`(`.clock-label` `.clock-value` `.clock-base`)、`.progress-bar.clock-progress` > `.clock-fill`(+ `.clock-base-marker`)、`.power-mode`(`.pm-slider` `.pm-labels`)、`.model-name.cpu-model`、`.cores-container` > `.core-item`(`.core-label` `.core-bar-container` > `.core-bar`、`.core-value`) |
 | `memory` | メモリ | `.progress-bar.mem-progress` > `.progress-fill.memory-fill`、`.memory-details`(`.used`) |
+| `disk` | Disk と I/O(`.wifi-section.disk-section`。`network` と同じ `.flip-card` の作り) | `.flip-card` > 表 `.flip-face.flip-front`(`.disk-body` > `.progress-bar.disk-progress` > `.progress-fill.disk-fill`、`.disk-info` > `.disk-models`(物理ディスクの製品名。1 つにつき `.model-name` が 1 行。取れないときは空)と `.disk-drives`。ドライブごとの `.wifi-row.disk-drive` は使用率 90% 以上で `.disk-warn`)と、裏 `.flip-face.flip-back`(`.disk-body.disk-io-num` = アクティブな時間の `.disk-progress` と `.disk-io` > `.wifi-row` > `.wifi-label` `.wifi-value`、`canvas.net-canvas.disk-graph-part`、`.net-legend.disk-graph-part` > `.net-leg-rx`(読み取り) `.net-leg-tx`(書き込み))。裏面は設定で数値(`.disk-io-num`)かグラフ(`.disk-graph-part`)の一方だけが出る(区画に `.disk-io-graph` が付くとグラフ)。コンパクトでは `.disk-body` が隠れる |
 | `gpu` | GPU(`.accel-section`) | `.progress-bar.gpu-progress` > `.progress-fill.gpu-fill`、`.accel-info`(`.model-name`、`.wifi-row` > `.wifi-label` `.wifi-value`) |
 | `npu` | NPU(`.accel-section`) | `.progress-bar.npu-progress` > `.progress-fill.npu-fill`、`.model-name.npu-model` |
 | `network` | Wi-Fi / Ethernet とトラフィック(`.wifi-section`) | `.flip-card` > 表 `.flip-face.flip-front`(`.wifi-info`、`.wifi-row`、`.wifi-label`、`.wifi-value`、`.wifi-connected` / `.wifi-disconnected`)と、裏 `.flip-face.flip-back`(`.net-peak-toggle`、`canvas.net-canvas`、`.net-legend` > `.net-leg-rx` `.net-leg-tx`) |
 | `ai` | AI 使用量(`.ai-section`。既定では `.is-hidden`) | `.ai-refresh`、`.ai-compact` > `.ai-crow`(`.claude` / `.codex`、`i`、`.ai-cname`、`.ai-cval`)、`.sec-body` > `.prov`(`.claude` / `.codex`、`.prov-head`、`.prov-name`、`.plan`、`.prov-state`、`.wrow`(`.lab` `.progress-bar` `.pct`)、`.wreset`、`.extra`、`.chip`(`.warn` `.login` `.info`)、`.ai-act`) |
 
-区画はすべて `.section` で、Wi-Fi 区画だけ `.wifi-section` が加わり、本体の CSS では背景も枠もなく(`.flip-face` が持つ)、`padding:0` です。
+区画はすべて `.section` で、Wi-Fi 区画と Disk 区画には `.wifi-section` が加わり(Disk は反転する区画で、Wi-Fi と同じ `.flip-card` の作りです)、本体の CSS では背景も枠もなく(`.flip-face` が持つ)、`padding:0` です。`.wifi-section` を Wi-Fi 専用のつもりで書いたスキンの規則は、Disk にも効きます。Wi-Fi だけに効かせたいときは `[data-sec="network"]` を併用してください。
 
 ### 状態を表すクラス
 
@@ -288,7 +290,8 @@ body[data-skin="<id>"]  (テーマがライトのとき .theme-light も付く)
 | `.compact` | `#dragArea` | コンパクト表示(幅 130px) |
 | `.dragging` / `.resizing` | `#dragArea` / 同 | ドラッグ中 / リサイズ中 |
 | `.collapsed` | `.section` | 折りたたみ中(`.sec-body` が隠れる。Wi-Fi は表の `.wifi-info` が隠れる) |
-| `.flipped` | `.wifi-section` | 裏面(トラフィック)を表示中 |
+| `.flipped` | `.wifi-section` | 裏面(Wi-Fi はトラフィック、Disk は I/O)を表示中 |
+| `.disk-io-graph` | `.disk-section` | Disk の裏面がグラフ表示(付いていないときは数値表示) |
 | `.ethernet-mode` | `.wifi-section` | 有線接続の表示(`.wifi-wireless-only` が隠れ、`.wifi-ethernet-only` が出る) |
 | `.last-visible` | `.section` | 表示中の最後の区画(下の余白がなくなる) |
 | `.is-hidden` | 区画など | 非表示(`display:none !important`) |

@@ -177,6 +177,10 @@ func newServerMux(token string) *http.ServeMux {
 			http.Error(w, "invalid mode", http.StatusBadRequest)
 			return
 		}
+		// 切替の途中は、並走する /api/persistwindow に位置を保存させない（viewModeSwitching を参照）。
+		// モードを変える前に立て、ウィンドウを動かし終えてから下ろす。
+		viewModeSwitching.Store(true)
+		defer viewModeSwitching.Store(false)
 		viewModeMu.Lock()
 		prev := viewMode
 		viewMode = m
@@ -426,6 +430,20 @@ func newServerMux(token string) *http.ServeMux {
 				return
 			}
 			mutateConfig(func(c *Config) { c.NetUnit = val })
+		case "zoom":
+			// 拡大率（%）。zoomSteps のどれか。保存して、ウィンドウの大きさと WebView のズームを変える
+			n, err := strconv.Atoi(val)
+			if err != nil || !isZoomStep(n) {
+				http.Error(w, "invalid zoom", http.StatusBadRequest)
+				return
+			}
+			setZoom(n)
+		case "diskIoView":
+			if val != "number" && val != "graph" {
+				http.Error(w, "invalid diskIoView", http.StatusBadRequest)
+				return
+			}
+			mutateConfig(func(c *Config) { c.DiskIOView = val })
 		case "powerMode":
 			// 電源モードの切替機能の ON/OFF。OFF にした直後に API 呼び出しと表示を止める
 			// （次の周期を待たない）。ON にしたときも即座に現在の状態を取得する。
@@ -436,7 +454,7 @@ func newServerMux(token string) *http.ServeMux {
 			refreshPowerMode()
 			kickTray()
 		case "order":
-			// 区画の表示順: value=cpu,memory,gpu,npu,network,ai を並べ替えたもの
+			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai を並べ替えたもの
 			if err := setOrder(val); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -454,6 +472,18 @@ func newServerMux(token string) *http.ServeMux {
 				if !enable {
 					// 次の /api/system が古い GPU/NPU を返して一瞬再表示されないよう即座に捨てる
 					clearGPUCache()
+				}
+				// Disk 区画も同じく、非表示の間は収集を止める。表示に戻したときは容量をすぐ取り直す。
+				hideDisk := snapshotConfig().Hidden.Disk
+				if showDisk.Swap(!hideDisk) == hideDisk { // 表示状態が変わった
+					if hideDisk {
+						clearDiskCache()
+					} else {
+						select {
+						case diskKick <- struct{}{}:
+						default:
+						}
+					}
 				}
 				break
 			}
@@ -486,6 +516,9 @@ func newServerMux(token string) *http.ServeMux {
 			"skin":        skins.active(c.Skin),
 			"coreBase":    c.CoreBase,
 			"netUnit":     c.NetUnit,
+			"diskIoView":  c.DiskIOView,
+			"zoom":        normalizeZoom(c.Zoom),
+			"zoomSteps":   zoomSteps,
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
 			"collapsed":   c.Collapsed,
