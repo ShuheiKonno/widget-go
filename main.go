@@ -290,6 +290,10 @@ var (
 	cachedPower    *sysinfo.PowerModeInfo
 )
 
+// startupGeometrySettled は、起動時のジオメトリ復元（遅延再適用まで）が済んだかどうか。
+// 済むまでは persistCurrentWindowGeometry が何も保存しない。
+var startupGeometrySettled atomic.Bool
+
 // showGPU は「GPU/NPU を表示」設定の実行時状態。OFF の間は GPU/NPU の収集自体を止める。
 // HTTP ハンドラと collector goroutine から並行に読み書きされ、cacheMu の内外どちらからも
 // 読むのでロック順序の問題が起きない atomic で持つ。
@@ -777,10 +781,36 @@ func moveToRememberedPosition(mode int) bool {
 	return true
 }
 
+// normalizeViewMode は保存されたビューモードを起動時に使える値へ矯正する。
+// フル (0) とコンパクト (1) 以外は、手編集や将来の値でもフル表示に倒す。
+// トレイ (2) は実行時の状態で、起動時の復元対象ではない。
+func normalizeViewMode(m int) int {
+	if m == viewModeCompact {
+		return viewModeCompact
+	}
+	return viewModeNormal
+}
+
+// startupWidth は起動時に使うウィンドウ幅を返す。コンパクトは専用幅。フル表示は前回
+// ユーザーがリサイズした値を尊重する（コンパクト中に終了した場合の width は専用幅なので、
+// フル表示の幅を持つ normalWidth を優先して見る）。
+func startupWidth(mode int, normalWidth, width int32) int32 {
+	if mode == viewModeCompact {
+		return compactWindowWidth
+	}
+	if normalWidth > 0 {
+		return normalWidth
+	}
+	if width > 0 {
+		return width
+	}
+	return windowWidth
+}
+
 // applyStartupGeometry は起動時のジオメトリを適用する。
-// 起動は前回のモードや位置を引き継がず、常に「フル表示・画面右下」から始める。
-// 幅だけは前回ユーザーがリサイズした値を尊重する（コンパクト中に終了した場合の
-// Width は専用幅なので、フル表示の幅を持つ NormalWidth を優先して見る）。
+// 前回終了したモードの幅にして、そのモードで最後にいた位置へ戻す。位置の記憶が無い
+// 初回（と、記憶の無い旧バージョンの設定）は画面右下から始める。
+// 位置は右下で覚えているので、フロントが高さを下端固定で詰めても位置はずれない。
 //
 // applyHeight=false のときは高さに触れない。起動直後の遅延再適用では、フロントが
 // 内容の実寸に合わせて詰めた高さを上書きしないようにするため。
@@ -789,19 +819,15 @@ func applyStartupGeometry(applyHeight bool) {
 		return
 	}
 	c := snapshotConfig()
-	width := c.Window.NormalWidth
-	if width <= 0 {
-		width = c.Window.Width
-	}
-	if width <= 0 {
-		width = windowWidth
-	}
+	mode := normalizeViewMode(c.ViewMode)
 	var height int32 // 0 は「現在の高さを維持」
 	if applyHeight {
 		height = windowHeight
 	}
-	resizeWindow(width, height, false)
-	moveToBottomRight()
+	resizeWindow(startupWidth(mode, c.Window.NormalWidth, c.Window.Width), height, false)
+	if !moveToRememberedPosition(mode) {
+		moveToBottomRight()
+	}
 }
 
 // moveWindowLogicalClamped は論理ピクセル座標でウィンドウを移動する。
@@ -859,7 +885,9 @@ func getWindowLogicalRect() (left, top, right, bottom int32) {
 
 // persistCurrentWindowGeometry は現在のウィンドウ位置・サイズを config に書き込む。
 func persistCurrentWindowGeometry() {
-	if windowHandle.Load() == 0 {
+	// 起動直後は go-webview2 の初期化が幅と位置をリセットしており、復元が済む前に保存すると
+	// 前回の記憶を既定位置で上書きしてしまう。500ms 後の再適用が済むまでは保存しない。
+	if windowHandle.Load() == 0 || !startupGeometrySettled.Load() {
 		return
 	}
 	logicalX, logicalY, right, bottom := getWindowLogicalRect()
@@ -1023,14 +1051,13 @@ func main() {
 	alwaysOnTopMu.Lock()
 	alwaysOnTop = c.Topmost
 	alwaysOnTopMu.Unlock()
-	// 起動は常にフル表示から始める（前回のモードは引き継がない）。
-	// コンパクト表示の位置だけは Window.Compact* に残っており、次にコンパクト化
-	// したときにそこへ戻る。
+	// 前回終了したときのモード（フル / コンパクト）で起動する。トレイ格納中に終了しても、
+	// 保存されているのは格納前のモード（/api/setviewmode は 0 と 1 しか保存しない）。
+	startMode := normalizeViewMode(c.ViewMode)
 	viewModeMu.Lock()
-	viewMode = viewModeNormal
-	viewModeBeforeTray = viewModeNormal
+	viewMode = startMode
+	viewModeBeforeTray = startMode
 	viewModeMu.Unlock()
-	mutateConfig(func(c *Config) { c.ViewMode = viewModeNormal })
 	trayDisplayMu.Lock()
 	switch c.TrayDisplay {
 	case "cpu":
@@ -1106,6 +1133,7 @@ func main() {
 	// 高さを詰めているので、高さには触れない。
 	time.AfterFunc(500*time.Millisecond, func() {
 		applyStartupGeometry(false)
+		startupGeometrySettled.Store(true)
 	})
 	// 常に前面表示の復元
 	alwaysOnTopMu.Lock()
