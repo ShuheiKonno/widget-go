@@ -599,6 +599,8 @@ func startCollector() {
 	go func() {
 		// GPU の初期化はこの goroutine で行う（main スレッドで COM に触れない）
 		refreshGPU()
+		// Disk I/O の PDH クエリも先に開き、最初のベースラインを取っておく（最初の周期から値を出すため）
+		refreshDiskIO()
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {

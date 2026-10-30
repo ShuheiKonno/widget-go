@@ -3,6 +3,7 @@
 package sysinfo
 
 import (
+	"encoding/binary"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -49,9 +50,55 @@ func driveFromSpace(letter string, total, free uint64) (DriveInfo, bool) {
 	}, true
 }
 
+// ioctlVolumeGetVolumeDiskExtents は IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS。
+const ioctlVolumeGetVolumeDiskExtents = 0x560000
+
+// extentsTotalLength は VOLUME_DISK_EXTENTS（先頭に件数 4 バイト + 8 バイトのアライメント、
+// 続いて 1 件 24 バイトの DISK_EXTENT）に入っている領域の長さの合計を返す。
+// 読み取れる件数は、件数の値とバッファの大きさの小さいほうまで。
+func extentsTotalLength(buf []byte) uint64 {
+	if len(buf) < 8 {
+		return 0
+	}
+	count := int(binary.LittleEndian.Uint32(buf))
+	var total uint64
+	for i := 0; i < count; i++ {
+		off := 8 + i*24
+		if off+24 > len(buf) {
+			break
+		}
+		total += binary.LittleEndian.Uint64(buf[off+16:])
+	}
+	return total
+}
+
+// isVirtualVolume は、ドライブが実体のあるディスク領域を持たない仮想ボリュームだと確認できたときだけ
+// true を返す。Google Drive for desktop のドライブ（種別は固定、FAT32）は、容量として今の C: と
+// 同じ値を返すうえ、ディスク領域の長さが 0 のため、そのまま数えると同じディスクを二重に数えてしまう。
+// 開けない・調べられないなど判断できないときは false（通常のドライブとして扱う）。
+func isVirtualVolume(letter string) bool {
+	path, err := windows.UTF16PtrFromString(`\\.\` + letter)
+	if err != nil {
+		return false
+	}
+	// アクセス権 0 で開くので管理者権限は要らない。
+	h, err := windows.CreateFile(path, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(h)
+	var buf [1024]byte
+	var n uint32
+	err = windows.DeviceIoControl(h, ioctlVolumeGetVolumeDiskExtents, nil, 0, &buf[0], uint32(len(buf)), &n, nil)
+	if err != nil && err != windows.ERROR_MORE_DATA {
+		return false
+	}
+	return extentsTotalLength(buf[:n]) == 0
+}
+
 // GetDrives は固定ドライブ（DRIVE_FIXED）の容量を返す。
 // 切断済みのネットワークドライブや、空の光学ドライブ・カードリーダーに容量を問い合わせると
-// 待たされたりエラーになったりするため、種別で先に絞る。
+// 待たされたりエラーになったりするため、種別で先に絞る。仮想ボリューム（isVirtualVolume）は除く。
 func GetDrives() []DriveInfo {
 	mask, err := windows.GetLogicalDrives()
 	if err != nil {
@@ -67,7 +114,7 @@ func GetDrives() []DriveInfo {
 		if err != nil {
 			continue
 		}
-		if windows.GetDriveType(root) != windows.DRIVE_FIXED {
+		if windows.GetDriveType(root) != windows.DRIVE_FIXED || isVirtualVolume(letter) {
 			continue
 		}
 		var avail, total, free uint64
@@ -177,10 +224,13 @@ func diskCounterValue(h uintptr) *float64 {
 }
 
 // GetDiskIO は物理ディスク全体の I/O を返す。取得できないときは nil。
+// クエリを開いた直後の呼び出しはベースラインを取るだけで nil を返す（直後にもう一度集めると、
+// ほぼ 0 秒間の差分になって値がぶれるため）。
 func GetDiskIO() *DiskIOInfo {
 	diskIOMu.Lock()
 	defer diskIOMu.Unlock()
-	if !initDiskIOLocked() {
+	if !diskIOReady {
+		initDiskIOLocked()
 		return nil
 	}
 	if r, _, _ := procPdhCollectQueryData.Call(diskQuery); r != 0 {

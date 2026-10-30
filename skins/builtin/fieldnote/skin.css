@@ -91,15 +91,16 @@ body[data-skin="fieldnote"] .wifi-section { padding: 0; }
 body[data-skin="fieldnote"] .flip-card > .flip-face { padding: 8px 4px 9px; border: 0; border-radius: 0; background: transparent; }
 body[data-skin="fieldnote"] .section-header { gap: 7px; }
 body[data-skin="fieldnote"] .chev { margin-left: 0; width: 14px; height: 14px; border-radius: 0; font-size: 8px; }
-/* 区画番号（既存の絵文字アイコンを隠し、data-sec ごとに 01〜06 を出す） */
+/* 区画番号（既存の絵文字アイコンを隠し、data-sec ごとに 01〜07 を出す） */
 body[data-skin="fieldnote"] .section-icon { font-size: 0; margin-right: 0; color: var(--muted-color); }
 body[data-skin="fieldnote"] .section-icon::before { content: '00'; font: 9px Consolas, monospace; }
 body[data-skin="fieldnote"] [data-sec="cpu"] .section-icon::before { content: '01'; }
 body[data-skin="fieldnote"] [data-sec="memory"] .section-icon::before { content: '02'; }
-body[data-skin="fieldnote"] [data-sec="gpu"] .section-icon::before { content: '03'; }
-body[data-skin="fieldnote"] [data-sec="npu"] .section-icon::before { content: '04'; }
-body[data-skin="fieldnote"] [data-sec="network"] .section-icon::before { content: '05'; }
-body[data-skin="fieldnote"] [data-sec="ai"] .section-icon::before { content: '06'; }
+body[data-skin="fieldnote"] [data-sec="disk"] .section-icon::before { content: '03'; }
+body[data-skin="fieldnote"] [data-sec="gpu"] .section-icon::before { content: '04'; }
+body[data-skin="fieldnote"] [data-sec="npu"] .section-icon::before { content: '05'; }
+body[data-skin="fieldnote"] [data-sec="network"] .section-icon::before { content: '06'; }
+body[data-skin="fieldnote"] [data-sec="ai"] .section-icon::before { content: '07'; }
 body[data-skin="fieldnote"] .section-value { font-weight: 400; font-size: 17px; letter-spacing: -.04em; }
 
 /* ---- 計測バー: 直角にして、20% ごとの目盛りを入れる ---- */

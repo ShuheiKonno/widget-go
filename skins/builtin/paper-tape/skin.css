@@ -198,6 +198,7 @@ body[data-skin="paper-tape"] .section-icon::before {
     line-height: 1;
 }
 body[data-skin="paper-tape"] [data-sec="memory"] .section-icon::before { content: "≡"; }
+body[data-skin="paper-tape"] [data-sec="disk"] .section-icon::before { content: "▤"; }
 body[data-skin="paper-tape"] [data-sec="gpu"] .section-icon::before { content: "△"; }
 body[data-skin="paper-tape"] [data-sec="npu"] .section-icon::before { content: "◇"; }
 body[data-skin="paper-tape"] [data-sec="network"] .section-icon::before { content: "⇅"; }
