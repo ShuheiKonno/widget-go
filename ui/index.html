@@ -1505,10 +1505,11 @@
             idx = Math.max(0, Math.min(steps.length - 1, idx + dir));
             setZoomPercent(steps[idx]);
         }
-        // Ctrl + プラス（JIS 配列は Shift が要る）/ マイナス / 0（元の大きさ）。テンキーも使える。
+        // Ctrl + プラス / マイナス / 0（元の大きさ）。テンキーも使える。JIS 配列では、プラスのキーが
+        // Ctrl + ;（Shift なし。Edge / Chrome と同じ）で、Shift を押すと '+' になる。
         document.addEventListener('keydown', function(e){
             if (!e.ctrlKey || e.altKey || e.metaKey) return;
-            if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') { stepZoom(1); }
+            if (e.key === '+' || e.key === '=' || e.key === ';' || e.code === 'NumpadAdd') { stepZoom(1); }
             else if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') { stepZoom(-1); }
             else if (e.key === '0' || e.code === 'Numpad0') { setZoomPercent(100); }
             else return;
@@ -1519,6 +1520,7 @@
         document.addEventListener('wheel', function(e){
             if (!e.ctrlKey) return;
             e.preventDefault();
+            if (e.deltaY === 0) return;   // 横スクロールは縮小として扱わない
             const now = performance.now();
             if (now - lastZoomWheel < 120) return;
             lastZoomWheel = now;
