@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>勤務時間タイマー モックアップ</title>
+<style>
+/* ===== このページ自体の見た目 ===== */
+:root { --page-bg:#1b1c22; --page-fg:#e8e8f0; --page-muted:#9a9ab0; --page-line:rgba(255,255,255,.12); --page-card:#23242c; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--page-bg); color:var(--page-fg); font-family:'Segoe UI','Yu Gothic UI',sans-serif; font-size:14px; line-height:1.6; padding:24px 24px 64px; }
+h1 { font-size:20px; font-weight:600; margin-bottom:4px; }
+.lead { color:var(--page-muted); font-size:13px; max-width:880px; }
+.toolbar { display:flex; flex-wrap:wrap; gap:14px 28px; margin:18px 0 28px; padding:12px 14px; background:var(--page-card); border:1px solid var(--page-line); border-radius:10px; align-items:center; }
+.ctl { display:flex; align-items:center; gap:8px; }
+.ctl > span { font-size:12px; color:var(--page-muted); }
+.ctl input[type=range] { width:200px; }
+.ctl .clk { font-family:Consolas,monospace; color:#7bffe0; min-width:42px; }
+.seg { display:inline-flex; border:1px solid var(--page-line); border-radius:7px; overflow:hidden; }
+.seg button { background:transparent; color:var(--page-fg); border:0; padding:5px 11px; font:inherit; font-size:12px; cursor:pointer; border-right:1px solid var(--page-line); }
+.seg button:last-child { border-right:0; }
+.seg button:hover { background:rgba(255,255,255,.08); }
+.seg button.on { background:#5aa0ff; color:#fff; }
+.stage { display:flex; flex-wrap:wrap; gap:36px 40px; align-items:flex-start; }
+figure { display:flex; flex-direction:column; gap:10px; }
+figcaption { font-size:12px; color:var(--page-muted); max-width:300px; }
+figcaption b { color:var(--page-fg); font-weight:600; display:block; font-size:13px; }
+.notes { margin-top:44px; max-width:880px; border-top:1px solid var(--page-line); padding-top:18px; color:var(--page-muted); font-size:13px; }
+.notes h2 { font-size:14px; color:var(--page-fg); margin:14px 0 6px; }
+.notes ul { padding-left:20px; }
+.notes li { margin-bottom:4px; }
+.notes code { font-family:Consolas,monospace; color:var(--page-fg); }
+
+/* ===== ここから widget-go (ui/index.html) の見た目を流用 ===== */
+.win {
+  --container-bg: rgba(16,16,22,0.97); --text-color:#f0f0f5; --muted-color:#a8a8b8;
+  --section-bg: rgba(255,255,255,0.05); --section-border: rgba(255,255,255,0.10);
+  --section-title:#d8d8e8; --section-value:#7bffe0; --bar-track: rgba(255,255,255,0.12);
+  --btn-bg: rgba(255,255,255,0.12); --btn-bg-hover: rgba(255,255,255,0.22); --btn-color:#bbb;
+  --input-bg: rgba(255,255,255,0.05); --input-border: rgba(255,255,255,0.14);
+  --memory-used-color:#ffa3ff;
+  /* 追加: 勤務時間用 */
+  --work-fill:linear-gradient(90deg,#7bd0ff,#5a8cff); --work-over:#facc15; --work-late:#ef6a6a;
+  width:230px; background:var(--container-bg); color:var(--text-color); padding:30px 10px 10px; position:relative;
+  font-family:'Segoe UI','Yu Gothic UI',sans-serif; font-size:13px; user-select:none; border-radius:8px;
+  box-shadow:0 10px 30px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08); }
+.win.light {
+  --container-bg: rgba(245,246,252,0.96); --text-color:#24263a; --muted-color:#606078;
+  --section-bg: rgba(0,0,0,0.04); --section-border: rgba(0,0,0,0.1); --section-title:#3b3b5a; --section-value:#0a7f68;
+  --bar-track: rgba(0,0,0,0.1); --btn-bg: rgba(0,0,0,0.08); --btn-bg-hover: rgba(0,0,0,0.16); --btn-color:#444;
+  --input-bg: rgba(0,0,0,0.04); --input-border: rgba(0,0,0,0.15); --memory-used-color:#e85ad0;
+  --work-over:#d9a400; --work-late:#d33; }
+.win.compact { width:130px; padding:23px 4px 4px; }
+.top-btns { position:absolute; top:8px; right:8px; display:flex; gap:4px; z-index:5; }
+.top-btn { width:18px; height:18px; border-radius:50%; border:none; display:flex; align-items:center; justify-content:center; font-size:10px; background:var(--btn-bg); color:var(--btn-color); line-height:1; }
+.compact .top-btns { top:5px; right:5px; gap:3px; }
+.compact .top-btn { width:16px; height:16px; font-size:9px; }
+.section { background:var(--section-bg); border-radius:8px; padding:8px 10px; margin-bottom:8px; border:1px solid var(--section-border); }
+.section:last-child { margin-bottom:0; }
+.compact .section { padding:4px 6px; margin-bottom:3px; }
+.section-header { display:flex; align-items:center; margin-bottom:6px; }
+.compact .section-header { margin-bottom:0; }
+.section-icon { font-size:14px; margin-right:6px; }
+.compact .section-icon { font-size:12px; margin-right:3px; }
+.section-title { font-size:12px; font-weight:600; flex-grow:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--section-title); }
+.compact .section-title { font-size:11px; }
+.section-value { color:var(--section-value); font-size:13px; font-weight:700; font-family:Consolas,monospace; flex-shrink:0; margin-left:auto; white-space:nowrap; }
+.compact .section-value { font-size:11px; }
+.progress-bar { position:relative; height:5px; background:var(--bar-track); border-radius:3px; overflow:hidden; margin-bottom:6px; }
+.progress-fill { height:100%; border-radius:3px; }
+.memory-fill { background:linear-gradient(90deg,#ffa3ff,#ff7a8a); }
+.memory-details { text-align:right; font-size:11px; color:var(--muted-color); font-family:Consolas,monospace; }
+.memory-details .used { color:var(--memory-used-color); font-weight:600; }
+.compact .mem-progress, .compact .memory-details { display:none; }
+.chev { margin-left:4px; width:18px; height:18px; flex:none; border:0; border-radius:50%; background:transparent; color:var(--muted-color); font-size:9px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; }
+.chev:hover { background:var(--btn-bg-hover); }
+.section.collapsed > .section-header { margin-bottom:0; }
+.section.collapsed > .section-header .chev { transform:rotate(-90deg); }
+.section.collapsed > .sec-body { display:none; }
+.compact .chev { display:none; }
+.wifi-row { display:flex; justify-content:space-between; align-items:center; gap:6px; }
+.wifi-label { color:var(--muted-color); font-size:11px; white-space:nowrap; }
+.wifi-value { color:var(--text-color); font-size:11px; font-weight:600; font-family:Consolas,monospace; white-space:nowrap; }
+
+/* ===== 新規: 勤務時間セクション ===== */
+.work-section .section-value.over, .work-section .wk-big.over { color:var(--work-over); }
+.work-section .section-value.late, .work-section .wk-big.late { color:var(--work-late); }
+.work-section .section-value.idle, .work-section .wk-big.idle,
+.work-section .section-value.paused, .work-section .wk-big.paused { color:var(--muted-color); }
+.work-fill { background:var(--work-fill); }
+.work-fill.over { background:var(--work-over); }
+.work-fill.late { background:var(--work-late); }
+.work-fill.paused { background:var(--muted-color); opacity:.6; }
+.wk-cap { font-size:10px; color:var(--muted-color); margin-bottom:1px; }
+.wk-big { font-family:Consolas,monospace; font-weight:700; font-size:20px; line-height:1.2; color:var(--section-value); margin-bottom:5px; white-space:nowrap; }
+.wk-big small { font-size:13px; font-weight:600; opacity:.85; }
+.wk-start { cursor:pointer; border-bottom:1px dotted var(--muted-color); }
+.wk-start:hover { color:#5aa0ff; }
+.wk-time { width:70px; background:var(--input-bg); border:1px solid var(--input-border); border-radius:4px; color:var(--text-color); font:inherit; font-size:11px; padding:0 3px; color-scheme:dark; }
+.win.light .wk-time { color-scheme:light; }
+.wk-nudge { border:1px solid var(--input-border); background:var(--input-bg); color:var(--text-color); border-radius:4px; width:18px; height:16px; font:inherit; font-size:11px; line-height:1; padding:0; margin-right:2px; cursor:pointer; vertical-align:1px; }
+.wk-nudge:hover { background:var(--btn-bg-hover); }
+.wk-note { font-size:10px; color:var(--muted-color); text-align:right; margin:-1px 0 2px; font-family:Consolas,monospace; }
+.wk-err { font-size:10px; color:var(--work-late); margin-top:2px; }
+.wk-chip { display:flex; align-items:center; gap:5px; font-size:10px; line-height:1.3; padding:3px 6px; border-radius:5px; margin:5px 0 0; background:rgba(90,160,255,.16); color:#9cc6ff; }
+.win.light .wk-chip { background:rgba(30,100,220,.12); color:#1d5fc2; }
+.wk-btns { display:flex; gap:4px; margin-top:7px; }
+.wk-btn { flex:1; border:1px solid var(--input-border); border-radius:5px; background:var(--input-bg); color:var(--text-color); font:inherit; font-size:11px; padding:3px 0; cursor:pointer; }
+.wk-btn:hover { background:var(--btn-bg-hover); }
+.wk-btn.primary { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
+.wk-btn.primary:hover { background:#4a90ef; }
+/* コンパクト(130px)は見出し 1 行だけ。タイトルは出さず、アイコン + 値 */
+.compact .work-section .sec-body { display:none; }
+.compact .work-section .section-title { display:none; }
+.compact .work-section .section-value { font-size:11px; letter-spacing:-.2px; }
+
+/* ===== 設定ウィンドウ（ui/settings.html の「区画」パネル相当） ===== */
+.setwin { width:460px; background:#23242c; border:1px solid var(--page-line); border-radius:10px; padding:14px 16px; color:var(--page-fg); font-size:13px; }
+.setwin h2 { font-size:15px; font-weight:600; margin-bottom:10px; }
+.card { background:rgba(255,255,255,.04); border:1px solid var(--page-line); border-radius:8px; padding:10px 12px; margin-bottom:10px; }
+.card .label { display:block; font-size:12px; color:var(--page-muted); margin-bottom:6px; }
+.hint { font-size:11px; color:var(--page-muted); margin-top:6px; }
+.orow { display:flex; align-items:center; gap:8px; padding:3px 0; }
+.orow label { flex:1; display:flex; align-items:center; gap:7px; }
+.orow button { background:rgba(255,255,255,.08); color:var(--page-fg); border:0; border-radius:4px; width:22px; height:20px; font-size:10px; }
+.orow.new { background:rgba(90,160,255,.12); border-radius:5px; margin:0 -6px; padding:3px 6px; }
+.orow .tag { font-size:9px; background:#5aa0ff; color:#fff; border-radius:7px; padding:0 6px; }
+.field { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:5px 0; font-size:12px; }
+.field input[type=time] { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.14); border-radius:4px; color:var(--page-fg); font:inherit; padding:2px 5px; color-scheme:dark; }
+.field .sep { color:var(--page-muted); margin:0 4px; }
+</style>
+</head>
+<body>
+
+<h1>勤務時間タイマー モックアップ</h1>
+<p class="lead">勤務時間タイマー区画の UI 案です。幅 230px / 130px は実寸で、スタイルは <code>ui/index.html</code> のものを流用しています。表示の計算（昼休みの停止・15 分切り下げ・黄/赤の判定）は仕様どおりこのページ内で動くので、下のスライダーで「現在時刻」を動かして確かめられます。区画は AI 使用量とは別の独立した区画で、設定の並べ替え・表示/非表示も個別です。</p>
+
+<div class="toolbar">
+  <div class="ctl"><span>シナリオ</span><div class="seg" id="ctl-preset">
+    <button data-p="idle">未開始</button>
+    <button data-p="morning" class="on">計測中（午前）</button>
+    <button data-p="lunch">昼休み中</button>
+    <button data-p="over">7:45 到達（黄）</button>
+    <button data-p="late">22:00 以降（赤）</button>
+    <button data-p="end">終了後</button></div></div>
+  <div class="ctl"><span>仮想の現在時刻</span><input type="range" id="nowRange" min="360" max="1439" step="1"><span class="clk" id="nowClk"></span></div>
+  <div class="ctl"><span>テーマ</span><div class="seg" id="ctl-theme">
+    <button data-v="dark" class="on">ダーク</button><button data-v="light">ライト</button></div></div>
+  <div class="ctl"><span>折りたたみ</span><div class="seg" id="ctl-col">
+    <button data-v="expand" class="on">展開</button><button data-v="collapse">折りたたみ</button></div></div>
+</div>
+
+<div class="stage">
+  <figure>
+    <div id="full"></div>
+    <figcaption><b>① 通常表示（230px）</b>見出しの値が <code>実勤務時間 (15分切り下げ)</code>。開始時刻の点線部分をクリックすると <code>HH:MM</code> を手入力できます（未来の時刻は不可）。</figcaption>
+  </figure>
+  <figure>
+    <div id="compact"></div>
+    <figcaption><b>② コンパクト（130px）</b>見出し 1 行だけ。AI 区画と同様にタイトルを省き、アイコンと値のみ。色（黄/赤）は通常表示と同じです。</figcaption>
+  </figure>
+  <figure>
+    <div class="setwin">
+      <h2>区画</h2>
+      <div class="card">
+        <span class="label">区画の表示と順序</span>
+        <div class="orow"><label><input type="checkbox" checked> CPU</label><button>▲</button><button>▼</button></div>
+        <div class="orow"><label><input type="checkbox" checked> メモリ</label><button>▲</button><button>▼</button></div>
+        <div class="orow"><label><input type="checkbox" checked> Disk</label><button>▲</button><button>▼</button></div>
+        <div class="orow"><label><input type="checkbox" checked> GPU</label><button>▲</button><button>▼</button></div>
+        <div class="orow"><label><input type="checkbox" checked> NPU</label><button>▲</button><button>▼</button></div>
+        <div class="orow"><label><input type="checkbox" checked> Wi-Fi / Ethernet</label><button>▲</button><button>▼</button></div>
+        <div class="orow"><label><input type="checkbox" checked> AI 使用量</label><button>▲</button><button>▼</button></div>
+        <div class="orow new"><label><input type="checkbox" checked> 勤務時間 <span class="tag">NEW</span></label><button>▲</button><button>▼</button></div>
+        <p class="hint">AI 使用量とは独立した区画です。チェックで表示、▲▼ で並べ替えます。</p>
+      </div>
+      <div class="card">
+        <span class="label">勤務時間タイマー</span>
+        <div class="field"><span>15 分切り下げの時間も表示する</span><span><input type="checkbox" id="setFloor" checked></span></div>
+        <div class="field"><span>勤務開始の補正（打刻から押すまでの遅れ）</span><span><input type="number" id="setLag" min="0" max="60" step="1" value="3" style="width:56px;text-align:right;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:4px;color:var(--page-fg);font:inherit;padding:2px 5px"> 分</span></div>
+        <div class="field"><span>勤務時間</span><span><input type="time" id="setTarget" value="07:45"></span></div>
+        <div class="field"><span>昼休み（この間は計測を止める）</span><span><input type="time" id="setLs" value="12:00"><span class="sep">〜</span><input type="time" id="setLe" value="13:00"></span></div>
+        <div class="field"><span>赤く表示する時刻（この時刻以降）</span><span><input type="time" id="setRed" value="22:00"></span></div>
+        <p class="hint">実勤務時間が勤務時間に達すると黄色、赤表示の時刻以降は赤で表示します（赤が優先）。ここを変えると左の区画に反映されます。</p>
+      </div>
+    </div>
+    <figcaption><b>③ 設定ウィンドウ「区画」パネル</b>区画一覧に「勤務時間」を追加し、下に設定カードを置きます。</figcaption>
+  </figure>
+</div>
+
+<div class="notes">
+  <h2>このモックで確認している仕様</h2>
+  <ul>
+    <li>表示は <code>実勤務時間 (15分切り下げの時間)</code>。例: <code>7:52 (7:45)</code>。実勤務時間 = 現在 − 開始 − 昼休みとの重なり。</li>
+    <li>昼休み中は増えない。止まっていることが分かるよう、数値・見出し・バーを灰色にする（黄/赤より優先。シナリオ「昼休み中」で確認）。開始時刻を昼休みの後にすれば控除ゼロ、前にすれば 1 時間引かれる。</li>
+    <li>設定で「15 分切り下げの時間も表示する」を OFF にすると、見出しも大きな数字も実勤務時間だけ（例 <code>7:52</code>）になる。既定は ON。黄/赤の判定は、この設定にかかわらず実勤務時間で行う。</li>
+    <li>開始の補正: 「勤務開始」を押すと、<b>押した時刻 − 補正（既定 3 分）</b>を開始時刻にする（ボタンにも「3分前から」と表示）。補正した日は開始の下に「押下 09:06 − 補正 3分」を表示。計測中は開始の横の − / + で 1 分ずつ微調整でき、手入力もできる。補正を 0 にすると従来どおり押した時刻から。手入力で開始したときは補正しない。</li>
+    <li>黄色: 実勤務時間 ≥ 勤務時間（既定 7:45）。赤: 現在時刻 ≥ 22:00（既定）。赤が優先。終了後は終了時刻で判定して固定。</li>
+    <li>操作: 未開始は「勤務開始」（または開始時刻を手入力して開始）、計測中は「勤務終了」「リセット」、終了後は「リセット」。</li>
+    <li>実装では、この計算を Go の純関数（<code>workTimerSnapshot</code>）に移してテストします。モックの JS は仕様確認用です。</li>
+  </ul>
+</div>
+
+<script>
+const S = { mode:'run', start:9*60+3, pressed:9*60+6, pressed:9*60+6, end:null, now:10*60+30, target:465, ls:720, le:780, red:1320, showFloor:true, lag:3, collapsed:false, editing:false, err:'' };
+const $ = id => document.getElementById(id);
+const fmt = m => Math.floor(m/60) + ':' + String(m%60).padStart(2,'0');
+const hhmm = m => String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0');
+const parse = s => { const [h,m] = s.split(':').map(Number); return h*60+m; };
+
+function calc() {
+  if (S.mode === 'idle' || S.start == null) return null;
+  const ref = S.mode === 'end' ? S.end : S.now;
+  const overlap = Math.max(0, Math.min(ref, S.le) - Math.max(S.start, S.ls));
+  const worked = Math.max(0, ref - S.start - overlap);
+  const level = ref >= S.red ? 'late' : worked >= S.target ? 'over' : '';
+  const paused = S.mode === 'run' && S.now >= S.ls && S.now < S.le && S.start <= S.now;
+  return { worked, floored: Math.floor(worked/15)*15, level, paused };
+}
+
+function sectionHTML() {
+  const c = calc();
+  const val = !c ? (S.showFloor ? '-:-- (-:--)' : '-:--') : S.showFloor ? `${fmt(c.worked)} (${fmt(c.floored)})` : fmt(c.worked);
+  const cls = !c ? 'idle' : c.paused ? 'paused' : c.level;  // 昼休み中は黄/赤より優先して灰色
+  const pct = c ? Math.min(100, c.worked / S.target * 100) : 0;
+  const startTxt = S.editing
+    ? `<input class="wk-time" type="time" data-act="startinput" value="${S.start != null ? hhmm(S.start) : hhmm(S.now)}">`
+    : `<span class="wk-start" data-act="startedit" title="クリックして開始時刻を手入力">${S.start != null ? hhmm(S.start) : '--:--'} ✎</span>`;
+  const nudge = '<button class="wk-nudge" data-act="nm" title="開始を 1 分早める">−</button><button class="wk-nudge" data-act="np" title="開始を 1 分遅らせる">+</button>';
+  const note = (S.pressed != null && S.mode !== 'idle' && S.start != null && S.pressed !== S.start && !S.editing)
+    ? `<div class="wk-note">押下 ${hhmm(S.pressed)} ${S.start < S.pressed ? '−' : '+'} 補正 ${Math.abs(S.pressed - S.start)}分</div>` : '';
+  let btns;
+  if (S.mode === 'idle') btns = `<button class="wk-btn primary" data-act="start">勤務開始${S.lag > 0 ? `（${S.lag}分前から）` : ''}</button>`;
+  else if (S.mode === 'run') btns = '<button class="wk-btn primary" data-act="stop">勤務終了</button><button class="wk-btn" data-act="reset">リセット</button>';
+  else btns = '<button class="wk-btn" data-act="reset">リセット</button>';
+  let chip = '';
+  if (c && c.paused) chip = `<div class="wk-chip">🍴 昼休み中（${hhmm(S.le)} まで停止）</div>`;
+  if (S.mode === 'end') chip = `<div class="wk-chip">⏹ 終了 ${hhmm(S.end)}</div>`;
+  return `<div class="section work-section${S.collapsed ? ' collapsed' : ''}">
+    <div class="section-header"><span class="section-icon">⏱</span><span class="section-title">勤務時間</span><span class="section-value ${cls}">${val}</span><button class="chev" data-act="chev" title="${S.collapsed ? '展開' : '折りたたむ'}">▼</button></div>
+    <div class="sec-body">
+      <div class="wk-cap">${S.showFloor ? '実勤務時間 (15分切り下げ)' : '実勤務時間'}</div>
+      <div class="wk-big ${cls}">${c ? fmt(c.worked) : '-:--'}${S.showFloor ? ` <small>(${c ? fmt(c.floored) : '-:--'})</small>` : ''}</div>
+      <div class="progress-bar"><div class="progress-fill work-fill ${cls}" style="width:${pct}%"></div></div>
+      <div class="wifi-row"><span class="wifi-label">開始</span><span class="wifi-value">${S.mode === 'run' && !S.editing ? nudge : ''}${startTxt}</span></div>
+      ${note}
+      ${S.err ? `<div class="wk-err">${S.err}</div>` : ''}
+      <div class="wifi-row"><span class="wifi-label">目標</span><span class="wifi-value">${fmt(S.target)}</span></div>
+      <div class="wifi-row"><span class="wifi-label">昼休み</span><span class="wifi-value">${hhmm(S.ls)}–${hhmm(S.le)}</span></div>
+      ${chip}
+      <div class="wk-btns">${btns}</div>
+    </div>
+  </div>`;
+}
+const memoryHTML = `<div class="section"><div class="section-header"><span class="section-icon">🧠</span><span class="section-title">メモリ</span><span class="section-value">62%</span><button class="chev">▼</button></div>
+  <div class="progress-bar mem-progress"><div class="progress-fill memory-fill" style="width:62%"></div></div>
+  <div class="memory-details"><span class="used">9.9 GB</span> / 16 GB</div></div>`;
+const btnsHTML = '<div class="top-btns"><button class="top-btn">📌</button><button class="top-btn">⚙</button><button class="top-btn">▬</button><button class="top-btn">_</button></div>';
+
+function render() {
+  const theme = document.querySelector('#ctl-theme .on').dataset.v;
+  $('nowRange').value = S.now; $('nowClk').textContent = hhmm(S.now);
+  const body = memoryHTML + sectionHTML();
+  $('full').innerHTML = `<div class="win ${theme === 'light' ? 'light' : ''}">${btnsHTML}${body}</div>`;
+  $('compact').innerHTML = `<div class="win compact ${theme === 'light' ? 'light' : ''}">${btnsHTML}${body}</div>`;
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  const a = t.dataset.act;
+  if (a === 'start') { S.mode = 'run'; S.pressed = S.now; S.start = Math.max(0, S.now - S.lag); S.end = null; }
+  else if (a === 'nm') S.start = Math.max(0, S.start - 1);
+  else if (a === 'np') S.start = Math.min(S.now, S.start + 1);
+  else if (a === 'stop') { S.mode = 'end'; S.end = S.now; }
+  else if (a === 'reset') { S.mode = 'idle'; S.start = S.end = S.pressed = null; S.editing = false; S.err = ''; }
+  else if (a === 'chev') S.collapsed = !S.collapsed;
+  else if (a === 'startedit') { S.editing = true; S.err = ''; }
+  render();
+  const inp = document.querySelector('#full .wk-time'); if (inp) inp.focus();
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset && t.dataset.act === 'startinput' && t.value) {
+    const m = parse(t.value);
+    if (m > S.now) { S.err = '未来の時刻は設定できません'; }
+    else { S.err = ''; S.start = m; S.pressed = null; S.editing = false; if (S.mode === 'idle') { S.mode = 'run'; } }
+    render();
+  }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.editing) { S.editing = false; S.err = ''; render(); } });
+$('nowRange').addEventListener('input', e => { S.now = +e.target.value; render(); });
+$('setLag').addEventListener('change', e => { S.lag = Math.min(60, Math.max(0, Math.round(+e.target.value) || 0)); e.target.value = S.lag; render(); });
+$('setFloor').addEventListener('change', e => { S.showFloor = e.target.checked; render(); });
+[['setTarget','target'],['setLs','ls'],['setLe','le'],['setRed','red']].forEach(([id,k]) => $(id).addEventListener('change', e => { if (e.target.value) { S[k] = parse(e.target.value); render(); } }));
+
+const PRESETS = {
+  idle:   () => Object.assign(S, { mode:'idle', start:null, pressed:null, end:null, now:8*60+50 }),
+  morning:() => Object.assign(S, { mode:'run', start:9*60+3, pressed:9*60+6, end:null, now:10*60+30 }),
+  lunch:  () => Object.assign(S, { mode:'run', start:9*60+3, pressed:9*60+6, end:null, now:12*60+30 }),
+  over:   () => Object.assign(S, { mode:'run', start:9*60+3, pressed:9*60+6, end:null, now:17*60+55 }),
+  late:   () => Object.assign(S, { mode:'run', start:9*60+3, pressed:9*60+6, end:null, now:22*60+10 }),
+  end:    () => Object.assign(S, { mode:'end', start:9*60+3, pressed:9*60+6, end:18*60+5, now:18*60+5 }),
+};
+document.querySelectorAll('#ctl-preset button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#ctl-preset button').forEach(x => x.classList.toggle('on', x === b));
+  PRESETS[b.dataset.p](); S.editing = false; S.err = ''; render();
+}));
+document.querySelectorAll('#ctl-theme button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#ctl-theme button').forEach(x => x.classList.toggle('on', x === b)); render();
+}));
+document.querySelectorAll('#ctl-col button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#ctl-col button').forEach(x => x.classList.toggle('on', x === b));
+  S.collapsed = b.dataset.v === 'collapse'; render();
+}));
+render();
+</script>
+</body>
+</html>

@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"unsafe"
 
 	"widget-go/aiusage"
@@ -49,7 +50,7 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
-		if r.URL.Path == "/" || r.URL.Path == "/settings" {
+		if r.URL.Path == "/" || r.URL.Path == "/settings" || r.URL.Path == "/worktimer" {
 			w.Header().Set("Content-Security-Policy", scriptCSP)
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			next.ServeHTTP(w, r)
@@ -139,6 +140,34 @@ func newServerMux(token string) *http.ServeMux {
 	// 設定ウィンドウで設定が変わった合図。ウィジェット本体に反映させる。
 	mux.HandleFunc("/api/settingschanged", func(w http.ResponseWriter, r *http.Request) {
 		notifyMainSettingsChanged()
+		w.WriteHeader(http.StatusOK)
+	})
+	// 勤務時間の入力ウィンドウ（コンパクト表示から開く小さな別ウィンドウ）。ページは "/settings" と同じく、トークンなしで読める。
+	mux.HandleFunc("/worktimer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(getWorkTimerHTML(token)))
+	})
+	mux.HandleFunc("/api/openworktimer", func(w http.ResponseWriter, r *http.Request) {
+		openWorkTimerWindow()
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/api/closeworktimer", func(w http.ResponseWriter, r *http.Request) {
+		workWin.closeWindow()
+		w.WriteHeader(http.StatusOK)
+	})
+	// 入力ウィンドウの高さを、ページが測った内容の高さ（CSS px）に合わせる。
+	mux.HandleFunc("/api/resizeworktimer", func(w http.ResponseWriter, r *http.Request) {
+		h, err := strconv.Atoi(r.URL.Query().Get("h"))
+		if err != nil || h <= 0 || h > 4000 {
+			http.Error(w, "invalid h", http.StatusBadRequest)
+			return
+		}
+		resizeWorkWindow(int32(h))
+		w.WriteHeader(http.StatusOK)
+	})
+	// 勤務時間ページの初回の描画が済んだ合図。非表示で作ったウィンドウを見せる。
+	mux.HandleFunc("/api/worktimerready", func(w http.ResponseWriter, r *http.Request) {
+		workWin.reveal()
 		w.WriteHeader(http.StatusOK)
 	})
 	// スタートメニュー / スタートアップのショートカット（チェックで作成、外すと削除）。
@@ -395,6 +424,9 @@ func newServerMux(token string) *http.ServeMux {
 		return info
 	}))
 
+	// 勤務時間タイマーの操作（開始・終了・リセット・開始時刻の変更・1 分調整）。応答は操作後のスナップショット。
+	mux.HandleFunc("/api/worktimer", workTimerActionHandler)
+
 	// theme / coreBase / netUnit などフロント向け設定を保存する。
 	// hide.gpu / hide.npu は Go 側の GPU/NPU 収集の ON/OFF にも使う。
 	mux.HandleFunc("/api/setoption", func(w http.ResponseWriter, r *http.Request) {
@@ -453,8 +485,14 @@ func newServerMux(token string) *http.ServeMux {
 			}
 			refreshPowerMode()
 			kickTray()
+		case "workTarget", "workLunch", "workRed", "workFloor", "workLag":
+			// 勤務時間タイマーの設定（worktimer.go の setWorkTimerOption に検証がある）
+			if err := setWorkTimerOption(key, val); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		case "order":
-			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai を並べ替えたもの
+			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai,work を並べ替えたもの
 			if err := setOrder(val); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -524,6 +562,7 @@ func newServerMux(token string) *http.ServeMux {
 			"collapsed":   c.Collapsed,
 			"hidden":      c.Hidden,
 			"order":       c.Order,
+			"workTimer":   c.WorkTimer,
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。
@@ -573,12 +612,51 @@ func listenLocal() (net.Listener, int) {
 }
 
 //go:embed ui/index.html
-var indexHTML string
+var indexHTMLRaw string
+
+//go:embed ui/worktimer.html
+var workTimerHTMLRaw string
+
+// 勤務時間の区画（CSS・マークアップ・JS）は、本体（ui/index.html）と、コンパクト表示から開く入力ウィンドウ
+// （ui/worktimer.html）で同じものを使う。2 か所にコピーすると片方だけ直してずれるため、断片にして差し込む。
+//
+//go:embed ui/work/section.css
+var workSectionCSS string
+
+//go:embed ui/work/section.html
+var workSectionHTML string
+
+//go:embed ui/work/section.js
+var workSectionJS string
+
+// expandWorkParts は page の __WORK_CSS__ / __WORK_HTML__ / __WORK_JS__ を断片に差し替える。
+// hidden が true なら、区画を最初は非表示にする（本体。設定を読むまでの間に出さない）。
+func expandWorkParts(page string, hidden bool) string {
+	hiddenClass := ""
+	if hidden {
+		hiddenClass = " is-hidden"
+	}
+	html := strings.ReplaceAll(workSectionHTML, "__WORK_HIDDEN__", hiddenClass)
+	page = strings.ReplaceAll(page, "__WORK_CSS__", workSectionCSS)
+	page = strings.ReplaceAll(page, "__WORK_HTML__", html)
+	return strings.ReplaceAll(page, "__WORK_JS__", workSectionJS)
+}
+
+// 差し込みは起動時に 1 回だけ。トークンの差し替えは、リクエストのたびに行う。
+var (
+	indexHTML     = sync.OnceValue(func() string { return expandWorkParts(indexHTMLRaw, true) })
+	workTimerHTML = sync.OnceValue(func() string { return expandWorkParts(workTimerHTMLRaw, false) })
+)
 
 // getHTML は埋め込み済みの UI HTML を返す。__WIDGET_TOKEN__ を起動毎の
 // セッショントークンに差し替える（<script> の CSP nonce と JS の WIDGET_TOKEN 定数）。
 func getHTML(token string) string {
-	return strings.ReplaceAll(indexHTML, "__WIDGET_TOKEN__", token)
+	return strings.ReplaceAll(indexHTML(), "__WIDGET_TOKEN__", token)
+}
+
+// getWorkTimerHTML は勤務時間の入力ウィンドウの HTML（/worktimer）。
+func getWorkTimerHTML(token string) string {
+	return strings.ReplaceAll(workTimerHTML(), "__WIDGET_TOKEN__", token)
 }
 
 //go:embed ui/settings.html

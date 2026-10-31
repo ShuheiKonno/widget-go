@@ -90,7 +90,7 @@ func TestClockPercentDiffRoundsHalfUp(t *testing.T) {
 // 色の境界が、ui/index.html のバーの定数と一致していること。ずれると、トレイとバーの色が境界で食い違う。
 func TestClockThresholdsMatchFrontend(t *testing.T) {
 	for name, want := range map[string]int{"CLOCK_LOW_MAX_PCT": clockLowMaxPct, "CLOCK_HIGH_MIN_PCT": clockHighMinPct} {
-		m := regexp.MustCompile(`const ` + name + ` = (-?\d+);`).FindStringSubmatch(indexHTML)
+		m := regexp.MustCompile(`const ` + name + ` = (-?\d+);`).FindStringSubmatch(indexHTML())
 		if m == nil {
 			t.Fatalf("ui/index.html に %s が見つからない", name)
 		}

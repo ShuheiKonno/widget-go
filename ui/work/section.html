@@ -1,0 +1,24 @@
+        <!-- 勤務時間タイマー。AI 使用量とは独立した区画（既定は非表示。設定の区画一覧で ON にする） -->
+        <div class="section work-section__WORK_HIDDEN__" id="workSection" data-sec="work">
+            <div class="section-header"><span class="section-icon">⏱</span><span class="section-title">勤務時間</span><span class="section-value idle" id="work-head">---</span><button class="chev" data-sec="work" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="wk-cap" id="work-cap">実勤務時間 (15分切り下げ)</div>
+                <div class="wk-big idle" id="work-big">-:--</div>
+                <div class="progress-bar"><div class="progress-fill work-fill" id="work-bar" style="width:0%"></div></div>
+                <div class="wifi-row"><span class="wifi-label">開始</span><span class="wifi-value">
+                    <span id="work-nudge" hidden><button class="wk-nudge" type="button" data-wk="nudge-" title="開始を 1 分早める">−</button><button class="wk-nudge" type="button" data-wk="nudge+" title="開始を 1 分遅らせる">+</button></span>
+                    <span class="wk-start" id="work-start" data-wk="edit" title="クリックして開始時刻を手入力">--:-- ✎</span>
+                    <input class="wk-time" id="work-start-input" type="time" hidden>
+                </span></div>
+                <div class="wk-note" id="work-note" hidden></div>
+                <div class="wk-err" id="work-err" hidden></div>
+                <div class="wifi-row"><span class="wifi-label">目標</span><span class="wifi-value" id="work-target">---</span></div>
+                <div class="wifi-row"><span class="wifi-label">昼休み</span><span class="wifi-value" id="work-lunch">---</span></div>
+                <div class="wk-chip" id="work-chip" hidden></div>
+                <div class="wk-btns">
+                    <button class="wk-btn primary" type="button" data-wk="start" id="work-btn-start">勤務開始</button>
+                    <button class="wk-btn primary" type="button" data-wk="stop" id="work-btn-stop" hidden>勤務終了</button>
+                    <button class="wk-btn" type="button" data-wk="reset" id="work-btn-reset" hidden>リセット</button>
+                </div>
+            </div>
+        </div>

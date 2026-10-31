@@ -274,7 +274,9 @@ type SystemData struct {
 	Disk *sysinfo.DiskInfo `json:"Disk"`
 	// PowerMode は電源モード（設定アプリの「電源モード」）の状態。取得できない環境では null。
 	PowerMode *sysinfo.PowerModeInfo `json:"PowerMode"`
-	ViewMode  int                    `json:"ViewMode"`
+	// WorkTimer は勤務時間タイマーの表示値。区画を非表示にしている間は null。
+	WorkTimer *WorkTimerInfo `json:"WorkTimer"`
+	ViewMode  int            `json:"ViewMode"`
 }
 
 // バックグラウンドで更新されるスナップショット。
@@ -390,6 +392,8 @@ func setTopmost(topmost bool) {
 }
 
 func getSystemData() SystemData {
+	// config のロックを取るので、cacheMu を保持する前に計算する（ロックを入れ子にしない）
+	workTimer := currentWorkTimer(workTimerClock())
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
 	viewModeMu.RLock()
@@ -407,6 +411,7 @@ func getSystemData() SystemData {
 		Disk:     diskSnapshotLocked(),
 		// 設定アプリなど外部での変更にも追従するため、2 秒周期の収集で更新する。
 		PowerMode: cachedPower,
+		WorkTimer: workTimer,
 		ViewMode:  vm,
 	}
 }
