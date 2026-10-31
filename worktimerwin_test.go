@@ -73,6 +73,10 @@ func TestWorkPartsExpanded(t *testing.T) {
 			}
 		}
 	}
+	// 設定ウィンドウでのテーマ変更を、開いている入力ウィンドウにも反映する（Go 側が window.__settingsChanged を呼ぶ）
+	if !strings.Contains(pages["入力ウィンドウ"], "window.__settingsChanged") {
+		t.Error("入力ウィンドウに window.__settingsChanged が無い（テーマの変更が反映されない）")
+	}
 	// 本体は設定を読むまで区画を出さない。入力ウィンドウは最初から出す。
 	if !strings.Contains(pages["本体"], `class="section work-section is-hidden"`) {
 		t.Error("本体の区画は、最初は is-hidden のはず")

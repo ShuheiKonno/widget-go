@@ -100,11 +100,6 @@ func notifyWorkTimerChanged() {
 		if p := mainWebView.Load(); p != nil {
 			(*p).Eval(js)
 		}
-		workWin.mu.Lock()
-		inst := workWin.inst
-		workWin.mu.Unlock()
-		if inst != nil {
-			inst.Eval(js)
-		}
+		workWin.eval(js)
 	})
 }

@@ -92,14 +92,20 @@
         }
         systemThemeMql.addEventListener('change', applyTheme);
 
-        // ---------- 起動 ----------
-        // 最初の描画（テーマと勤務時間）が済んだら、Go 側へ知らせて、非表示で作ったウィンドウを見せる。
-        (async function(){
+        // 設定ウィンドウでテーマが変わったとき（Go 側が window.__settingsChanged を呼ぶ）にも取り直す
+        async function loadTheme(){
             try {
                 const s = await (await apiFetch('/api/settings')).json();
                 if (s.theme) theme = s.theme;
             } catch (e) {}
             applyTheme();
+        }
+        window.__settingsChanged = loadTheme;
+
+        // ---------- 起動 ----------
+        // 最初の描画（テーマと勤務時間）が済んだら、Go 側へ知らせて、非表示で作ったウィンドウを見せる。
+        (async function(){
+            await loadTheme();
             try {
                 const d = await (await apiFetch('/api/system')).json();
                 applyWorkTimer(d.WorkTimer);

@@ -165,6 +165,16 @@ func (s *settingsWindow) onDestroyed() {
 	s.mu.Unlock()
 }
 
+// eval は、開いているウィンドウのページで JS を実行する（開いていなければ何もしない）。UI スレッドで呼ぶこと。
+func (s *settingsWindow) eval(js string) {
+	s.mu.Lock()
+	inst := s.inst
+	s.mu.Unlock()
+	if inst != nil {
+		inst.Eval(js)
+	}
+}
+
 func (s *settingsWindow) currentHwnd() uintptr {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -253,9 +263,12 @@ func applySettingsWindowTheme(hwnd uintptr) {
 // あわせて、テーマが変わっているかもしれないので、設定ウィンドウのタイトルバーも合わせる。
 func notifyMainSettingsChanged() {
 	dispatchUI(func() {
+		const js = "window.__settingsChanged&&window.__settingsChanged()"
 		if p := mainWebView.Load(); p != nil {
-			(*p).Eval("window.__settingsChanged&&window.__settingsChanged()")
+			(*p).Eval(js)
 		}
+		// 勤務時間の入力ウィンドウも、開いていれば、テーマなどを取り直す
+		workWin.eval(js)
 		applySettingsWindowTheme(settingsWin.currentHwnd())
 		applySettingsWindowTheme(workWin.currentHwnd())
 	})
