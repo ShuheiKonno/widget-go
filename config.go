@@ -65,6 +65,8 @@ type Config struct {
 	WorkTimer WorkTimerConfig `json:"workTimer"`
 	// Collapsed は各区画の折りたたみ状態（D10）。
 	Collapsed CollapsedConfig `json:"collapsed"`
+	// Flipped は表裏を反転できる区画の、いま出している面（再起動をまたいで覚える）。
+	Flipped FlippedConfig `json:"flipped"`
 	// Hidden は各区画の非表示設定。true が非表示。既定はすべて表示。
 	// AI は既存の ai.enabled（取得の ON/OFF を兼ねる）で切り替えるのでここには含めない。
 	Hidden HiddenConfig `json:"hidden"`
@@ -222,6 +224,43 @@ func setCollapsed(name, val string) error {
 		return fmt.Errorf("unknown collapse section %q", name)
 	}
 	mutateConfig(func(c *Config) { *c.Collapsed.field(name) = val == "true" })
+	return nil
+}
+
+// FlippedConfig は、クリックで表裏を反転できる区画が、いまどちらの面を出しているか。true が裏面。
+// 折りたたみ・非表示・再起動をまたいで同じ面に戻すために保存する（保存しないと、表面に戻ってしまう）。
+//   - Disk: 裏面は I/O
+//   - Network: 裏面はトラフィックのグラフ（表面は Wi-Fi / Ethernet のアダプタ情報）
+//   - AI: 折りたたみ・コンパクト表示の「クリックで反転」で、2 行目（Codex 側）を出しているか
+type FlippedConfig struct {
+	Disk    bool `json:"disk"`
+	Network bool `json:"network"`
+	AI      bool `json:"ai"`
+}
+
+// field は区画名に対応するフィールドを返す。未知の名前は nil。
+func (f *FlippedConfig) field(name string) *bool {
+	switch name {
+	case "disk":
+		return &f.Disk
+	case "network":
+		return &f.Network
+	case "ai":
+		return &f.AI
+	}
+	return nil
+}
+
+// setFlipped は区画が出している面を保存する。name は許可リスト（disk / network / ai）、
+// val は "true"（裏面）か "false"（表面）のみ。それ以外はエラー（設定は変更しない）。
+func setFlipped(name, val string) error {
+	if val != "true" && val != "false" {
+		return fmt.Errorf("invalid flip value %q", val)
+	}
+	if (&FlippedConfig{}).field(name) == nil {
+		return fmt.Errorf("unknown flip section %q", name)
+	}
+	mutateConfig(func(c *Config) { *c.Flipped.field(name) = val == "true" })
 	return nil
 }
 

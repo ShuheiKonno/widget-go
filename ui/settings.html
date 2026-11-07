@@ -248,9 +248,12 @@
                         <span class="label" title="区画を折りたたんだときと、コンパクト表示のときの Claude / Codex の見せ方">折りたたみ / コンパクト時の表示</span>
                         <div class="opts" id="aiCompactDisp">
                             <button class="opt" data-value="both" title="Claude と Codex を 2 行で並べて表示">並べて表示</button>
-                            <button class="opt" data-value="rotate" title="1 行ずつ、約 4 秒ごとに自動で反転して交互に表示">自動で反転</button>
+                            <button class="opt" data-value="rotate" title="1 行ずつ、設定した間隔で自動的に反転して交互に表示">自動で反転</button>
                             <button class="opt" data-value="click" title="1 行ずつ表示し、クリックで反転して入れ替え">クリックで反転</button>
                         </div>
+                    </div>
+                    <div class="field">
+                        <label class="toggle" id="aiRotateRow"><span>反転の間隔 (秒)<span class="sub-text">「自動で反転」のときの間隔です（2〜60 秒）。</span></span><input class="num" type="number" min="2" max="60" step="1" id="optAIRotate"></label>
                     </div>
                     <div class="field">
                         <span class="label" title="トレイアイコンの背景色（緑 / 琥珀 / 赤）を決める、7 日枠のペース基準">7 日枠のトレイ配色ペース</span>
@@ -716,6 +719,9 @@
             const setNum = function(id, v){ const el = $(id); if (document.activeElement !== el) el.value = v; };
             setNum('optAIUsagePoll', s.usagePollSeconds);
             setNum('optAIStatusPoll', s.statusPollSeconds);
+            // 反転の間隔は「自動で反転」のときだけ使う（選んでいない間も値は保たれる）
+            setNum('optAIRotate', s.compactRotateSeconds);
+            $('aiRotateRow').classList.toggle('disabled', s.compactDisplay !== 'rotate');
             $('optAINotifyUsage').checked = !!s.notifyUsage;
             $('optAINotifyOverage').checked = !!s.notifyOverage;
             $('optAINotifyStatus').checked = !!s.notifyStatus;
@@ -735,9 +741,10 @@
                 aiSetOption(o);
             });
         });
-        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds']].forEach(function(pair){
+        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds'], ['optAIRotate', 'compactRotateSeconds']].forEach(function(pair){
             $(pair[0]).addEventListener('change', function(){
-                const o = {}; o[pair[1]] = Number(this.value) || 0;
+                // 整数に丸める（小数のままだとサーバーが受け付けず、入力欄だけ保存値とずれる）
+                const o = {}; o[pair[1]] = Math.round(Number(this.value)) || 0;
                 aiSetOption(o);   // 範囲外はサーバー側で矯正され、応答で表示が戻る
             });
         });

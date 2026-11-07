@@ -111,6 +111,8 @@ type settingsPayload struct {
 	TraySplitDays     *int    `json:"traySplitDays"`
 	UsagePollSeconds  *int    `json:"usagePollSeconds"`
 	StatusPollSeconds *int    `json:"statusPollSeconds"`
+
+	CompactRotateSeconds *int `json:"compactRotateSeconds"`
 }
 
 // settingsView は /api/ai/settings の出力。通知済みフラグなどの内部状態は含めない。
@@ -128,6 +130,8 @@ type settingsView struct {
 	TraySplitDays     int    `json:"traySplitDays"`
 	UsagePollSeconds  int    `json:"usagePollSeconds"`
 	StatusPollSeconds int    `json:"statusPollSeconds"`
+
+	CompactRotateSeconds int `json:"compactRotateSeconds"`
 }
 
 func currentPayload() settingsView {
@@ -138,6 +142,7 @@ func currentPayload() settingsView {
 		NotifyStatus: c.NotifyStatus, OverageTipFormat: c.OverageTipFormat,
 		ResetTimeFormat: c.ResetTimeFormat, CompactDisplay: c.CompactDisplay, TraySplitDays: c.TraySplitDays,
 		UsagePollSeconds: c.UsagePollSeconds, StatusPollSeconds: c.StatusPollSeconds,
+		CompactRotateSeconds: c.CompactRotateSeconds,
 	}
 }
 
@@ -178,6 +183,9 @@ func handleSetOption(w http.ResponseWriter, r *http.Request) {
 		}
 		if p.CompactDisplay != nil {
 			c.CompactDisplay = *p.CompactDisplay
+		}
+		if p.CompactRotateSeconds != nil {
+			c.CompactRotateSeconds = *p.CompactRotateSeconds
 		}
 		if p.TraySplitDays != nil {
 			c.TraySplitDays = *p.TraySplitDays

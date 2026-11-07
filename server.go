@@ -533,6 +533,14 @@ func newServerMux(token string) *http.ServeMux {
 				}
 				break
 			}
+			// 区画が出している面（表 / 裏）: key=flip.<name>&value=true|false（true が裏面）
+			if name, ok := strings.CutPrefix(key, "flip."); ok {
+				if err := setFlipped(name, val); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				break
+			}
 			http.Error(w, "unknown key", http.StatusBadRequest)
 			return
 		}
@@ -560,6 +568,7 @@ func newServerMux(token string) *http.ServeMux {
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
 			"collapsed":   c.Collapsed,
+			"flipped":     c.Flipped,
 			"hidden":      c.Hidden,
 			"order":       c.Order,
 			"workTimer":   c.WorkTimer,

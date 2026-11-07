@@ -697,7 +697,11 @@
             // 区画の表示順（Go 側の config.json の order と同じ）
             order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'],
             // 折りたたみ状態（Go 側の config.json の collapsed と同じ）。AI は既定で折りたたみ（D8）
-            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true, work: false }
+            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true, work: false },
+            // 反転できる区画がいま出している面（Go 側の config.json の flipped と同じ）。true が裏面。
+            // 面の正はここで、.flipped クラスは applyFlipped がここから導く。折りたたみ・非表示・データ待ちの間も
+            // 面を保ち、再起動しても同じ面に戻すため（クラスを消して表面に戻すことはしない）。
+            flipped: { disk: false, network: false, ai: false }
         };
 
         // Close button (✕): タスクトレイに格納する
@@ -770,13 +774,17 @@
         // ドラッグとクリックを区別するため、mousedown からの移動量で判定する
         let mouseDownX = 0, mouseDownY = 0, movedSinceDown = false;
         // 表裏の反転（Wi-Fi ⇔ ネットワークグラフ、Disk ⇔ I/O）。区画のどこをクリックしても反転する。
-        // redraw は裏面のグラフを描く関数。
-        function bindFlip(sec, redraw) {
+        // name は settings.flipped / config.json の flipped のキー、redraw は裏面のグラフを描く関数。
+        // 面を保存するのはこのクリックだけ。折りたたみ・非表示・再起動では面を変えない（applyFlipped を参照）。
+        function bindFlip(sec, name, redraw) {
             sec.addEventListener('click', function(e) {
                 if (movedSinceDown) return;
                 e.stopPropagation();
-                sec.classList.toggle('flipped');
-                if (sec.classList.contains('flipped')) {
+                const next = !settings.flipped[name];
+                settings.flipped[name] = next;
+                sec.classList.toggle('flipped', next);
+                apiFetch('/api/setoption?key=flip.' + name + '&value=' + next).catch(function(){});
+                if (next) {
                     // フリップ直後はキャンバスの clientWidth が 0 のことがあるので
                     // アニメーション完了後も含めて二度描画しておく
                     setTimeout(redraw, 30);
@@ -785,9 +793,33 @@
             });
         }
         const wifiSection = document.getElementById('wifiSection');
-        bindFlip(wifiSection, drawNetGraph);
+        bindFlip(wifiSection, 'network', drawNetGraph);
         const diskSection = document.getElementById('diskSection');
-        bindFlip(diskSection, redrawDiskGraph);
+        bindFlip(diskSection, 'disk', redrawDiskGraph);
+        // 保存された面を .flipped に反映する。折りたたみや非表示の間は裏面のキャンバスの幅が 0 で描けないので、
+        // 展開・表示に戻ったとき（と起動時）は、反転のときと同じく少し置いてグラフを描き直す。
+        let graphRedrawTimers = [];
+        function scheduleGraphRedraw(){
+            graphRedrawTimers.forEach(clearTimeout);
+            graphRedrawTimers = [30, 600].map(function(ms){
+                return setTimeout(function(){
+                    if (settings.flipped.network) drawNetGraph();
+                    if (settings.flipped.disk) redrawDiskGraph();
+                }, ms);
+            });
+        }
+        // instant: 起動時の復元。回転のアニメーション（0.55 秒）を見せず、最初から保存された面で出す。
+        function applyFlipped(instant){
+            const cards = [wifiSection, diskSection].map(function(sec){ return sec.querySelector('.flip-card'); });
+            if (instant) cards.forEach(function(c){ if (c) c.style.transition = 'none'; });
+            wifiSection.classList.toggle('flipped', !!settings.flipped.network);
+            diskSection.classList.toggle('flipped', !!settings.flipped.disk);
+            if (instant) {
+                void wifiSection.offsetWidth;   // 回転後の状態を確定させてから、transition を元に戻す
+                cards.forEach(function(c){ if (c) c.style.transition = ''; });
+            }
+            scheduleGraphRedraw();
+        }
 
         // Drag functionality
         let isDragging = false;
@@ -1167,12 +1199,12 @@
                 const el = n === 'network' ? document.getElementById(id) : document.querySelector('.section[data-sec="' + id + '"]');
                 if (!el) return;
                 el.classList.toggle('is-hidden', !!settings.hidden[n]);
-                // 非表示の間は裏面（グラフ）の状態を持ち越さない
-                if ((n === 'network' || n === 'disk') && settings.hidden[n]) el.classList.remove('flipped');
+                // 非表示の間も、いま出している面（settings.flipped）は変えない。表示に戻したら同じ面から再開する
             });
             applyAccelData(lastGPU, lastNPU);
             applyDiskData(lastDisk);
             updateLastSection();
+            scheduleGraphRedraw();
         }
         // ============ 区画の表示順 ============
         function applyOrder(){
@@ -1202,11 +1234,13 @@
                 const c = !!(settings.collapsed && settings.collapsed[n]);
                 el.classList.toggle('collapsed', c);
                 el.querySelectorAll('.chev').forEach(function(b){ b.title = c ? '展開' : '折りたたむ'; });
-                // Wi-Fi と Disk は折りたたむと表面に戻す。展開後は表面から始まる（裏面のグラフは再描画される）。
-                if ((n === 'network' || n === 'disk') && c) el.classList.remove('flipped');
+                // Wi-Fi と Disk は、折りたたんでも展開しても、いま出している面（settings.flipped）を保つ。
+                // 折りたたみ中の裏面は見出し 1 行（CSS の .collapsed 側）で、展開すると同じ面のグラフに戻る。
             });
             // net-peak の中身は折りたたみ状態でも変わるので、次の周期を待たずに付け替える
             updateNetValue();
+            // 展開した裏面のグラフは、折りたたみ中は描けていない（canvas が非表示）ので描き直す
+            scheduleGraphRedraw();
         }
         let heightTimer = 0;
         function scheduleHeightAdjust(){
@@ -1236,7 +1270,7 @@
         });
         __WORK_JS__
         // ============ AI 使用量（Claude / Codex）============
-        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0, rotateTimer: 0 };
+        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0, rotateTimer: 0, rotateMs: 0 };
         const AI_PROVIDERS = [
             { id: 'claude', name: 'Claude', letter: 'C', cls: 'claude', flag: 'claudeEnabled' },
             { id: 'codex',  name: 'Codex',  letter: 'X', cls: 'codex',  flag: 'codexEnabled' }
@@ -1372,7 +1406,12 @@
         // 折りたたみ / コンパクト表示の見せ方。"rotate"（自動）と "click"（クリック）は 2 行を重ねて、
         // それぞれ一定間隔 / クリックで反転させる。
         // 行が 1 つだけのときは入れ替える相手がいないので、反転させず普通に出す。
-        const AI_ROTATE_MS = 4000;
+        // 自動で反転する間隔は設定（ai.compactRotateSeconds。Go 側が 2〜60 秒に矯正済み）。取れないときは従来の 4 秒。
+        const AI_ROTATE_DEFAULT_MS = 4000;
+        function aiRotateMs(){
+            const sec = ai.settings ? Number(ai.settings.compactRotateSeconds) : 0;
+            return sec > 0 ? sec * 1000 : AI_ROTATE_DEFAULT_MS;
+        }
         function applyAICompactDisplay(){
             const box = document.getElementById('ai-compact');
             const mode = ai.settings && ai.settings.enabled ? ai.settings.compactDisplay : '';
@@ -1383,11 +1422,19 @@
             document.getElementById('aiSection').classList.toggle('click-flip', flippable && mode === 'click');
             document.getElementById('aiSection').classList.toggle('ai-rot', rotate);
             if (!rotate) box.classList.remove('flip');
-            if (auto && !ai.rotateTimer) {
+            // 「クリックで反転」は、利用者が選んだ行（settings.flipped.ai）を出す。再起動や、行が一時的に 1 つに
+            // なった（取得中など）あとでも戻す。自動で反転のときは回り続けるので保存しない。反転の動きの途中
+            // （aiFlipBusy）は、動きが自分で行を入れ替えるので触らない。
+            else if (mode === 'click' && !aiFlipBusy) box.classList.toggle('flip', !!settings.flipped.ai);
+            const ms = aiRotateMs();
+            if (auto && (!ai.rotateTimer || ai.rotateMs !== ms)) {
+                // 間隔が変わったときは、作り直して新しい間隔にすぐ切り替える
+                clearInterval(ai.rotateTimer);
+                ai.rotateMs = ms;
                 ai.rotateTimer = setInterval(function(){
                     // 見えていない間（フル表示で展開中）は回さない
                     if (box.offsetParent !== null) aiFlip();
-                }, AI_ROTATE_MS);
+                }, ms);
             } else if (!auto && ai.rotateTimer) {
                 clearInterval(ai.rotateTimer);
                 ai.rotateTimer = 0;
@@ -1423,6 +1470,11 @@
             if (!compact && !this.classList.contains('collapsed')) return;
             if (e.target.closest('.chev, .ai-refresh, .ai-act, [data-ai-open], [data-ai-login]')) return;
             e.stopPropagation();
+            if (aiFlipBusy) return;   // 動いている最中のクリックは無視する（面と保存値がずれないように）
+            // 反転後の面を保存する（再起動しても同じ行から始める）。動きの途中ではクラスがまだ変わらないので、先に決める
+            const next = !document.getElementById('ai-compact').classList.contains('flip');
+            settings.flipped.ai = next;
+            apiFetch('/api/setoption?key=flip.ai&value=' + next).catch(function(){});
             aiFlip();
         });
         // ログイン待ち・取得中は短い間隔で、安定したら長い間隔で見る（Go 側の取得は既定 5 分ごと）
@@ -1573,6 +1625,9 @@
             if (s.hidden) { Object.assign(settings.hidden, s.hidden); applyHidden(); }
             applyOrder();
             if (s.collapsed) Object.assign(settings.collapsed, s.collapsed);
+            // いま出している面は、起動時だけ保存値から読む。変えるのはこのウィンドウのクリックだけなので、
+            // 設定ウィンドウの変更で再取得されたときは、保存が間に合っていない古い値で上書きしない。
+            if (initial && s.flipped) { Object.assign(settings.flipped, s.flipped); applyFlipped(true); applyAICompactDisplay(); }
             // CPU 名は起動後に変わらないので、ここで一度だけ反映する
             if (s.cpuName) setModelName('cpu-model', s.cpuName);
 
@@ -1765,7 +1820,7 @@
             const show = !settings.hidden.disk && !!(lastDisk && (drives.length || io));
             sec.style.display = show ? '' : 'none';
             sec.classList.toggle('disk-io-graph', graph);
-            if (!show) sec.classList.remove('flipped');
+            // データ待ち・取得不可で隠れている間も、いま出している面（settings.flipped）は変えない
             if (show) {
                 let used = 0, total = 0;
                 drives.forEach(function(d){ used += Number(d.Used) || 0; total += Number(d.Total) || 0; });
