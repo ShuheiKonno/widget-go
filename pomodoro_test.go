@@ -432,7 +432,7 @@ func TestCurrentPomodoroHiddenByDefault(t *testing.T) {
 func TestLoadConfigPomodoroDefaultsForOldConfig(t *testing.T) {
 	withConfigFile(t, configV180)
 	c := snapshotConfig()
-	if !c.Hidden.Pomodoro || c.Collapsed.Pomodoro || c.Order[len(c.Order)-1] != "pomodoro" {
+	if !c.Hidden.Pomodoro || c.Collapsed.Pomodoro || c.Order[len(c.Order)-2] != "pomodoro" || c.Order[len(c.Order)-1] != "ping" {
 		t.Errorf("hidden=%v collapsed=%v order=%v", c.Hidden.Pomodoro, c.Collapsed.Pomodoro, c.Order)
 	}
 	if c.Pomodoro.FocusMinutes != 25 || !c.Pomodoro.AutoNext || !c.Pomodoro.FocusMode || len(c.Pomodoro.Targets) != 4 {

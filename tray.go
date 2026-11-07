@@ -548,15 +548,6 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		case ID_TRAY_AI_REFRESH:
 			go aiusage.RefreshNow()
 			return 0
-		case ID_TRAY_AI_LOGIN_CLAUDE:
-			go aiusage.ShowLogin("claude")
-			return 0
-		case ID_TRAY_AI_LOGIN_CODEX:
-			go aiusage.ShowLogin("codex")
-			return 0
-		case ID_TRAY_AI_TEST:
-			go aiusage.TestNotify()
-			return 0
 		}
 	case WM_DESTROY:
 		procPostQuitMessage.Call(0)

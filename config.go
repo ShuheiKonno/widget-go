@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"widget-go/aiusage"
+	"widget-go/ping"
 )
 
 // Config はプロセスをまたいで永続化される設定。
@@ -65,6 +66,8 @@ type Config struct {
 	WorkTimer WorkTimerConfig `json:"workTimer"`
 	// Pomodoro はポモドーロタイマー（区画 pomodoro）の設定と状態、集中モードで隠したものの記録。区画の表示は Hidden.Pomodoro。
 	Pomodoro PomodoroConfig `json:"pomodoro"`
+	// Ping は Ping 監視（区画 ping）の設定。区画の表示は Hidden.Ping。
+	Ping ping.Config `json:"ping"`
 	// Collapsed は各区画の折りたたみ状態（D10）。
 	Collapsed CollapsedConfig `json:"collapsed"`
 	// Flipped は表裏を反転できる区画の、いま出している面（再起動をまたいで覚える）。
@@ -77,7 +80,7 @@ type Config struct {
 }
 
 // defaultOrder は区画の既定の表示順。区画名は CollapsedConfig / HiddenConfig と同じ。
-var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work", "pomodoro"}
+var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work", "pomodoro", "ping"}
 
 // normalizeOrder は保存された表示順を矯正する。未知・重複は捨て、欠けた区画は既定の順で末尾に足す。
 // 手編集や、区画が増えた将来のバージョンから戻ったときでも全区画が必ず含まれる。
@@ -139,6 +142,8 @@ type HiddenConfig struct {
 	Work bool `json:"work"`
 	// Pomodoro はポモドーロタイマー。既定は非表示（defaultConfig）。
 	Pomodoro bool `json:"pomodoro"`
+	// Ping は Ping 監視。既定は非表示（defaultConfig）。
+	Ping bool `json:"ping"`
 }
 
 // field は区画名に対応するフィールドを返す。未知の名前は nil。
@@ -160,6 +165,8 @@ func (h *HiddenConfig) field(name string) *bool {
 		return &h.Work
 	case "pomodoro":
 		return &h.Pomodoro
+	case "ping":
+		return &h.Ping
 	}
 	return nil
 }
@@ -169,7 +176,7 @@ func (h *HiddenConfig) field(name string) *bool {
 func (c *Config) syncShowGPU() { c.ShowGPU = !c.Hidden.GPU || !c.Hidden.NPU }
 
 // setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
-// network / work / pomodoro）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+// network / work / pomodoro / ping）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setHidden(name, val string) error {
 	if val != "true" && val != "false" {
 		return fmt.Errorf("invalid hide value %q", val)
@@ -196,6 +203,7 @@ type CollapsedConfig struct {
 	AI       bool `json:"ai"`
 	Work     bool `json:"work"`
 	Pomodoro bool `json:"pomodoro"`
+	Ping     bool `json:"ping"`
 }
 
 // field は区画名に対応するフィールドを返す。未知の名前は nil。
@@ -219,6 +227,8 @@ func (c *CollapsedConfig) field(name string) *bool {
 		return &c.Work
 	case "pomodoro":
 		return &c.Pomodoro
+	case "ping":
+		return &c.Ping
 	}
 	return nil
 }
@@ -331,6 +341,9 @@ func defaultConfig() Config {
 	// ポモドーロも既定は非表示（勤務時間と同じ）。
 	c.Hidden.Pomodoro = true
 	c.Pomodoro = defaultPomodoro()
+	// Ping も既定は非表示。
+	c.Hidden.Ping = true
+	c.Ping = ping.DefaultConfig()
 	c.Order = append([]string(nil), defaultOrder...)
 	c.IME = IMEConfig{
 		Enabled:     true,
@@ -361,6 +374,7 @@ func loadConfig() {
 	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
 	tmp.WorkTimer = normalizeWorkTimer(tmp.WorkTimer)
 	tmp.Pomodoro = normalizePomodoro(tmp.Pomodoro)
+	tmp.Ping = ping.NormalizeConfig(tmp.Ping)
 	// v2.0.1 以前は「GPU/NPU を表示」(showGPU) 1 つだけだった。OFF だった設定は両区画の非表示に引き継ぐ。
 	if !tmp.ShowGPU {
 		tmp.Hidden.GPU, tmp.Hidden.NPU = true, true

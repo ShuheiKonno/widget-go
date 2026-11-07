@@ -119,13 +119,6 @@ func appendUsageMenu(menu uintptr) {
 		procAppendMenuW.Call(menu, MF_STRING, id, uintptr(unsafe.Pointer(p)))
 	}
 	add(ID_TRAY_AI_REFRESH, "AI 使用量を更新")
-	for _, prov := range aiusage.LoginNeeded() {
-		if prov == "codex" {
-			add(ID_TRAY_AI_LOGIN_CODEX, aiusage.ProviderName(prov)+" にログイン…")
-		} else {
-			add(ID_TRAY_AI_LOGIN_CLAUDE, aiusage.ProviderName(prov)+" にログイン…")
-		}
-	}
-	add(ID_TRAY_AI_TEST, "AI 通知のテスト")
+	// ログインの項目は、トレイには出さない（ウィジェットの AI 使用量の区画から行う）。
 	procAppendMenuW.Call(menu, MF_SEPARATOR, 0, 0)
 }

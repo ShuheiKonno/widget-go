@@ -39,12 +39,12 @@ func TestLoadConfigExplicitAIExpandedIsKept(t *testing.T) {
 
 func TestSetCollapsedPersistsAllSections(t *testing.T) {
 	path := withConfigFile(t, "")
-	for _, name := range []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work", "pomodoro"} {
+	for _, name := range []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work", "pomodoro", "ping"} {
 		if err := setCollapsed(name, "true"); err != nil {
 			t.Errorf("setCollapsed(%q, true): %v", name, err)
 		}
 	}
-	if c := snapshotConfig().Collapsed; c != (CollapsedConfig{CPU: true, Memory: true, Disk: true, GPU: true, NPU: true, Network: true, AI: true, Work: true, Pomodoro: true}) {
+	if c := snapshotConfig().Collapsed; c != (CollapsedConfig{CPU: true, Memory: true, Disk: true, GPU: true, NPU: true, Network: true, AI: true, Work: true, Pomodoro: true, Ping: true}) {
 		t.Errorf("全区画が折りたたまれるはず: %+v", c)
 	}
 	if err := setCollapsed("cpu", "false"); err != nil {
@@ -61,7 +61,7 @@ func TestSetCollapsedPersistsAllSections(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
-	if len(saved.Collapsed) != 9 || saved.Collapsed["cpu"] || !saved.Collapsed["memory"] || !saved.Collapsed["ai"] {
+	if len(saved.Collapsed) != 10 || saved.Collapsed["cpu"] || !saved.Collapsed["memory"] || !saved.Collapsed["ai"] {
 		t.Errorf("config.json の collapsed が正しくない: %v\n%s", saved.Collapsed, data)
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 	"widget-go/aiusage"
 	"widget-go/ime"
+	"widget-go/ping"
 	"widget-go/sysinfo"
 
 	"github.com/jchv/go-webview2"
@@ -117,10 +118,7 @@ const (
 	ID_TRAY_EXIT = 1001
 
 	// AI 使用量のメニュー項目（AI 使用量が ON のときだけ出す）
-	ID_TRAY_AI_REFRESH      = 1002
-	ID_TRAY_AI_LOGIN_CLAUDE = 1003
-	ID_TRAY_AI_LOGIN_CODEX  = 1004
-	ID_TRAY_AI_TEST         = 1005
+	ID_TRAY_AI_REFRESH = 1002 // 1003〜1005 は、削除したログインと「AI 通知のテスト」の項目
 
 	// ポモドーロのメニュー項目（区画を表示しているときだけ出す）
 	ID_TRAY_POMO_TOGGLE = 1006
@@ -282,7 +280,9 @@ type SystemData struct {
 	WorkTimer *WorkTimerInfo `json:"WorkTimer"`
 	// Pomodoro はポモドーロタイマーの表示値。区画を非表示にしている間は null。
 	Pomodoro *PomodoroInfo `json:"Pomodoro"`
-	ViewMode int           `json:"ViewMode"`
+	// Ping は Ping 監視の表示値。区画を非表示にしている間と、ホスト未登録時は null。
+	Ping     *ping.Info `json:"Ping"`
+	ViewMode int        `json:"ViewMode"`
 }
 
 // バックグラウンドで更新されるスナップショット。
@@ -420,6 +420,7 @@ func getSystemData() SystemData {
 		PowerMode: cachedPower,
 		WorkTimer: workTimer,
 		Pomodoro:  pomodoro,
+		Ping:      currentPing(),
 		ViewMode:  vm,
 	}
 }
@@ -1197,6 +1198,8 @@ func main() {
 	go startServer(ln, apiToken)
 	// ポモドーロの周期処理。最初の周期で、前回の異常終了で隠れたままのものを戻す。
 	go pomodoroLoop()
+	// Ping 監視の周期処理。表示中かつホスト登録時のみ動作。
+	go pingLoop()
 	// ログオフ・シャットダウンの前に、隠したものと止めた通知を戻す。
 	startSessionWatcher()
 

@@ -103,6 +103,7 @@ body[data-skin="fieldnote"] [data-sec="network"] .section-icon::before { content
 body[data-skin="fieldnote"] [data-sec="ai"] .section-icon::before { content: '07'; }
 body[data-skin="fieldnote"] [data-sec="work"] .section-icon::before { content: '08'; }
 body[data-skin="fieldnote"] [data-sec="pomodoro"] .section-icon::before { content: '09'; }
+body[data-skin="fieldnote"] [data-sec="ping"] .section-icon::before { content: '10'; }
 body[data-skin="fieldnote"] .section-value { font-weight: 400; font-size: 17px; letter-spacing: -.04em; }
 
 /* ---- 計測バー: 直角にして、20% ごとの目盛りを入れる ---- */
