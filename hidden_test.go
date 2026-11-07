@@ -7,9 +7,9 @@ import (
 
 func TestLoadConfigWithoutHiddenShowsAll(t *testing.T) {
 	withConfigFile(t, configV180)
-	// 勤務時間タイマー（work）だけは、既定で非表示（設定で ON にしたときだけ出す）
-	if c := snapshotConfig(); c.Hidden != (HiddenConfig{Work: true}) || !c.ShowGPU {
-		t.Errorf("hidden キーなしは work 以外すべて表示のはず: %+v ShowGPU=%v", c.Hidden, c.ShowGPU)
+	// 勤務時間タイマー（work）とポモドーロ（pomodoro）だけは、既定で非表示（設定で ON にしたときだけ出す）
+	if c := snapshotConfig(); c.Hidden != (HiddenConfig{Work: true, Pomodoro: true}) || !c.ShowGPU {
+		t.Errorf("hidden キーなしは work / pomodoro 以外すべて表示のはず: %+v ShowGPU=%v", c.Hidden, c.ShowGPU)
 	}
 }
 
@@ -62,7 +62,7 @@ func TestSetHiddenRejectsInvalid(t *testing.T) {
 	if err := setHidden("cpu", "yes"); err == nil {
 		t.Error("true/false 以外は拒否するはず")
 	}
-	if snapshotConfig().Hidden != (HiddenConfig{Work: true}) {
+	if snapshotConfig().Hidden != (HiddenConfig{Work: true, Pomodoro: true}) {
 		t.Error("エラー時は設定を変更しない")
 	}
 }
@@ -92,13 +92,13 @@ func TestNormalizeOrder(t *testing.T) {
 		in   []string
 		want string
 	}{
-		{"nil は既定順", nil, "cpu,memory,disk,gpu,npu,network,ai,work"},
-		{"並べ替えを保つ", []string{"ai", "cpu", "memory", "disk", "gpu", "npu", "network"}, "ai,cpu,memory,disk,gpu,npu,network,work"},
-		{"欠けた区画は末尾に足す", []string{"network", "cpu"}, "network,cpu,memory,disk,gpu,npu,ai,work"},
-		{"未知と重複は捨てる", []string{"x", "gpu", "gpu", "cpu"}, "gpu,cpu,memory,disk,npu,network,ai,work"},
+		{"nil は既定順", nil, "cpu,memory,disk,gpu,npu,network,ai,work,pomodoro"},
+		{"並べ替えを保つ", []string{"ai", "cpu", "memory", "disk", "gpu", "npu", "network"}, "ai,cpu,memory,disk,gpu,npu,network,work,pomodoro"},
+		{"欠けた区画は末尾に足す", []string{"network", "cpu"}, "network,cpu,memory,disk,gpu,npu,ai,work,pomodoro"},
+		{"未知と重複は捨てる", []string{"x", "gpu", "gpu", "cpu"}, "gpu,cpu,memory,disk,npu,network,ai,work,pomodoro"},
 		// v2.7 より前の config.json には disk が無い。末尾（AI の後ろ）ではなくメモリの直後に入れる。
-		{"disk が無い保存済みの順はメモリの直後に足す", []string{"ai", "cpu", "memory", "gpu", "npu", "network"}, "ai,cpu,memory,disk,gpu,npu,network,work"},
-		{"メモリが先頭側でなくても直後に足す", []string{"network", "memory", "cpu", "gpu", "npu", "ai"}, "network,memory,disk,cpu,gpu,npu,ai,work"},
+		{"disk が無い保存済みの順はメモリの直後に足す", []string{"ai", "cpu", "memory", "gpu", "npu", "network"}, "ai,cpu,memory,disk,gpu,npu,network,work,pomodoro"},
+		{"メモリが先頭側でなくても直後に足す", []string{"network", "memory", "cpu", "gpu", "npu", "ai"}, "network,memory,disk,cpu,gpu,npu,ai,work,pomodoro"},
 	}
 	for _, c := range cases {
 		if got := strings.Join(normalizeOrder(c.in), ","); got != c.want {
@@ -109,22 +109,22 @@ func TestNormalizeOrder(t *testing.T) {
 
 func TestSetOrder(t *testing.T) {
 	withConfigFile(t, "")
-	if got := strings.Join(snapshotConfig().Order, ","); got != "cpu,memory,disk,gpu,npu,network,ai,work" {
+	if got := strings.Join(snapshotConfig().Order, ","); got != "cpu,memory,disk,gpu,npu,network,ai,work,pomodoro" {
 		t.Fatalf("既定の順が違う: %s", got)
 	}
-	if err := setOrder("network,ai,cpu,memory,disk,gpu,npu,work"); err != nil {
+	if err := setOrder("network,ai,cpu,memory,disk,gpu,npu,work,pomodoro"); err != nil {
 		t.Fatal(err)
 	}
 	loadConfig()
-	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,disk,gpu,npu,work" {
+	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,disk,gpu,npu,work,pomodoro" {
 		t.Errorf("再読込で順が変わった: %s", got)
 	}
-	for _, bad := range []string{"", "cpu", "cpu,cpu,memory,disk,gpu,npu,network,work", "cpu,memory,disk,gpu,npu,network,ai,x", "cpu,memory,gpu,npu,network,ai", "cpu,memory,disk,gpu,npu,network,ai"} {
+	for _, bad := range []string{"", "cpu", "cpu,cpu,memory,disk,gpu,npu,network,work,pomodoro", "cpu,memory,disk,gpu,npu,network,ai,x,pomodoro", "cpu,memory,disk,gpu,npu,network,ai,work", "cpu,memory,gpu,npu,network,ai", "cpu,memory,disk,gpu,npu,network,ai"} {
 		if err := setOrder(bad); err == nil {
 			t.Errorf("setOrder(%q) は拒否するはず", bad)
 		}
 	}
-	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,disk,gpu,npu,work" {
+	if got := strings.Join(snapshotConfig().Order, ","); got != "network,ai,cpu,memory,disk,gpu,npu,work,pomodoro" {
 		t.Errorf("エラー時に設定が変わった: %s", got)
 	}
 }

@@ -393,10 +393,10 @@ func TestLoadConfigWorkTimerDefaults(t *testing.T) {
 			t.Errorf("%+v", got)
 		}
 	})
-	t.Run("区画は既定で非表示・折りたたみなし・末尾", func(t *testing.T) {
+	t.Run("区画は既定で非表示・折りたたみなし・pomodoro の直前", func(t *testing.T) {
 		withConfigFile(t, "")
 		c := snapshotConfig()
-		if !c.Hidden.Work || c.Collapsed.Work || c.Order[len(c.Order)-1] != "work" {
+		if !c.Hidden.Work || c.Collapsed.Work || c.Order[len(c.Order)-2] != "work" || c.Order[len(c.Order)-1] != "pomodoro" {
 			t.Errorf("hidden=%v collapsed=%v order=%v", c.Hidden.Work, c.Collapsed.Work, c.Order)
 		}
 	})

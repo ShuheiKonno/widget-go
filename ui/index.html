@@ -41,6 +41,9 @@
             --work-fill-bg: linear-gradient(90deg,#7bd0ff,#5a8cff);
             --work-over: #facc15;
             --work-late: #ef6a6a;
+            /* ポモドーロ（スキンが上書きできる）。集中は既定の文字色、休憩は --pomo-break、一時停止・未開始は --muted-color */
+            --pomo-fill-bg: linear-gradient(90deg,#ff9f7a,#ef6a5a);
+            --pomo-break: #7fffaa;
         }
         body.theme-light {
             --bg-grad: linear-gradient(135deg, #e6e9f5 0%, #cdd6ec 100%);
@@ -75,6 +78,7 @@
             --net-empty-color: rgba(0,0,0,0.4);
             --work-over: #d9a400;
             --work-late: #d33;
+            --pomo-break: #1aa86b;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; }
@@ -286,6 +290,39 @@
 
         __WORK_CSS__
 
+        /* ===== ポモドーロ（区画 pomodoro）。色は見出し・数値・バーに同じクラスを付ける:
+           break = 休憩（緑）、paused = 一時停止・開始待ち（灰色）、idle = 未開始（灰色）。集中は既定色 ===== */
+        .pomo-section [hidden] { display:none !important; }
+        .pomo-section .section-title, .pomo-section .section-value { white-space:nowrap; }
+        .pomo-section .section-value.break, .pomo-section .pm-big.break { color:var(--pomo-break); }
+        .pomo-section .section-value.idle, .pomo-section .pm-big.idle,
+        .pomo-section .section-value.paused, .pomo-section .pm-big.paused { color:var(--muted-color); }
+        .pomo-fill { background:var(--pomo-fill-bg); }
+        .pomo-fill.break { background:var(--pomo-break); }
+        .pomo-fill.paused, .pomo-fill.idle { background:var(--muted-color); opacity:.6; }
+        .pm-cap { font-size:10px; color:var(--muted-color); margin-bottom:1px; }
+        .pm-big { font-family:'Consolas', monospace; font-weight:700; font-size:20px; line-height:1.2; color:var(--section-value); margin-bottom:5px; white-space:nowrap; }
+        .pm-mark { font-size:9px; line-height:1; padding:2px 5px; margin-left:6px; border-radius:8px; background:rgba(239,106,90,.18); color:#ff9a86; white-space:nowrap; flex:none; }
+        body.theme-light .pm-mark { background:rgba(211,51,51,.12); color:#c2392b; }
+        .pm-dots { letter-spacing:2px; }
+        .pm-chip { display:flex; align-items:center; gap:5px; font-size:10px; line-height:1.3; padding:3px 6px; border-radius:5px; margin:5px 0 0; background:rgba(90,160,255,.16); color:#9cc6ff; }
+        body.theme-light .pm-chip { background:rgba(30,100,220,.12); color:#1d5fc2; }
+        .pm-err { font-size:10px; color:var(--work-late); margin-top:2px; }
+        .pm-btns { display:flex; gap:4px; margin-top:7px; }
+        .pm-btns + .pm-btns { margin-top:4px; }
+        .pm-btn { flex:1; min-width:0; border:1px solid var(--input-border); border-radius:5px; background:var(--input-bg); color:var(--text-color); font:inherit; font-size:11px; padding:3px 0; cursor:pointer; white-space:nowrap; }
+        .pm-btn:hover { background:var(--btn-bg-hover); }
+        .pm-btn.primary { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
+        .pm-btn.primary:hover { background:#4a90ef; }
+        /* コンパクトは区画そのものがボタン（クリックで 開始 / 一時停止 / 再開）。ドラッグ中だけは、移動の手（grabbing）のまま */
+        .compact .pomo-section { cursor:pointer; }
+        #dragArea.dragging.compact .pomo-section { cursor:grabbing; }
+        /* コンパクトは見出し 1 行だけ（アイコンと残り時間） */
+        .compact .pomo-section .sec-body { display:none; }
+        .compact .pomo-section .section-title, .compact .pomo-section .pm-mark { display:none; }
+        /* フル表示（展開中）は、本体に大きな時間があるので、見出しの時間は出さない。折りたたみ・コンパクトだけ出す */
+        #dragArea:not(.compact) .pomo-section:not(.collapsed) #pomo-head { display:none; }
+
         /* ===== AI 使用量（Claude / Codex）===== */
         :root { --claude-a:#f0a27a; --claude-b:#d06b5b; --codex-a:#7be0c0; --codex-b:#34b3d6;
                 --warn:#facc15; --crit:#ef6a6a; --ok:#7fffaa; --chip-warn-bg:rgba(250,204,21,.14); --chip-warn-fg:#ffd84d;
@@ -496,6 +533,29 @@
             <div class="sec-body" id="ai-body"></div>
         </div>
         __WORK_HTML__
+        <!-- ポモドーロ。勤務時間とは独立した区画（既定は非表示。設定の区画一覧で ON にする） -->
+        <div class="section pomo-section is-hidden" id="pomoSection" data-sec="pomodoro">
+            <div class="section-header"><span class="section-icon">🍅</span><span class="section-title">ポモドーロ</span><span class="pm-mark" id="pomo-mark" hidden>集中モード</span><span class="section-value idle" id="pomo-head">--:--</span><button class="chev" data-sec="pomodoro" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="pm-cap" id="pomo-cap">未開始</div>
+                <div class="pm-big idle" id="pomo-big">--:--</div>
+                <div class="progress-bar"><div class="progress-fill pomo-fill idle" id="pomo-bar" style="width:0%"></div></div>
+                <div class="wifi-row"><span class="wifi-label">回</span><span class="wifi-value pm-dots" id="pomo-dots">---</span></div>
+                <div class="wifi-row"><span class="wifi-label">今日</span><span class="wifi-value" id="pomo-done">---</span></div>
+                <div class="pm-chip" id="pomo-chip" hidden></div>
+                <div class="pm-err" id="pomo-err" hidden></div>
+                <div class="pm-btns">
+                    <button class="pm-btn primary" type="button" data-pm="start" id="pomo-btn-start">開始</button>
+                    <button class="pm-btn primary" type="button" data-pm="resume" id="pomo-btn-resume" hidden>再開</button>
+                    <button class="pm-btn" type="button" data-pm="pause" id="pomo-btn-pause" hidden>一時停止</button>
+                    <button class="pm-btn" type="button" data-pm="skip" id="pomo-btn-skip" hidden>スキップ</button>
+                    <button class="pm-btn" type="button" data-pm="reset" id="pomo-btn-reset" hidden>リセット</button>
+                </div>
+                <div class="pm-btns" id="pomo-reveal-row" hidden>
+                    <button class="pm-btn" type="button" data-pm="reveal" id="pomo-btn-reveal" title="この区間の間だけ、Teams / Outlook を隠さない">一時的に表示</button>
+                </div>
+            </div>
+        </div>
     </div>
     <script nonce="__WIDGET_TOKEN__">
         // 全 /api 呼び出しに付与する CSRF トークン（Go 側が起動毎に生成し埋め込む）。
@@ -693,11 +753,11 @@
             // 有効なスキンの id（Go 側の config.json の skin。'default' はスキンなし = 現行のデザイン）
             skin: 'default',
             // 非表示状態（Go 側の config.json の hidden と同じ）。true が非表示
-            hidden: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, work: true },
+            hidden: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, work: true, pomodoro: true },
             // 区画の表示順（Go 側の config.json の order と同じ）
-            order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'],
+            order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro'],
             // 折りたたみ状態（Go 側の config.json の collapsed と同じ）。AI は既定で折りたたみ（D8）
-            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true, work: false },
+            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true, work: false, pomodoro: false },
             // 反転できる区画がいま出している面（Go 側の config.json の flipped と同じ）。true が裏面。
             // 面の正はここで、.flipped クラスは applyFlipped がここから導く。折りたたみ・非表示・データ待ちの間も
             // 面を保ち、再起動しても同じ面に戻すため（クラスを消して表面に戻すことはしない）。
@@ -884,7 +944,7 @@
             mouseDownX = e.screenX;
             mouseDownY = e.screenY;
             movedSinceDown = false;
-            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh, .power-mode, .wk-btn, .wk-nudge, .wk-start, .wk-time')) return;
+            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh, .power-mode, .wk-btn, .wk-nudge, .wk-start, .wk-time, .pm-btn')) return;
             const rect = dragArea.getBoundingClientRect();
             const onRight = (rect.right - e.clientX) <= resizeMargin;
             const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
@@ -1184,7 +1244,7 @@
         // ============ 区画の表示/非表示 ============
         // CPU / メモリ / Disk / Wi-Fi は .is-hidden で隠す。GPU / NPU はデバイスの有無でも出し分けるので
         // applyAccelData が settings.hidden を見て表示を決める。Disk は取得できないときの出し分けを applyDiskData が持つ。
-        const hideableSections = { cpu: 'cpu', memory: 'memory', disk: 'disk', network: 'wifiSection', work: 'work' };
+        const hideableSections = { cpu: 'cpu', memory: 'memory', disk: 'disk', network: 'wifiSection', work: 'work', pomodoro: 'pomodoro' };
         function updateLastSection(){
             // 最後に見えている区画だけ下余白を 0 にする（:last-child は非表示の区画も数えてしまう）
             const secs = Array.from(document.querySelectorAll('#dragArea > .section')).filter(function(el){
@@ -1226,7 +1286,7 @@
         // ============ 区画の折りたたみ（D10）============
         // 開閉は各見出しのシェブロン（▼）のクリックだけ。Wi-Fi は区画のどこをクリックしても表裏が
         // 反転するため、見出し全体のクリックにはしない。状態は Go 側の config.json に保存される。
-        const collapsibleSections = ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'];
+        const collapsibleSections = ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro'];
         function applyCollapsed(){
             collapsibleSections.forEach(function(n){
                 const el = document.querySelector('.section[data-sec="' + n + '"]');
@@ -1262,6 +1322,7 @@
 
         const workHooks = { heightChanged: scheduleHeightAdjust };
         let workSettingsKey = '';
+        let pomoSettingsKey = '';
         // コンパクト表示（幅 130px）では勤務時間の入力欄を置けないので、区画のクリックで、入力用の小さな別ウィンドウを開く。
         // ドラッグとは区別する（bindFlip と同じく movedSinceDown を見る）。フル表示では何もしない（区画の中で操作できる）。
         document.getElementById('workSection').addEventListener('click', function(){
@@ -1269,6 +1330,108 @@
             apiFetch('/api/openworktimer').catch(function(){});
         });
         __WORK_JS__
+        // ============ ポモドーロ ============
+        // 区間の計算・切り替え・集中モードは Go 側（pomodoro.go）。ここは描画と操作だけ。
+        // 残り時間は、応答の endsAtMs（期限の Unix ミリ秒）から 1 秒ごとに手元で数える
+        // （2 秒周期の /api/system だけだと、数字が 2 秒刻みで飛ぶ）。周期の応答で補正される。
+        let lastPomo = null;
+        let pomoErrTimer = 0;
+        let pomoLayoutKey = '';
+        let pomoPolledAt = 0;
+        function fmtPomo(sec){ sec = Math.max(0, sec); return String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'); }
+        function pomoRemaining(info){
+            return info.running && info.endsAtMs ? Math.max(0, Math.ceil((info.endsAtMs - Date.now()) / 1000)) : info.remainingSec;
+        }
+        function pomoClass(info){
+            if (info.phase === 'idle') return 'idle';
+            if (info.paused) return 'paused';
+            return info.phase === 'focus' ? '' : 'break';
+        }
+        function showPomoErr(msg){
+            const el = document.getElementById('pomo-err');
+            el.textContent = msg; el.hidden = !msg;
+            clearTimeout(pomoErrTimer);
+            if (msg) pomoErrTimer = setTimeout(function(){ showPomoErr(''); }, 4000);
+            scheduleHeightAdjust();
+        }
+        // 時間だけを描く（1 秒ごと）
+        function renderPomoTime(){
+            if (!lastPomo || settings.hidden.pomodoro) return;
+            const info = lastPomo;
+            const rem = pomoRemaining(info);
+            const text = info.phase === 'idle' ? fmtPomo(info.totalSec) : fmtPomo(rem);
+            document.getElementById('pomo-head').textContent = text;
+            document.getElementById('pomo-big').textContent = text;
+            const pct = info.phase === 'idle' || !info.totalSec ? 0 : Math.min(100, Math.max(0, (1 - rem / info.totalSec) * 100));
+            document.getElementById('pomo-bar').style.width = pct + '%';
+            // 期限に届いたら、次の周期を待たずに、Go 側が進めた区間を取りに行く（連打しない）
+            if (info.running && rem === 0 && Date.now() - pomoPolledAt > 1500) pomoRefresh();
+        }
+        function pomoRefresh(){
+            pomoPolledAt = Date.now();
+            apiFetch('/api/system').then(function(r){ return r.json(); }).then(function(d){ applyPomodoro(d.Pomodoro); }).catch(function(){});
+        }
+        function applyPomodoro(info){
+            if (!info) return;   // 非表示のときは null。区画は applyHidden が隠す
+            lastPomo = info;
+            const cls = pomoClass(info);
+            const names = { idle: '未開始', focus: '集中', short: '休憩', long: '長い休憩' };
+            document.getElementById('pomo-head').className = 'section-value ' + cls;
+            document.getElementById('pomo-big').className = 'pm-big ' + cls;
+            document.getElementById('pomo-bar').className = 'progress-fill pomo-fill ' + cls;
+            let cap = names[info.phase] || '';
+            if (info.paused && info.phase !== 'idle') cap += '（一時停止中）';
+            document.getElementById('pomo-cap').textContent = cap;
+            document.getElementById('pomo-mark').hidden = !info.focusActive;
+            // 4 回のうちの何回目か: ● 終えた回、◉ 集中中の回、○ これから
+            const done = info.phase === 'idle' ? 0 : (info.phase === 'focus' ? info.round - 1 : info.round);
+            let dots = '';
+            for (let i = 1; i <= info.longEvery; i++) dots += (i <= done ? '●' : (info.phase === 'focus' && i === info.round ? '◉' : '○')) + (i < info.longEvery ? ' ' : '');
+            document.getElementById('pomo-dots').textContent = dots;
+            document.getElementById('pomo-done').textContent = info.doneToday + ' 回';
+            const chip = document.getElementById('pomo-chip');
+            if (info.focusActive) { chip.textContent = '🔒 集中モード: 対象のアプリを隠しています'; chip.hidden = false; }
+            else if (info.revealed) { chip.textContent = '👁 この区間は、対象のアプリを隠しません'; chip.hidden = false; }
+            else if (info.paused && info.phase !== 'idle' && !info.autoNext && info.remainingSec === info.totalSec) { chip.textContent = '⏸ 次の区間の開始待ち'; chip.hidden = false; }
+            else chip.hidden = true;
+            const idle = info.phase === 'idle';
+            document.getElementById('pomo-btn-start').hidden = !idle;
+            document.getElementById('pomo-btn-pause').hidden = !info.running;
+            document.getElementById('pomo-btn-resume').hidden = !(info.paused && !idle);
+            document.getElementById('pomo-btn-skip').hidden = idle;
+            document.getElementById('pomo-btn-reset').hidden = idle;
+            const reveal = info.phase === 'focus' && info.running && info.focusMode;
+            document.getElementById('pomo-reveal-row').hidden = !reveal;
+            document.getElementById('pomo-btn-reveal').textContent = info.revealed ? '再び隠す' : '一時的に表示';
+            document.getElementById('pomo-btn-reveal').dataset.pm = info.revealed ? 'conceal' : 'reveal';
+            renderPomoTime();
+            // 行の増減で高さが変わるので、構成が変わったときだけ測り直す
+            const key = [info.phase, info.running, info.paused, info.focusActive, info.revealed, !chip.hidden, reveal].join('|');
+            if (key !== pomoLayoutKey) {
+                const first = pomoLayoutKey === '';
+                pomoLayoutKey = key;
+                if (!first) scheduleHeightAdjust();
+            }
+        }
+        // 操作は POST。応答は操作後のスナップショットなので、次の周期を待たずに描く。
+        async function pomoAction(action){
+            try {
+                const res = await apiFetch('/api/pomodoro?action=' + action, { method: 'POST' });
+                if (!res.ok) { showPomoErr((await res.text()).trim()); return false; }
+                showPomoErr('');
+                applyPomodoro(await res.json());
+                return true;
+            } catch (e) { showPomoErr('通信に失敗しました'); return false; }
+        }
+        document.getElementById('pomoSection').addEventListener('click', function(e){
+            const t = e.target.closest('[data-pm]');
+            if (t) { e.stopPropagation(); pomoAction(t.dataset.pm); return; }
+            // コンパクト表示（見出し 1 行）は、区画のクリックで 開始 / 一時停止 / 再開。ドラッグとは区別する。
+            if (movedSinceDown || !document.getElementById('dragArea').classList.contains('compact') || !lastPomo) return;
+            e.stopPropagation();
+            pomoAction(lastPomo.phase === 'idle' ? 'start' : (lastPomo.running ? 'pause' : 'resume'));
+        });
+        setInterval(renderPomoTime, 1000);
         // ============ AI 使用量（Claude / Codex）============
         const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0, rotateTimer: 0, rotateMs: 0 };
         const AI_PROVIDERS = [
@@ -1661,6 +1824,13 @@
                 workSettingsKey = key;
                 if (!initial && workChanged) updateData().then(scheduleHeightAdjust);
             }
+            if (s.pomodoro) {
+                const t = s.pomodoro;
+                const key = [settings.hidden.pomodoro, t.focusMinutes, t.shortBreakMinutes, t.longBreakMinutes, t.longEvery, t.autoNext, t.focusMode].join('|');
+                const pomoChanged = key !== pomoSettingsKey;
+                pomoSettingsKey = key;
+                if (!initial && pomoChanged) updateData().then(scheduleHeightAdjust);
+            }
             scheduleHeightAdjust();
             // 区画の表示/非表示・並び順が変わると高さが変わるので、落ち着いてから位置とサイズを保存する
             if (!initial) setTimeout(function(){ apiFetch('/api/persistwindow').catch(function(){}); }, 300);
@@ -1900,6 +2070,7 @@
                 applyAccelData(data.GPU, data.NPU);
                 applyDiskData(data.Disk, true);
                 applyWorkTimer(data.WorkTimer);
+                applyPomodoro(data.Pomodoro);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); updateNetValue(); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');

@@ -183,6 +183,7 @@ func newServerMux(token string) *http.ServeMux {
 	mux.HandleFunc("/api/close", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		go func() {
+			pomodoroShutdown() // 隠した Teams / Outlook と止めた通知を戻してから終わる（以後は隠さない）
 			cleanupTray()
 			os.Exit(0)
 		}()
@@ -426,6 +427,8 @@ func newServerMux(token string) *http.ServeMux {
 
 	// 勤務時間タイマーの操作（開始・終了・リセット・開始時刻の変更・1 分調整）。応答は操作後のスナップショット。
 	mux.HandleFunc("/api/worktimer", workTimerActionHandler)
+	// ポモドーロの操作（開始・一時停止・再開・スキップ・リセット・一時的に表示）。応答は操作後のスナップショット。
+	mux.HandleFunc("/api/pomodoro", pomodoroActionHandler)
 
 	// theme / coreBase / netUnit などフロント向け設定を保存する。
 	// hide.gpu / hide.npu は Go 側の GPU/NPU 収集の ON/OFF にも使う。
@@ -491,8 +494,21 @@ func newServerMux(token string) *http.ServeMux {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+		case "pomoFocus", "pomoShort", "pomoLong", "pomoEvery", "pomoAuto", "pomoFocusMode", "pomoHide", "pomoTargets":
+			// ポモドーロの設定（pomodoro.go の setPomodoroOption に検証がある）
+			restore, err := setPomodoroOption(key, val)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if restore {
+				// 隠す方法や対象が変わったときは、隠したものをいったん戻してから、あらためて適用する
+				go func() { pomodoroRestoreAll(); pomodoroKick() }()
+			} else {
+				pomodoroKick() // 集中モードの ON/OFF を、次の周期を待たずに反映する
+			}
 		case "order":
-			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai,work を並べ替えたもの
+			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai,work,pomodoro を並べ替えたもの
 			if err := setOrder(val); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -504,6 +520,7 @@ func newServerMux(token string) *http.ServeMux {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
+				pomodoroKick() // ポモドーロを非表示にしたら、隠したものを戻す（表示に戻したら、集中中なら再び隠す）
 				// GPU と NPU が両方非表示のときだけ収集を止める（Config.syncShowGPU）
 				enable := snapshotConfig().ShowGPU
 				showGPU.Store(enable)
@@ -572,6 +589,7 @@ func newServerMux(token string) *http.ServeMux {
 			"hidden":      c.Hidden,
 			"order":       c.Order,
 			"workTimer":   c.WorkTimer,
+			"pomodoro":    pomodoroSettingsView(c.Pomodoro),
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。
