@@ -213,6 +213,8 @@ default-src 'none'; script-src 'nonce-…'; style-src 'unsafe-inline'; connect-s
 | `--work-fill-bg` | 勤務時間のバー(`.work-fill`)の `background`(黄・赤・灰色のときは下の変数や `--muted-color` に置き換わる) | `linear-gradient(90deg,#7bd0ff,#5a8cff)` | 同左 |
 | `--work-over` | 勤務時間に到達したときの色(`.over`。数値・見出し・バー) | `#facc15` | `#d9a400` |
 | `--work-late` | 赤表示の時刻以降の色(`.late`。同上と、`.wk-err`) | `#ef6a6a` | `#d33` |
+| `--pomo-fill-bg` | ポモドーロのバー(`.pomo-fill`)の `background`(休憩・一時停止・未開始のときは下の変数や `--muted-color` に置き換わる) | `linear-gradient(90deg,#ff9f7a,#ef6a5a)` | 同左 |
+| `--pomo-break` | ポモドーロの休憩の色(`.break`。数値・見出し・バー) | `#7fffaa` | `#1aa86b` |
 | `--net-rx` | 受信(↓)の凡例の色と、グラフの線の色。Disk の読み取りにも使う | `#7fffaa` | `#1aa86b` |
 | `--net-rx-fill` | 受信のグラフの塗り。Disk の読み取りにも使う | `rgba(127,255,170,0.25)` | `rgba(26,168,107,0.20)` |
 | `--net-tx` | 送信(↑)の凡例の色と、グラフの線の色。Disk の書き込みにも使う | `#ffa3ff` | `#b74da6` |
@@ -283,6 +285,8 @@ body[data-skin="<id>"]  (テーマがライトのとき .theme-light も付く)
 | `network` | Wi-Fi / Ethernet とトラフィック(`.wifi-section`) | `.flip-card` > 表 `.flip-face.flip-front`(`.wifi-info`、`.wifi-row`、`.wifi-label`、`.wifi-value`、`.wifi-connected` / `.wifi-disconnected`)と、裏 `.flip-face.flip-back`(`.net-peak-toggle`、`canvas.net-canvas`、`.net-legend` > `.net-leg-rx` `.net-leg-tx`) |
 | `ai` | AI 使用量(`.ai-section`。既定では `.is-hidden`) | `.ai-refresh`、`.ai-compact` > `.ai-crow`(`.claude` / `.codex`、`i`、`.ai-cname`、`.ai-cval`)、`.sec-body` > `.prov`(`.claude` / `.codex`、`.prov-head`、`.prov-name`、`.plan`、`.prov-state`、`.wrow`(`.lab` `.progress-bar` `.pct`)、`.wreset`、`.extra`、`.chip`(`.warn` `.login` `.info`)、`.ai-act`) |
 | `work` | 勤務時間タイマー(`.work-section`。既定では `.is-hidden`) | `.section-value#work-head`(`実勤務時間 (15分切り下げ)`。状態クラス `.idle` / `.paused` / `.over` / `.late`)、`.sec-body` > `.wk-cap`、`.wk-big`(`small`。見出しと同じ状態クラス)、`.progress-bar` > `.progress-fill.work-fill`(同)、`.wifi-row`(開始 = `.wk-nudge` ×2 と `.wk-start` と `.wk-time`、目標、昼休み)、`.wk-note`(押下と補正)、`.wk-err`、`.wk-chip`(昼休み中・終了)、`.wk-btns` > `.wk-btn`(`.primary`)。コンパクトでは `.sec-body` とタイトルが隠れる |
+| `pomodoro` | ポモドーロタイマー(`.pomo-section`。既定では `.is-hidden`) | `.section-value#pomo-head`(残り時間。状態クラス `.idle` / `.paused` / `.break`)、`.pm-mark`(集中モードの印。集中モードが働いている間だけ表示)、`.sec-body` > `.pm-cap`(区間名)、`.pm-big`(残り時間。見出しと同じ状態クラス)、`.progress-bar` > `.progress-fill.pomo-fill`(同)、`.wifi-row`(回 = `.pm-dots`、今日の完了数)、`.pm-chip`(集中モード・一時表示・開始待ち)、`.pm-err`、`.pm-btns` > `.pm-btn`(`.primary`)。コンパクトでは `.sec-body`・タイトル・`.pm-mark` が隠れ、見出し 1 行(アイコンと残り時間)になる。コンパクトでは区画のクリックで 開始 / 一時停止 / 再開 |
+| `ping` | Ping 監視(`.ping-section`。既定では `.is-hidden`) | `.section-value#ping-head`(代表 RTT。警告時は `.danger`)、`.sec-body` > `.ping-list` > `.ping-row`(`.ping-host`、`.ping-rtt`、`.ping-loss`。閾値超過時は `.danger`)。コンパクトでは `.sec-body` が隠れる |
 
 区画はすべて `.section` で、Wi-Fi 区画と Disk 区画には `.wifi-section` が加わり(Disk は反転する区画で、Wi-Fi と同じ `.flip-card` の作りです)、本体の CSS では背景も枠もなく(`.flip-face` が持つ)、`padding:0` です。`.wifi-section` を Wi-Fi 専用のつもりで書いたスキンの規則は、Disk にも効きます。Wi-Fi だけに効かせたいときは `[data-sec="network"]` を併用してください。
 
@@ -301,6 +305,7 @@ body[data-skin="<id>"]  (テーマがライトのとき .theme-light も付く)
 | `.is-hidden` | 区画など | 非表示(`display:none !important`) |
 | `.is-empty` | `.model-name` | モデル名が空(非表示) |
 | `.ai-rot` / `.click-flip` | `.ai-section` | AI の折りたたみ時の表示方式(反転で交互表示 / クリックで反転) |
+| `.idle` / `.paused` / `.break` | `.section-value`、`.pm-big`、`.pomo-fill`(`.pomo-section` の中) | ポモドーロの状態: 未開始 / 一時停止・開始待ち(どちらも灰色)/ 休憩(緑)。集中中はクラスなし(既定色) |
 | `.idle` / `.paused` / `.over` / `.late` | `.section-value`、`.wk-big`、`.work-fill`(`.work-section` の中) | 勤務時間の状態: 未開始 / 昼休み中(どちらも灰色)/ 勤務時間に到達(黄)/ 赤表示の時刻以降(赤)。昼休み中は `.over` `.late` より優先して `.paused` になる |
 | `.warn` / `.crit` / `.na` | `.progress-fill`、`.pct`、`.ai-cval` | 警告 / 危険 / 値なし |
 | `.clk-low` / `.clk-high` | `.clock-fill` | ベースクロックとの差が -11% 以下 / +21% 以上 |

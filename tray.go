@@ -478,6 +478,7 @@ func showTrayMenu(hwnd uintptr) {
 	}
 
 	appendUsageMenu(menu)
+	appendPomodoroMenu(menu)
 
 	exitText, _ := syscall.UTF16PtrFromString("終了")
 	procAppendMenuW.Call(menu, MF_STRING, ID_TRAY_EXIT, uintptr(unsafe.Pointer(exitText)))
@@ -533,21 +534,19 @@ func trayWndProcFunc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		switch wParam & 0xFFFF {
 		case ID_TRAY_EXIT:
 			go func() {
+				pomodoroShutdown() // 隠した Teams / Outlook と止めた通知を戻してから終わる（以後は隠さない）
 				cleanupTray()
 				os.Exit(0)
 			}()
 			return 0
+		case ID_TRAY_POMO_TOGGLE:
+			go pomodoroTrayToggle()
+			return 0
+		case ID_TRAY_POMO_REVEAL:
+			go pomodoroRevealAll()
+			return 0
 		case ID_TRAY_AI_REFRESH:
 			go aiusage.RefreshNow()
-			return 0
-		case ID_TRAY_AI_LOGIN_CLAUDE:
-			go aiusage.ShowLogin("claude")
-			return 0
-		case ID_TRAY_AI_LOGIN_CODEX:
-			go aiusage.ShowLogin("codex")
-			return 0
-		case ID_TRAY_AI_TEST:
-			go aiusage.TestNotify()
 			return 0
 		}
 	case WM_DESTROY:

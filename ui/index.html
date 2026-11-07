@@ -41,6 +41,10 @@
             --work-fill-bg: linear-gradient(90deg,#7bd0ff,#5a8cff);
             --work-over: #facc15;
             --work-late: #ef6a6a;
+            /* ポモドーロ（スキンが上書きできる）。集中は既定の文字色、休憩は --pomo-break、一時停止・未開始は --muted-color */
+            --pomo-fill-bg: linear-gradient(90deg,#ff9f7a,#ef6a5a);
+            --pomo-break: #7fffaa;
+            --ping-danger: #ef6a6a;
         }
         body.theme-light {
             --bg-grad: linear-gradient(135deg, #e6e9f5 0%, #cdd6ec 100%);
@@ -75,6 +79,8 @@
             --net-empty-color: rgba(0,0,0,0.4);
             --work-over: #d9a400;
             --work-late: #d33;
+            --pomo-break: #1aa86b;
+            --ping-danger: #d33;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; }
@@ -286,6 +292,52 @@
 
         __WORK_CSS__
 
+        /* ===== ポモドーロ（区画 pomodoro）。色は見出し・数値・バーに同じクラスを付ける:
+           break = 休憩（緑）、paused = 一時停止・開始待ち（灰色）、idle = 未開始（灰色）。集中は既定色 ===== */
+        .pomo-section [hidden] { display:none !important; }
+        .pomo-section .section-title, .pomo-section .section-value { white-space:nowrap; }
+        .pomo-section .section-value.break, .pomo-section .pm-big.break { color:var(--pomo-break); }
+        .pomo-section .section-value.idle, .pomo-section .pm-big.idle,
+        .pomo-section .section-value.paused, .pomo-section .pm-big.paused { color:var(--muted-color); }
+        .pomo-fill { background:var(--pomo-fill-bg); }
+        .pomo-fill.break { background:var(--pomo-break); }
+        .pomo-fill.paused, .pomo-fill.idle { background:var(--muted-color); opacity:.6; }
+        .pm-cap { font-size:10px; color:var(--muted-color); margin-bottom:1px; }
+        .pm-big { font-family:'Consolas', monospace; font-weight:700; font-size:20px; line-height:1.2; color:var(--section-value); margin-bottom:5px; white-space:nowrap; }
+        .pm-mark { font-size:9px; line-height:1; padding:2px 5px; margin-left:6px; border-radius:8px; background:rgba(239,106,90,.18); color:#ff9a86; white-space:nowrap; flex:none; }
+        body.theme-light .pm-mark { background:rgba(211,51,51,.12); color:#c2392b; }
+        .pm-dots { letter-spacing:2px; }
+        .pm-chip { display:flex; align-items:center; gap:5px; font-size:10px; line-height:1.3; padding:3px 6px; border-radius:5px; margin:5px 0 0; background:rgba(90,160,255,.16); color:#9cc6ff; }
+        body.theme-light .pm-chip { background:rgba(30,100,220,.12); color:#1d5fc2; }
+        .pm-err { font-size:10px; color:var(--work-late); margin-top:2px; }
+        .pm-btns { display:flex; gap:4px; margin-top:7px; }
+        .pm-btns + .pm-btns { margin-top:4px; }
+        .pm-btn { flex:1; min-width:0; border:1px solid var(--input-border); border-radius:5px; background:var(--input-bg); color:var(--text-color); font:inherit; font-size:11px; padding:3px 0; cursor:pointer; white-space:nowrap; }
+        .pm-btn:hover { background:var(--btn-bg-hover); }
+        .pm-btn.primary { background:#5aa0ff; border-color:#5aa0ff; color:#fff; }
+        .pm-btn.primary:hover { background:#4a90ef; }
+        /* コンパクトは区画そのものがボタン（クリックで 開始 / 一時停止 / 再開）。ドラッグ中だけは、移動の手（grabbing）のまま */
+        .compact .pomo-section { cursor:pointer; }
+        #dragArea.dragging.compact .pomo-section { cursor:grabbing; }
+        /* コンパクトは見出し 1 行だけ（アイコンと残り時間） */
+        .compact .pomo-section .sec-body { display:none; }
+        .compact .pomo-section .section-title, .compact .pomo-section .pm-mark { display:none; }
+        /* フル表示（展開中）は、本体に大きな時間があるので、見出しの時間は出さない。折りたたみ・コンパクトだけ出す */
+        #dragArea:not(.compact) .pomo-section:not(.collapsed) #pomo-head { display:none; }
+
+        /* ===== Ping 監視 ===== */
+        .ping-section .section-title, .ping-section .section-value { white-space:nowrap; }
+        .ping-section .section-value.danger { color:var(--ping-danger); font-weight:700; }
+        .ping-list { display:flex; flex-direction:column; gap:4px; margin-top:2px; }
+        .ping-row { display:flex; align-items:center; gap:6px; font-size:11px; padding:2px 0; }
+        .ping-host { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-color); }
+        .ping-rtt { font-family:'Consolas', monospace; font-size:11px; color:var(--section-value); min-width:52px; text-align:right; white-space:nowrap; }
+        .ping-rtt.danger { color:var(--ping-danger); font-weight:700; }
+        .ping-loss { font-family:'Consolas', monospace; font-size:11px; color:var(--muted-color); min-width:42px; text-align:right; white-space:nowrap; }
+        .ping-loss.danger { color:var(--ping-danger); font-weight:700; }
+        .ping-empty { font-size:10px; color:var(--muted-color); padding:2px 0; }
+        .compact .ping-section .sec-body { display:none; }
+
         /* ===== AI 使用量（Claude / Codex）===== */
         :root { --claude-a:#f0a27a; --claude-b:#d06b5b; --codex-a:#7be0c0; --codex-b:#34b3d6;
                 --warn:#facc15; --crit:#ef6a6a; --ok:#7fffaa; --chip-warn-bg:rgba(250,204,21,.14); --chip-warn-fg:#ffd84d;
@@ -496,6 +548,35 @@
             <div class="sec-body" id="ai-body"></div>
         </div>
         __WORK_HTML__
+        <!-- ポモドーロ。勤務時間とは独立した区画（既定は非表示。設定の区画一覧で ON にする） -->
+        <div class="section pomo-section is-hidden" id="pomoSection" data-sec="pomodoro">
+            <div class="section-header"><span class="section-icon">🍅</span><span class="section-title">ポモドーロ</span><span class="pm-mark" id="pomo-mark" hidden>集中モード</span><span class="section-value idle" id="pomo-head">--:--</span><button class="chev" data-sec="pomodoro" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="pm-cap" id="pomo-cap">未開始</div>
+                <div class="pm-big idle" id="pomo-big">--:--</div>
+                <div class="progress-bar"><div class="progress-fill pomo-fill idle" id="pomo-bar" style="width:0%"></div></div>
+                <div class="wifi-row"><span class="wifi-label">回</span><span class="wifi-value pm-dots" id="pomo-dots">---</span></div>
+                <div class="wifi-row"><span class="wifi-label">今日</span><span class="wifi-value" id="pomo-done">---</span></div>
+                <div class="pm-chip" id="pomo-chip" hidden></div>
+                <div class="pm-err" id="pomo-err" hidden></div>
+                <div class="pm-btns">
+                    <button class="pm-btn primary" type="button" data-pm="start" id="pomo-btn-start">開始</button>
+                    <button class="pm-btn primary" type="button" data-pm="resume" id="pomo-btn-resume" hidden>再開</button>
+                    <button class="pm-btn" type="button" data-pm="pause" id="pomo-btn-pause" hidden>一時停止</button>
+                    <button class="pm-btn" type="button" data-pm="skip" id="pomo-btn-skip" hidden>スキップ</button>
+                    <button class="pm-btn" type="button" data-pm="reset" id="pomo-btn-reset" hidden>リセット</button>
+                </div>
+                <div class="pm-btns" id="pomo-reveal-row" hidden>
+                    <button class="pm-btn" type="button" data-pm="reveal" id="pomo-btn-reveal" title="この区間の間だけ、Teams / Outlook を隠さない">一時的に表示</button>
+                </div>
+            </div>
+        </div>
+        <div class="section ping-section is-hidden" id="pingSection" data-sec="ping">
+            <div class="section-header"><span class="section-icon">📡</span><span class="section-title">Ping</span><span class="section-value" id="ping-head">-- ms</span><button class="chev" data-sec="ping" title="折りたたむ">▼</button></div>
+            <div class="sec-body">
+                <div class="ping-list" id="ping-list"></div>
+            </div>
+        </div>
     </div>
     <script nonce="__WIDGET_TOKEN__">
         // 全 /api 呼び出しに付与する CSRF トークン（Go 側が起動毎に生成し埋め込む）。
@@ -693,11 +774,15 @@
             // 有効なスキンの id（Go 側の config.json の skin。'default' はスキンなし = 現行のデザイン）
             skin: 'default',
             // 非表示状態（Go 側の config.json の hidden と同じ）。true が非表示
-            hidden: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, work: true },
+            hidden: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, work: true, pomodoro: true, ping: true },
             // 区画の表示順（Go 側の config.json の order と同じ）
-            order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'],
+            order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro', 'ping'],
             // 折りたたみ状態（Go 側の config.json の collapsed と同じ）。AI は既定で折りたたみ（D8）
-            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true, work: false }
+            collapsed: { cpu: false, memory: false, disk: false, gpu: false, npu: false, network: false, ai: true, work: false, pomodoro: false, ping: false },
+            // 反転できる区画がいま出している面（Go 側の config.json の flipped と同じ）。true が裏面。
+            // 面の正はここで、.flipped クラスは applyFlipped がここから導く。折りたたみ・非表示・データ待ちの間も
+            // 面を保ち、再起動しても同じ面に戻すため（クラスを消して表面に戻すことはしない）。
+            flipped: { disk: false, network: false, ai: false }
         };
 
         // Close button (✕): タスクトレイに格納する
@@ -770,13 +855,17 @@
         // ドラッグとクリックを区別するため、mousedown からの移動量で判定する
         let mouseDownX = 0, mouseDownY = 0, movedSinceDown = false;
         // 表裏の反転（Wi-Fi ⇔ ネットワークグラフ、Disk ⇔ I/O）。区画のどこをクリックしても反転する。
-        // redraw は裏面のグラフを描く関数。
-        function bindFlip(sec, redraw) {
+        // name は settings.flipped / config.json の flipped のキー、redraw は裏面のグラフを描く関数。
+        // 面を保存するのはこのクリックだけ。折りたたみ・非表示・再起動では面を変えない（applyFlipped を参照）。
+        function bindFlip(sec, name, redraw) {
             sec.addEventListener('click', function(e) {
                 if (movedSinceDown) return;
                 e.stopPropagation();
-                sec.classList.toggle('flipped');
-                if (sec.classList.contains('flipped')) {
+                const next = !settings.flipped[name];
+                settings.flipped[name] = next;
+                sec.classList.toggle('flipped', next);
+                apiFetch('/api/setoption?key=flip.' + name + '&value=' + next).catch(function(){});
+                if (next) {
                     // フリップ直後はキャンバスの clientWidth が 0 のことがあるので
                     // アニメーション完了後も含めて二度描画しておく
                     setTimeout(redraw, 30);
@@ -785,9 +874,33 @@
             });
         }
         const wifiSection = document.getElementById('wifiSection');
-        bindFlip(wifiSection, drawNetGraph);
+        bindFlip(wifiSection, 'network', drawNetGraph);
         const diskSection = document.getElementById('diskSection');
-        bindFlip(diskSection, redrawDiskGraph);
+        bindFlip(diskSection, 'disk', redrawDiskGraph);
+        // 保存された面を .flipped に反映する。折りたたみや非表示の間は裏面のキャンバスの幅が 0 で描けないので、
+        // 展開・表示に戻ったとき（と起動時）は、反転のときと同じく少し置いてグラフを描き直す。
+        let graphRedrawTimers = [];
+        function scheduleGraphRedraw(){
+            graphRedrawTimers.forEach(clearTimeout);
+            graphRedrawTimers = [30, 600].map(function(ms){
+                return setTimeout(function(){
+                    if (settings.flipped.network) drawNetGraph();
+                    if (settings.flipped.disk) redrawDiskGraph();
+                }, ms);
+            });
+        }
+        // instant: 起動時の復元。回転のアニメーション（0.55 秒）を見せず、最初から保存された面で出す。
+        function applyFlipped(instant){
+            const cards = [wifiSection, diskSection].map(function(sec){ return sec.querySelector('.flip-card'); });
+            if (instant) cards.forEach(function(c){ if (c) c.style.transition = 'none'; });
+            wifiSection.classList.toggle('flipped', !!settings.flipped.network);
+            diskSection.classList.toggle('flipped', !!settings.flipped.disk);
+            if (instant) {
+                void wifiSection.offsetWidth;   // 回転後の状態を確定させてから、transition を元に戻す
+                cards.forEach(function(c){ if (c) c.style.transition = ''; });
+            }
+            scheduleGraphRedraw();
+        }
 
         // Drag functionality
         let isDragging = false;
@@ -852,7 +965,7 @@
             mouseDownX = e.screenX;
             mouseDownY = e.screenY;
             movedSinceDown = false;
-            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh, .power-mode, .wk-btn, .wk-nudge, .wk-start, .wk-time')) return;
+            if (e.target.id === 'closeBtn' || e.target.closest('.chev, .ai-act, .ai-refresh, .power-mode, .wk-btn, .wk-nudge, .wk-start, .wk-time, .pm-btn')) return;
             const rect = dragArea.getBoundingClientRect();
             const onRight = (rect.right - e.clientX) <= resizeMargin;
             const onBottom = (rect.bottom - e.clientY) <= resizeMargin;
@@ -1152,7 +1265,7 @@
         // ============ 区画の表示/非表示 ============
         // CPU / メモリ / Disk / Wi-Fi は .is-hidden で隠す。GPU / NPU はデバイスの有無でも出し分けるので
         // applyAccelData が settings.hidden を見て表示を決める。Disk は取得できないときの出し分けを applyDiskData が持つ。
-        const hideableSections = { cpu: 'cpu', memory: 'memory', disk: 'disk', network: 'wifiSection', work: 'work' };
+        const hideableSections = { cpu: 'cpu', memory: 'memory', disk: 'disk', network: 'wifiSection', work: 'work', pomodoro: 'pomodoro', ping: 'ping' };
         function updateLastSection(){
             // 最後に見えている区画だけ下余白を 0 にする（:last-child は非表示の区画も数えてしまう）
             const secs = Array.from(document.querySelectorAll('#dragArea > .section')).filter(function(el){
@@ -1167,12 +1280,12 @@
                 const el = n === 'network' ? document.getElementById(id) : document.querySelector('.section[data-sec="' + id + '"]');
                 if (!el) return;
                 el.classList.toggle('is-hidden', !!settings.hidden[n]);
-                // 非表示の間は裏面（グラフ）の状態を持ち越さない
-                if ((n === 'network' || n === 'disk') && settings.hidden[n]) el.classList.remove('flipped');
+                // 非表示の間も、いま出している面（settings.flipped）は変えない。表示に戻したら同じ面から再開する
             });
             applyAccelData(lastGPU, lastNPU);
             applyDiskData(lastDisk);
             updateLastSection();
+            scheduleGraphRedraw();
         }
         // ============ 区画の表示順 ============
         function applyOrder(){
@@ -1194,7 +1307,7 @@
         // ============ 区画の折りたたみ（D10）============
         // 開閉は各見出しのシェブロン（▼）のクリックだけ。Wi-Fi は区画のどこをクリックしても表裏が
         // 反転するため、見出し全体のクリックにはしない。状態は Go 側の config.json に保存される。
-        const collapsibleSections = ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'];
+        const collapsibleSections = ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro', 'ping'];
         function applyCollapsed(){
             collapsibleSections.forEach(function(n){
                 const el = document.querySelector('.section[data-sec="' + n + '"]');
@@ -1202,11 +1315,13 @@
                 const c = !!(settings.collapsed && settings.collapsed[n]);
                 el.classList.toggle('collapsed', c);
                 el.querySelectorAll('.chev').forEach(function(b){ b.title = c ? '展開' : '折りたたむ'; });
-                // Wi-Fi と Disk は折りたたむと表面に戻す。展開後は表面から始まる（裏面のグラフは再描画される）。
-                if ((n === 'network' || n === 'disk') && c) el.classList.remove('flipped');
+                // Wi-Fi と Disk は、折りたたんでも展開しても、いま出している面（settings.flipped）を保つ。
+                // 折りたたみ中の裏面は見出し 1 行（CSS の .collapsed 側）で、展開すると同じ面のグラフに戻る。
             });
             // net-peak の中身は折りたたみ状態でも変わるので、次の周期を待たずに付け替える
             updateNetValue();
+            // 展開した裏面のグラフは、折りたたみ中は描けていない（canvas が非表示）ので描き直す
+            scheduleGraphRedraw();
         }
         let heightTimer = 0;
         function scheduleHeightAdjust(){
@@ -1228,6 +1343,7 @@
 
         const workHooks = { heightChanged: scheduleHeightAdjust };
         let workSettingsKey = '';
+        let pomoSettingsKey = '';
         // コンパクト表示（幅 130px）では勤務時間の入力欄を置けないので、区画のクリックで、入力用の小さな別ウィンドウを開く。
         // ドラッグとは区別する（bindFlip と同じく movedSinceDown を見る）。フル表示では何もしない（区画の中で操作できる）。
         document.getElementById('workSection').addEventListener('click', function(){
@@ -1235,8 +1351,175 @@
             apiFetch('/api/openworktimer').catch(function(){});
         });
         __WORK_JS__
+        // ============ ポモドーロ ============
+        // 区間の計算・切り替え・集中モードは Go 側（pomodoro.go）。ここは描画と操作だけ。
+        // 残り時間は、応答の endsAtMs（期限の Unix ミリ秒）から 1 秒ごとに手元で数える
+        // （2 秒周期の /api/system だけだと、数字が 2 秒刻みで飛ぶ）。周期の応答で補正される。
+        let lastPomo = null;
+        let pomoErrTimer = 0;
+        let pomoLayoutKey = '';
+        let pomoPolledAt = 0;
+        function fmtPomo(sec){ sec = Math.max(0, sec); return String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'); }
+        function pomoRemaining(info){
+            return info.running && info.endsAtMs ? Math.max(0, Math.ceil((info.endsAtMs - Date.now()) / 1000)) : info.remainingSec;
+        }
+        function pomoClass(info){
+            if (info.phase === 'idle') return 'idle';
+            if (info.paused) return 'paused';
+            return info.phase === 'focus' ? '' : 'break';
+        }
+        function showPomoErr(msg){
+            const el = document.getElementById('pomo-err');
+            el.textContent = msg; el.hidden = !msg;
+            clearTimeout(pomoErrTimer);
+            if (msg) pomoErrTimer = setTimeout(function(){ showPomoErr(''); }, 4000);
+            scheduleHeightAdjust();
+        }
+        // 時間だけを描く（1 秒ごと）
+        function renderPomoTime(){
+            if (!lastPomo || settings.hidden.pomodoro) return;
+            const info = lastPomo;
+            const rem = pomoRemaining(info);
+            const text = info.phase === 'idle' ? fmtPomo(info.totalSec) : fmtPomo(rem);
+            document.getElementById('pomo-head').textContent = text;
+            document.getElementById('pomo-big').textContent = text;
+            const pct = info.phase === 'idle' || !info.totalSec ? 0 : Math.min(100, Math.max(0, (1 - rem / info.totalSec) * 100));
+            document.getElementById('pomo-bar').style.width = pct + '%';
+            // 期限に届いたら、次の周期を待たずに、Go 側が進めた区間を取りに行く（連打しない）
+            if (info.running && rem === 0 && Date.now() - pomoPolledAt > 1500) pomoRefresh();
+        }
+        function pomoRefresh(){
+            pomoPolledAt = Date.now();
+            apiFetch('/api/system').then(function(r){ return r.json(); }).then(function(d){ applyPomodoro(d.Pomodoro); }).catch(function(){});
+        }
+        function applyPomodoro(info){
+            if (!info) return;   // 非表示のときは null。区画は applyHidden が隠す
+            lastPomo = info;
+            const cls = pomoClass(info);
+            const names = { idle: '未開始', focus: '集中', short: '休憩', long: '長い休憩' };
+            document.getElementById('pomo-head').className = 'section-value ' + cls;
+            document.getElementById('pomo-big').className = 'pm-big ' + cls;
+            document.getElementById('pomo-bar').className = 'progress-fill pomo-fill ' + cls;
+            let cap = names[info.phase] || '';
+            if (info.paused && info.phase !== 'idle') cap += '（一時停止中）';
+            document.getElementById('pomo-cap').textContent = cap;
+            document.getElementById('pomo-mark').hidden = !info.focusActive;
+            // 4 回のうちの何回目か: ● 終えた回、◉ 集中中の回、○ これから
+            const done = info.phase === 'idle' ? 0 : (info.phase === 'focus' ? info.round - 1 : info.round);
+            let dots = '';
+            for (let i = 1; i <= info.longEvery; i++) dots += (i <= done ? '●' : (info.phase === 'focus' && i === info.round ? '◉' : '○')) + (i < info.longEvery ? ' ' : '');
+            document.getElementById('pomo-dots').textContent = dots;
+            document.getElementById('pomo-done').textContent = info.doneToday + ' 回';
+            const chip = document.getElementById('pomo-chip');
+            if (info.focusActive) { chip.textContent = '🔒 集中モード: 対象のアプリを隠しています'; chip.hidden = false; }
+            else if (info.revealed) { chip.textContent = '👁 この区間は、対象のアプリを隠しません'; chip.hidden = false; }
+            else if (info.paused && info.phase !== 'idle' && !info.autoNext && info.remainingSec === info.totalSec) { chip.textContent = '⏸ 次の区間の開始待ち'; chip.hidden = false; }
+            else chip.hidden = true;
+            const idle = info.phase === 'idle';
+            document.getElementById('pomo-btn-start').hidden = !idle;
+            document.getElementById('pomo-btn-pause').hidden = !info.running;
+            document.getElementById('pomo-btn-resume').hidden = !(info.paused && !idle);
+            document.getElementById('pomo-btn-skip').hidden = idle;
+            document.getElementById('pomo-btn-reset').hidden = idle;
+            const reveal = info.phase === 'focus' && info.running && info.focusMode;
+            document.getElementById('pomo-reveal-row').hidden = !reveal;
+            document.getElementById('pomo-btn-reveal').textContent = info.revealed ? '再び隠す' : '一時的に表示';
+            document.getElementById('pomo-btn-reveal').dataset.pm = info.revealed ? 'conceal' : 'reveal';
+            renderPomoTime();
+            // 行の増減で高さが変わるので、構成が変わったときだけ測り直す
+            const key = [info.phase, info.running, info.paused, info.focusActive, info.revealed, !chip.hidden, reveal].join('|');
+            if (key !== pomoLayoutKey) {
+                const first = pomoLayoutKey === '';
+                pomoLayoutKey = key;
+                if (!first) scheduleHeightAdjust();
+            }
+        }
+        // 操作は POST。応答は操作後のスナップショットなので、次の周期を待たずに描く。
+        async function pomoAction(action){
+            try {
+                const res = await apiFetch('/api/pomodoro?action=' + action, { method: 'POST' });
+                if (!res.ok) { showPomoErr((await res.text()).trim()); return false; }
+                showPomoErr('');
+                applyPomodoro(await res.json());
+                return true;
+            } catch (e) { showPomoErr('通信に失敗しました'); return false; }
+        }
+        document.getElementById('pomoSection').addEventListener('click', function(e){
+            const t = e.target.closest('[data-pm]');
+            if (t) { e.stopPropagation(); pomoAction(t.dataset.pm); return; }
+            // コンパクト表示（見出し 1 行）は、区画のクリックで 開始 / 一時停止 / 再開。ドラッグとは区別する。
+            if (movedSinceDown || !document.getElementById('dragArea').classList.contains('compact') || !lastPomo) return;
+            e.stopPropagation();
+            pomoAction(lastPomo.phase === 'idle' ? 'start' : (lastPomo.running ? 'pause' : 'resume'));
+        });
+        setInterval(renderPomoTime, 1000);
+
+        // ============ Ping 監視 ============
+        let pingLayoutKey = '';
+        // 行の増減で高さが変わるので、構成が変わったとき（最初の描画も含む）に測り直す
+        function pingRelayout(key){
+            if (key === pingLayoutKey) return;
+            pingLayoutKey = key;
+            scheduleHeightAdjust();
+        }
+        function applyPing(info){
+            const sec = document.getElementById('pingSection');
+            if (!sec) return;
+            const head = document.getElementById('ping-head');
+            const list = document.getElementById('ping-list');
+            if (!head || !list) return;
+            const targets = (info && info.targets) || [];
+            if (targets.length === 0) {
+                // 非表示のとき・監視先がないとき。古い行や値を残さない
+                if (pingLayoutKey !== 'empty') {
+                    head.classList.remove('danger');
+                    head.textContent = '-- ms';
+                    list.innerHTML = '';
+                    const empty = document.createElement('div');
+                    empty.className = 'ping-empty';
+                    empty.textContent = '監視先が未登録です（⚙ の「Ping 監視」で追加）';
+                    list.appendChild(empty);
+                    pingRelayout('empty');
+                }
+                return;
+            }
+            // 見出しは、警告があるときは件数、ないときは代表 RTT。警告のある値が、別のホストの良い値で隠れないようにする
+            const warnCount = targets.filter(function(t){ return t.isWarnLoss || t.isWarnRtt || t.status === 'error'; }).length;
+            if (warnCount > 0) {
+                head.classList.add('danger');
+                head.textContent = '⚠ ' + warnCount + ' 件';
+            } else {
+                head.classList.remove('danger');
+                head.textContent = info.summaryRtt >= 0 ? info.summaryRtt + ' ms' : '-- ms';
+            }
+            list.innerHTML = '';
+            targets.forEach(function(t){
+                const row = document.createElement('div');
+                row.className = 'ping-row';
+                row.title = t.targetIP ? (t.host + ' (' + t.targetIP + ')') : t.host;
+
+                const hostSpan = document.createElement('span');
+                hostSpan.className = 'ping-host';
+                hostSpan.textContent = t.host;
+                row.appendChild(hostSpan);
+
+                const rttSpan = document.createElement('span');
+                rttSpan.className = t.isWarnRtt ? 'ping-rtt danger' : 'ping-rtt';
+                rttSpan.textContent = t.rttMs >= 0 ? t.rttMs + ' ms' : '--';
+                row.appendChild(rttSpan);
+
+                const lossSpan = document.createElement('span');
+                lossSpan.className = (t.isWarnLoss || t.status === 'error') ? 'ping-loss danger' : 'ping-loss';
+                lossSpan.textContent = t.lossPercent.toFixed(1) + '%';
+                row.appendChild(lossSpan);
+
+                list.appendChild(row);
+            });
+            pingRelayout('rows' + targets.length);
+        }
+
         // ============ AI 使用量（Claude / Codex）============
-        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0, rotateTimer: 0 };
+        const ai = { settings: null, usage: null, status: null, html: '', sum: '', comp: '', timer: 0, statusTimer: 0, rotateTimer: 0, rotateMs: 0 };
         const AI_PROVIDERS = [
             { id: 'claude', name: 'Claude', letter: 'C', cls: 'claude', flag: 'claudeEnabled' },
             { id: 'codex',  name: 'Codex',  letter: 'X', cls: 'codex',  flag: 'codexEnabled' }
@@ -1372,7 +1655,12 @@
         // 折りたたみ / コンパクト表示の見せ方。"rotate"（自動）と "click"（クリック）は 2 行を重ねて、
         // それぞれ一定間隔 / クリックで反転させる。
         // 行が 1 つだけのときは入れ替える相手がいないので、反転させず普通に出す。
-        const AI_ROTATE_MS = 4000;
+        // 自動で反転する間隔は設定（ai.compactRotateSeconds。Go 側が 2〜60 秒に矯正済み）。取れないときは従来の 4 秒。
+        const AI_ROTATE_DEFAULT_MS = 4000;
+        function aiRotateMs(){
+            const sec = ai.settings ? Number(ai.settings.compactRotateSeconds) : 0;
+            return sec > 0 ? sec * 1000 : AI_ROTATE_DEFAULT_MS;
+        }
         function applyAICompactDisplay(){
             const box = document.getElementById('ai-compact');
             const mode = ai.settings && ai.settings.enabled ? ai.settings.compactDisplay : '';
@@ -1383,11 +1671,19 @@
             document.getElementById('aiSection').classList.toggle('click-flip', flippable && mode === 'click');
             document.getElementById('aiSection').classList.toggle('ai-rot', rotate);
             if (!rotate) box.classList.remove('flip');
-            if (auto && !ai.rotateTimer) {
+            // 「クリックで反転」は、利用者が選んだ行（settings.flipped.ai）を出す。再起動や、行が一時的に 1 つに
+            // なった（取得中など）あとでも戻す。自動で反転のときは回り続けるので保存しない。反転の動きの途中
+            // （aiFlipBusy）は、動きが自分で行を入れ替えるので触らない。
+            else if (mode === 'click' && !aiFlipBusy) box.classList.toggle('flip', !!settings.flipped.ai);
+            const ms = aiRotateMs();
+            if (auto && (!ai.rotateTimer || ai.rotateMs !== ms)) {
+                // 間隔が変わったときは、作り直して新しい間隔にすぐ切り替える
+                clearInterval(ai.rotateTimer);
+                ai.rotateMs = ms;
                 ai.rotateTimer = setInterval(function(){
                     // 見えていない間（フル表示で展開中）は回さない
                     if (box.offsetParent !== null) aiFlip();
-                }, AI_ROTATE_MS);
+                }, ms);
             } else if (!auto && ai.rotateTimer) {
                 clearInterval(ai.rotateTimer);
                 ai.rotateTimer = 0;
@@ -1423,6 +1719,11 @@
             if (!compact && !this.classList.contains('collapsed')) return;
             if (e.target.closest('.chev, .ai-refresh, .ai-act, [data-ai-open], [data-ai-login]')) return;
             e.stopPropagation();
+            if (aiFlipBusy) return;   // 動いている最中のクリックは無視する（面と保存値がずれないように）
+            // 反転後の面を保存する（再起動しても同じ行から始める）。動きの途中ではクラスがまだ変わらないので、先に決める
+            const next = !document.getElementById('ai-compact').classList.contains('flip');
+            settings.flipped.ai = next;
+            apiFetch('/api/setoption?key=flip.ai&value=' + next).catch(function(){});
             aiFlip();
         });
         // ログイン待ち・取得中は短い間隔で、安定したら長い間隔で見る（Go 側の取得は既定 5 分ごと）
@@ -1573,6 +1874,9 @@
             if (s.hidden) { Object.assign(settings.hidden, s.hidden); applyHidden(); }
             applyOrder();
             if (s.collapsed) Object.assign(settings.collapsed, s.collapsed);
+            // いま出している面は、起動時だけ保存値から読む。変えるのはこのウィンドウのクリックだけなので、
+            // 設定ウィンドウの変更で再取得されたときは、保存が間に合っていない古い値で上書きしない。
+            if (initial && s.flipped) { Object.assign(settings.flipped, s.flipped); applyFlipped(true); applyAICompactDisplay(); }
             // CPU 名は起動後に変わらないので、ここで一度だけ反映する
             if (s.cpuName) setModelName('cpu-model', s.cpuName);
 
@@ -1605,6 +1909,13 @@
                 const workChanged = key !== workSettingsKey;
                 workSettingsKey = key;
                 if (!initial && workChanged) updateData().then(scheduleHeightAdjust);
+            }
+            if (s.pomodoro) {
+                const t = s.pomodoro;
+                const key = [settings.hidden.pomodoro, t.focusMinutes, t.shortBreakMinutes, t.longBreakMinutes, t.longEvery, t.autoNext, t.focusMode].join('|');
+                const pomoChanged = key !== pomoSettingsKey;
+                pomoSettingsKey = key;
+                if (!initial && pomoChanged) updateData().then(scheduleHeightAdjust);
             }
             scheduleHeightAdjust();
             // 区画の表示/非表示・並び順が変わると高さが変わるので、落ち着いてから位置とサイズを保存する
@@ -1765,7 +2076,7 @@
             const show = !settings.hidden.disk && !!(lastDisk && (drives.length || io));
             sec.style.display = show ? '' : 'none';
             sec.classList.toggle('disk-io-graph', graph);
-            if (!show) sec.classList.remove('flipped');
+            // データ待ち・取得不可で隠れている間も、いま出している面（settings.flipped）は変えない
             if (show) {
                 let used = 0, total = 0;
                 drives.forEach(function(d){ used += Number(d.Used) || 0; total += Number(d.Total) || 0; });
@@ -1845,6 +2156,8 @@
                 applyAccelData(data.GPU, data.NPU);
                 applyDiskData(data.Disk, true);
                 applyWorkTimer(data.WorkTimer);
+                applyPomodoro(data.Pomodoro);
+                applyPing(data.Ping);
                 if(data.Memory){ const p=Math.round(data.Memory.UsedPercent); document.getElementById('memory-percent').textContent=p+'%'; document.getElementById('memory-bar').style.width=p+'%'; document.getElementById('memory-used').textContent=formatBytes(data.Memory.Used); document.getElementById('memory-total').textContent='/ '+formatBytes(data.Memory.Total); }
                 if(data.Network){ const rx=Number(data.Network.RxBytesPerSec)||0; const tx=Number(data.Network.TxBytesPerSec)||0; netHistory.push({rx, tx}); if(netHistory.length>netMaxSamples) netHistory.shift(); document.getElementById('net-rx-val').textContent=formatRate(rx); document.getElementById('net-tx-val').textContent=formatRate(tx); updateNetValue(); if(wifiSection.classList.contains('flipped')) drawNetGraph(); }
                 const ssid=document.getElementById('wifi-ssid');

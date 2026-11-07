@@ -102,6 +102,41 @@ func TestHandlersInvalidProvider(t *testing.T) {
 	}
 }
 
+// 自動で反転の間隔: 保存・矯正され、他の設定を変えても保たれ、GET /api/ai/settings で読み戻せる。
+func TestSetOptionCompactRotateSeconds(t *testing.T) {
+	stubWebView(t)
+	withConfig(t, func(c *Settings) { *c = DefaultSettings() })
+	mux := newTestMux()
+
+	if got := snapshotConfig().CompactRotateSeconds; got != 4 {
+		t.Fatalf("既定 = %d, want 4（従来の固定値）", got)
+	}
+	for _, c := range []struct {
+		body string
+		want int
+	}{
+		{`{"compactRotateSeconds":10}`, 10},
+		{`{"compactDisplay":"rotate"}`, 10}, // 未指定のキーは変えない
+		{`{"compactRotateSeconds":1}`, minRotateSeconds},
+		{`{"compactRotateSeconds":9999}`, maxRotateSeconds},
+		{`{"compactRotateSeconds":0}`, defaultRotateSeconds}, // 空欄の入力は既定へ
+	} {
+		rec := do(mux, http.MethodPost, "/api/ai/setoption", c.body)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s = %d %s", c.body, rec.Code, rec.Body.String())
+		}
+		if got := snapshotConfig().CompactRotateSeconds; got != c.want {
+			t.Errorf("%s の後の CompactRotateSeconds = %d, want %d", c.body, got, c.want)
+		}
+	}
+
+	do(mux, http.MethodPost, "/api/ai/setoption", `{"compactRotateSeconds":7}`)
+	rec := do(mux, http.MethodGet, "/api/ai/settings", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"compactRotateSeconds":7`) {
+		t.Errorf("/api/ai/settings に compactRotateSeconds が出ていない: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // 部分更新: 指定したフィールドだけが変わり、範囲外の値はサーバ側で矯正される。
 func TestSetOptionPartialUpdateAndNormalize(t *testing.T) {
 	stubWebView(t)

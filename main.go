@@ -15,6 +15,7 @@ import (
 
 	"widget-go/aiusage"
 	"widget-go/ime"
+	"widget-go/ping"
 	"widget-go/sysinfo"
 
 	"github.com/jchv/go-webview2"
@@ -117,10 +118,11 @@ const (
 	ID_TRAY_EXIT = 1001
 
 	// AI 使用量のメニュー項目（AI 使用量が ON のときだけ出す）
-	ID_TRAY_AI_REFRESH      = 1002
-	ID_TRAY_AI_LOGIN_CLAUDE = 1003
-	ID_TRAY_AI_LOGIN_CODEX  = 1004
-	ID_TRAY_AI_TEST         = 1005
+	ID_TRAY_AI_REFRESH = 1002 // 1003〜1005 は、削除したログインと「AI 通知のテスト」の項目
+
+	// ポモドーロのメニュー項目（区画を表示しているときだけ出す）
+	ID_TRAY_POMO_TOGGLE = 1006
+	ID_TRAY_POMO_REVEAL = 1007
 
 	TRAY_DISPLAY_ICON  = 0
 	TRAY_DISPLAY_CPU   = 1
@@ -276,7 +278,11 @@ type SystemData struct {
 	PowerMode *sysinfo.PowerModeInfo `json:"PowerMode"`
 	// WorkTimer は勤務時間タイマーの表示値。区画を非表示にしている間は null。
 	WorkTimer *WorkTimerInfo `json:"WorkTimer"`
-	ViewMode  int            `json:"ViewMode"`
+	// Pomodoro はポモドーロタイマーの表示値。区画を非表示にしている間は null。
+	Pomodoro *PomodoroInfo `json:"Pomodoro"`
+	// Ping は Ping 監視の表示値。区画を非表示にしている間と、ホスト未登録時は null。
+	Ping     *ping.Info `json:"Ping"`
+	ViewMode int        `json:"ViewMode"`
 }
 
 // バックグラウンドで更新されるスナップショット。
@@ -394,6 +400,7 @@ func setTopmost(topmost bool) {
 func getSystemData() SystemData {
 	// config のロックを取るので、cacheMu を保持する前に計算する（ロックを入れ子にしない）
 	workTimer := currentWorkTimer(workTimerClock())
+	pomodoro := currentPomodoro(pomodoroClock())
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
 	viewModeMu.RLock()
@@ -412,6 +419,8 @@ func getSystemData() SystemData {
 		// 設定アプリなど外部での変更にも追従するため、2 秒周期の収集で更新する。
 		PowerMode: cachedPower,
 		WorkTimer: workTimer,
+		Pomodoro:  pomodoro,
+		Ping:      currentPing(),
 		ViewMode:  vm,
 	}
 }
@@ -1187,6 +1196,12 @@ func main() {
 	webviewDataPath = dataPath
 	startCollector()
 	go startServer(ln, apiToken)
+	// ポモドーロの周期処理。最初の周期で、前回の異常終了で隠れたままのものを戻す。
+	go pomodoroLoop()
+	// Ping 監視の周期処理。表示中かつホスト登録時のみ動作。
+	go pingLoop()
+	// ログオフ・シャットダウンの前に、隠したものと止めた通知を戻す。
+	startSessionWatcher()
 
 	// IME Composition Window の左上吸い込み現象を WinEvent Hook で監視・自動復旧する。
 	// 内部で goroutine + runtime.LockOSThread + GetMessageW ループを起動するので、
@@ -1269,6 +1284,8 @@ func main() {
 	startTray()
 	// Alt+F4 などで w.Run() を抜けた場合に通知領域へアイコンを残さない。
 	defer cleanupTray()
+	// 同じく、隠したままの Teams / Outlook や、止めたままの通知を残さない。
+	defer pomodoroShutdown()
 
 	// AI 使用量（aiusage）を始める。メイン WebView を登録してから呼ぶ（補助 WebView の
 	// 生成・Eval は、すべてメイン WebView の Dispatch 経由で UI スレッドに寄せられる）。

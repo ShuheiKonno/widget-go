@@ -53,6 +53,34 @@ func TestNormalizeCompactDisplay(t *testing.T) {
 	}
 }
 
+func TestNormalizeRotateSeconds(t *testing.T) {
+	cases := []struct{ in, want int }{
+		{0, defaultRotateSeconds},  // 旧 config・欠損キー・空欄 → 下限ではなく従来どおりの 4 秒
+		{-3, defaultRotateSeconds}, // 負値 → 既定
+		{1, minRotateSeconds},      // 下限未満 → 下限
+		{2, 2},                     // 下限ちょうど
+		{4, 4},                     // 既定
+		{60, 60},                   // 上限ちょうど
+		{61, maxRotateSeconds},     // 上限超過 → 上限
+		{99999, maxRotateSeconds},
+	}
+	for _, c := range cases {
+		if got := normalizeRotateSeconds(c.in); got != c.want {
+			t.Errorf("normalizeRotateSeconds(%d) = %d, want %d", c.in, got, c.want)
+		}
+	}
+	if defaultRotateSeconds != 4 {
+		t.Errorf("既定は従来の固定値（4 秒）のはず: %d", defaultRotateSeconds)
+	}
+	if got := DefaultSettings().CompactRotateSeconds; got != defaultRotateSeconds {
+		t.Errorf("DefaultSettings().CompactRotateSeconds = %d, want %d", got, defaultRotateSeconds)
+	}
+	// 設定全体の矯正（読み込み後・更新時）でも同じ扱い
+	if got := NormalizeSettings(Settings{}).CompactRotateSeconds; got != defaultRotateSeconds {
+		t.Errorf("NormalizeSettings のゼロ値 = %d, want %d", got, defaultRotateSeconds)
+	}
+}
+
 func TestNormalizeTraySplitDays(t *testing.T) {
 	for in, want := range map[int]int{0: 0, 5: 5, 7: 7, 3: 7, -1: 7, 99: 7} {
 		if got := normalizeTraySplitDays(in); got != want {

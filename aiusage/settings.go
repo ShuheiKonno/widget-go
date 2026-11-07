@@ -27,6 +27,10 @@ type Settings struct {
 	// "click"（1 行ずつ、クリックで反転）。
 	CompactDisplay string `json:"compactDisplay"`
 
+	// CompactRotateSeconds は CompactDisplay が "rotate"（自動で反転）のときの、反転の間隔（秒）。
+	// [minRotateSeconds, maxRotateSeconds]。キーが無い旧バージョンの config.json は既定の 4 秒（従来の固定値）。
+	CompactRotateSeconds int `json:"compactRotateSeconds"`
+
 	// TraySplitDays は 7 日ウィンドウ配色のペース基準日数。7（既定）| 5 | 0（固定 60/80%）。
 	TraySplitDays int `json:"traySplitDays"`
 
@@ -57,6 +61,14 @@ const (
 	defaultPollSeconds = 300
 )
 
+// 「自動で反転」の間隔の範囲（秒）。反転の動きそのものに約 0.6 秒かかるので、2 秒未満は
+// 次の反転が前の動きに被って落ち着かない。上限は、固まっているように見えない長さの目安。
+const (
+	minRotateSeconds     = 2
+	maxRotateSeconds     = 60
+	defaultRotateSeconds = 4
+)
+
 // DefaultSettings は既定の設定を返す。AI 使用量は既定 OFF（D2）。
 func DefaultSettings() Settings {
 	return Settings{
@@ -73,6 +85,8 @@ func DefaultSettings() Settings {
 		TraySplitDays:     7,
 		UsagePollSeconds:  defaultPollSeconds,
 		StatusPollSeconds: defaultPollSeconds,
+
+		CompactRotateSeconds: defaultRotateSeconds,
 	}
 }
 
@@ -85,6 +99,7 @@ func NormalizeSettings(s Settings) Settings {
 	s.ResetTimeFormat = normalizeResetTimeFormat(s.ResetTimeFormat)
 	s.OverageTipFormat = normalizeOverageTipFormat(s.OverageTipFormat)
 	s.CompactDisplay = normalizeCompactDisplay(s.CompactDisplay)
+	s.CompactRotateSeconds = normalizeRotateSeconds(s.CompactRotateSeconds)
 	s.ClaudeEnabled, s.CodexEnabled, s.TrayProvider = normalizeProviderSelection(
 		s.ClaudeEnabled, s.CodexEnabled, s.TrayProvider)
 	return s
@@ -97,6 +112,20 @@ func clampPollSeconds(v int) int {
 	}
 	if v > maxPollSeconds {
 		return maxPollSeconds
+	}
+	return v
+}
+
+// normalizeRotateSeconds は反転の間隔（秒）を [minRotateSeconds, maxRotateSeconds] に収める。
+// 0 以下（旧バージョンの config.json にキーが無い場合のゼロ値や、空欄の入力）は、下限ではなく既定の 4 秒にする。
+func normalizeRotateSeconds(v int) int {
+	switch {
+	case v <= 0:
+		return defaultRotateSeconds
+	case v < minRotateSeconds:
+		return minRotateSeconds
+	case v > maxRotateSeconds:
+		return maxRotateSeconds
 	}
 	return v
 }

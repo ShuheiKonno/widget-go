@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"widget-go/aiusage"
+	"widget-go/ping"
 )
 
 // Config はプロセスをまたいで永続化される設定。
@@ -63,8 +64,14 @@ type Config struct {
 	AI aiusage.Settings `json:"ai"`
 	// WorkTimer は勤務時間タイマー（区画 work）の設定と、計測中の状態。区画の表示は Hidden.Work。
 	WorkTimer WorkTimerConfig `json:"workTimer"`
+	// Pomodoro はポモドーロタイマー（区画 pomodoro）の設定と状態、集中モードで隠したものの記録。区画の表示は Hidden.Pomodoro。
+	Pomodoro PomodoroConfig `json:"pomodoro"`
+	// Ping は Ping 監視（区画 ping）の設定。区画の表示は Hidden.Ping。
+	Ping ping.Config `json:"ping"`
 	// Collapsed は各区画の折りたたみ状態（D10）。
 	Collapsed CollapsedConfig `json:"collapsed"`
+	// Flipped は表裏を反転できる区画の、いま出している面（再起動をまたいで覚える）。
+	Flipped FlippedConfig `json:"flipped"`
 	// Hidden は各区画の非表示設定。true が非表示。既定はすべて表示。
 	// AI は既存の ai.enabled（取得の ON/OFF を兼ねる）で切り替えるのでここには含めない。
 	Hidden HiddenConfig `json:"hidden"`
@@ -73,7 +80,7 @@ type Config struct {
 }
 
 // defaultOrder は区画の既定の表示順。区画名は CollapsedConfig / HiddenConfig と同じ。
-var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work"}
+var defaultOrder = []string{"cpu", "memory", "disk", "gpu", "npu", "network", "ai", "work", "pomodoro", "ping"}
 
 // normalizeOrder は保存された表示順を矯正する。未知・重複は捨て、欠けた区画は既定の順で末尾に足す。
 // 手編集や、区画が増えた将来のバージョンから戻ったときでも全区画が必ず含まれる。
@@ -133,6 +140,10 @@ type HiddenConfig struct {
 	Network bool `json:"network"`
 	// Work は勤務時間タイマー。既定は非表示（defaultConfig）。
 	Work bool `json:"work"`
+	// Pomodoro はポモドーロタイマー。既定は非表示（defaultConfig）。
+	Pomodoro bool `json:"pomodoro"`
+	// Ping は Ping 監視。既定は非表示（defaultConfig）。
+	Ping bool `json:"ping"`
 }
 
 // field は区画名に対応するフィールドを返す。未知の名前は nil。
@@ -152,6 +163,10 @@ func (h *HiddenConfig) field(name string) *bool {
 		return &h.Network
 	case "work":
 		return &h.Work
+	case "pomodoro":
+		return &h.Pomodoro
+	case "ping":
+		return &h.Ping
 	}
 	return nil
 }
@@ -161,7 +176,7 @@ func (h *HiddenConfig) field(name string) *bool {
 func (c *Config) syncShowGPU() { c.ShowGPU = !c.Hidden.GPU || !c.Hidden.NPU }
 
 // setHidden は区画の非表示状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
-// network / work）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+// network / work / pomodoro / ping）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setHidden(name, val string) error {
 	if val != "true" && val != "false" {
 		return fmt.Errorf("invalid hide value %q", val)
@@ -179,14 +194,16 @@ func setHidden(name, val string) error {
 // CollapsedConfig は区画ごとの折りたたみ状態。true が折りたたみ。
 // AI 以外の既存の区画にも及ぶので、Config.AI の中ではなくトップレベルに置く。
 type CollapsedConfig struct {
-	CPU     bool `json:"cpu"`
-	Memory  bool `json:"memory"`
-	Disk    bool `json:"disk"`
-	GPU     bool `json:"gpu"`
-	NPU     bool `json:"npu"`
-	Network bool `json:"network"`
-	AI      bool `json:"ai"`
-	Work    bool `json:"work"`
+	CPU      bool `json:"cpu"`
+	Memory   bool `json:"memory"`
+	Disk     bool `json:"disk"`
+	GPU      bool `json:"gpu"`
+	NPU      bool `json:"npu"`
+	Network  bool `json:"network"`
+	AI       bool `json:"ai"`
+	Work     bool `json:"work"`
+	Pomodoro bool `json:"pomodoro"`
+	Ping     bool `json:"ping"`
 }
 
 // field は区画名に対応するフィールドを返す。未知の名前は nil。
@@ -208,12 +225,16 @@ func (c *CollapsedConfig) field(name string) *bool {
 		return &c.AI
 	case "work":
 		return &c.Work
+	case "pomodoro":
+		return &c.Pomodoro
+	case "ping":
+		return &c.Ping
 	}
 	return nil
 }
 
 // setCollapsed は区画の折りたたみ状態を保存する。name は許可リスト（cpu / memory / disk / gpu / npu /
-// network / ai / work）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
+// network / ai / work / pomodoro）、val は "true" か "false" のみ。それ以外はエラー（設定は変更しない）。
 func setCollapsed(name, val string) error {
 	if val != "true" && val != "false" {
 		return fmt.Errorf("invalid collapse value %q", val)
@@ -222,6 +243,43 @@ func setCollapsed(name, val string) error {
 		return fmt.Errorf("unknown collapse section %q", name)
 	}
 	mutateConfig(func(c *Config) { *c.Collapsed.field(name) = val == "true" })
+	return nil
+}
+
+// FlippedConfig は、クリックで表裏を反転できる区画が、いまどちらの面を出しているか。true が裏面。
+// 折りたたみ・非表示・再起動をまたいで同じ面に戻すために保存する（保存しないと、表面に戻ってしまう）。
+//   - Disk: 裏面は I/O
+//   - Network: 裏面はトラフィックのグラフ（表面は Wi-Fi / Ethernet のアダプタ情報）
+//   - AI: 折りたたみ・コンパクト表示の「クリックで反転」で、2 行目（Codex 側）を出しているか
+type FlippedConfig struct {
+	Disk    bool `json:"disk"`
+	Network bool `json:"network"`
+	AI      bool `json:"ai"`
+}
+
+// field は区画名に対応するフィールドを返す。未知の名前は nil。
+func (f *FlippedConfig) field(name string) *bool {
+	switch name {
+	case "disk":
+		return &f.Disk
+	case "network":
+		return &f.Network
+	case "ai":
+		return &f.AI
+	}
+	return nil
+}
+
+// setFlipped は区画が出している面を保存する。name は許可リスト（disk / network / ai）、
+// val は "true"（裏面）か "false"（表面）のみ。それ以外はエラー（設定は変更しない）。
+func setFlipped(name, val string) error {
+	if val != "true" && val != "false" {
+		return fmt.Errorf("invalid flip value %q", val)
+	}
+	if (&FlippedConfig{}).field(name) == nil {
+		return fmt.Errorf("unknown flip section %q", name)
+	}
+	mutateConfig(func(c *Config) { *c.Flipped.field(name) = val == "true" })
 	return nil
 }
 
@@ -280,6 +338,12 @@ func defaultConfig() Config {
 	// 勤務時間タイマーは既定で非表示（利用者が設定で ON にするまで出さない）。旧 config にキーが無くても残る。
 	c.Hidden.Work = true
 	c.WorkTimer = defaultWorkTimer()
+	// ポモドーロも既定は非表示（勤務時間と同じ）。
+	c.Hidden.Pomodoro = true
+	c.Pomodoro = defaultPomodoro()
+	// Ping も既定は非表示。
+	c.Hidden.Ping = true
+	c.Ping = ping.DefaultConfig()
 	c.Order = append([]string(nil), defaultOrder...)
 	c.IME = IMEConfig{
 		Enabled:     true,
@@ -309,6 +373,8 @@ func loadConfig() {
 	// 手編集や旧バージョンで範囲外・欠損になった値を安全な値へ矯正する。
 	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
 	tmp.WorkTimer = normalizeWorkTimer(tmp.WorkTimer)
+	tmp.Pomodoro = normalizePomodoro(tmp.Pomodoro)
+	tmp.Ping = ping.NormalizeConfig(tmp.Ping)
 	// v2.0.1 以前は「GPU/NPU を表示」(showGPU) 1 つだけだった。OFF だった設定は両区画の非表示に引き継ぐ。
 	if !tmp.ShowGPU {
 		tmp.Hidden.GPU, tmp.Hidden.NPU = true, true

@@ -33,6 +33,26 @@ func TestLoadConfigPartialAIKeepsDefaults(t *testing.T) {
 	}
 }
 
+// 自動で反転の間隔: キーが無い旧バージョンの config.json は従来の 4 秒、保存した値は再起動で保たれ、範囲外は矯正される。
+func TestLoadConfigCompactRotateSeconds(t *testing.T) {
+	withConfigFile(t, `{"ai": {"enabled": true}}`)
+	if got := snapshotConfig().AI.CompactRotateSeconds; got != 4 {
+		t.Errorf("キーが無いときの CompactRotateSeconds = %d, want 4", got)
+	}
+	withConfigFile(t, `{"ai": {"compactRotateSeconds": 15}}`)
+	if got := snapshotConfig().AI.CompactRotateSeconds; got != 15 {
+		t.Errorf("保存した値 = %d, want 15", got)
+	}
+	withConfigFile(t, `{"ai": {"compactRotateSeconds": 1}}`)
+	if got := snapshotConfig().AI.CompactRotateSeconds; got != 2 {
+		t.Errorf("下限未満 = %d, want 2", got)
+	}
+	withConfigFile(t, `{"ai": {"compactRotateSeconds": 100000}}`)
+	if got := snapshotConfig().AI.CompactRotateSeconds; got != 60 {
+		t.Errorf("上限超過 = %d, want 60", got)
+	}
+}
+
 // 手編集で範囲外になった値は、読み込み時に矯正される。
 func TestLoadConfigNormalizesAI(t *testing.T) {
 	withConfigFile(t, `{"ai": {"usagePollSeconds": 5, "statusPollSeconds": 999999, "trayProvider": "codex", "codexEnabled": false, "resetTimeFormat": "x"}}`)

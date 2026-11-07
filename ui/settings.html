@@ -107,6 +107,8 @@
         .field > .label { display: block; font-size: 12px; color: var(--muted-color); margin-bottom: 6px; }
         .num { width: 80px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; color: var(--text-color); font: inherit; padding: 4px 6px; text-align: right; }
         .nowrap { white-space: nowrap; }
+        select.num { width: auto; text-align: left; }
+        textarea.targets { width: 100%; min-height: 84px; margin-top: 6px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 5px; color: var(--text-color); font: 12px Consolas, monospace; padding: 6px 8px; resize: vertical; user-select: text; }
         input[type=time].num { width: 104px; text-align: left; color-scheme: dark; }
         body.theme-light input[type=time].num { color-scheme: light; }
         .acct { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
@@ -121,6 +123,13 @@
         .note.warn .quiet { flex: none; font-size: 11.5px; padding: 4px 10px; }
         .note.err { background: var(--warn-bg); color: var(--danger-fg); }
         .state-on { color: var(--ok-fg); }
+        .ping-target-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+        .ping-target-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; }
+        .ping-target-item input.host { flex: 1 1 160px; min-width: 130px; font-family: Consolas, monospace; font-size: 12px; }
+        .ping-target-item .thresh-group { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted-color); }
+        .ping-target-item input.num { width: 55px; }
+        .ping-target-item button.del-btn { padding: 4px 8px; font-size: 12px; background: none; border: 1px solid var(--input-border); border-radius: 4px; color: var(--danger-fg); cursor: pointer; }
+        .ping-target-item button.del-btn:hover { background: var(--btn-bg-hover); }
     </style>
 </head>
 <body>
@@ -130,6 +139,8 @@
         <button class="nav-item" data-panel="sections">区画</button>
         <button class="nav-item" data-panel="ai">AI 使用量</button>
         <button class="nav-item" data-panel="work">勤務時間</button>
+        <button class="nav-item" data-panel="pomodoro">ポモドーロ</button>
+        <button class="nav-item" data-panel="ping">Ping 監視</button>
         <button class="nav-item" data-panel="system">起動とショートカット</button>
     </nav>
     <main>
@@ -216,7 +227,7 @@
             <div class="card">
                 <span class="label">区画の表示と順序</span>
                 <div id="orderList"></div>
-                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。Disk は固定ドライブの使用量と I/O を表示し、OFF にすると収集も止まります。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。勤務時間は AI 使用量とは別の区画で、既定は非表示です（OFF にしても計測は止まらず、状態は保たれます。詳しい設定は「勤務時間」のタブにあります）。</p>
+                <p class="hint">チェックで表示、▲▼ で並べ替えます。非表示の区画も順番は保たれます。Disk は固定ドライブの使用量と I/O を表示し、OFF にすると収集も止まります。GPU / NPU は搭載している PC でだけ表示され、両方を OFF にすると収集も止まります。AI 使用量は ON にすると取得を始めます。勤務時間とポモドーロは AI 使用量とは別の区画で、既定は非表示です（勤務時間は OFF にしても計測は止まらず、状態は保たれます。詳しい設定は「勤務時間」「ポモドーロ」のタブにあります）。</p>
             </div>
             <div class="card">
                 <span class="label">電源モードの切替</span>
@@ -248,9 +259,12 @@
                         <span class="label" title="区画を折りたたんだときと、コンパクト表示のときの Claude / Codex の見せ方">折りたたみ / コンパクト時の表示</span>
                         <div class="opts" id="aiCompactDisp">
                             <button class="opt" data-value="both" title="Claude と Codex を 2 行で並べて表示">並べて表示</button>
-                            <button class="opt" data-value="rotate" title="1 行ずつ、約 4 秒ごとに自動で反転して交互に表示">自動で反転</button>
+                            <button class="opt" data-value="rotate" title="1 行ずつ、設定した間隔で自動的に反転して交互に表示">自動で反転</button>
                             <button class="opt" data-value="click" title="1 行ずつ表示し、クリックで反転して入れ替え">クリックで反転</button>
                         </div>
+                    </div>
+                    <div class="field">
+                        <label class="toggle" id="aiRotateRow"><span>反転の間隔 (秒)<span class="sub-text">「自動で反転」のときの間隔です（2〜60 秒）。</span></span><input class="num" type="number" min="2" max="60" step="1" id="optAIRotate"></label>
                     </div>
                     <div class="field">
                         <span class="label" title="トレイアイコンの背景色（緑 / 琥珀 / 赤）を決める、7 日枠のペース基準">7 日枠のトレイ配色ペース</span>
@@ -302,6 +316,54 @@
             </div>
         </section>
 
+        <section class="panel" id="panel-pomodoro">
+            <h2>ポモドーロタイマー</h2>
+            <div class="card">
+                <label class="toggle"><span>ポモドーロを表示する<span class="sub-text">勤務時間とは独立した区画です（連動しません）。「区画」の一覧のチェックと同じ設定です。非表示にすると、集中モードで隠したものは戻ります。</span></span><input type="checkbox" id="optPomoVisible"></label>
+            </div>
+            <div class="card" id="pomoCard">
+                <span class="label">時間と回数</span>
+                <label class="toggle"><span>集中</span><span class="nowrap"><input class="num" type="number" min="1" max="180" step="1" id="optPomoFocus"> 分</span></label>
+                <label class="toggle"><span>休憩</span><span class="nowrap"><input class="num" type="number" min="1" max="60" step="1" id="optPomoShort"> 分</span></label>
+                <label class="toggle"><span>長い休憩</span><span class="nowrap"><input class="num" type="number" min="1" max="120" step="1" id="optPomoLong"> 分</span></label>
+                <label class="toggle"><span>長い休憩の間隔<span class="sub-text">集中をこの回数終えるごとに、長い休憩にします。</span></span><span class="nowrap"><input class="num" type="number" min="2" max="10" step="1" id="optPomoEvery"> 回</span></label>
+                <label class="toggle"><span>次の区間を自動で始める<span class="sub-text">OFF にすると、区間が終わったところで止まり、「再開」を押すまで待ちます。</span></span><input type="checkbox" id="optPomoAuto"></label>
+                <div class="note err" id="pomoErr" role="alert" hidden></div>
+            </div>
+            <div class="card">
+                <span class="label">集中モード</span>
+                <label class="toggle"><span>集中の間、Teams / Outlook を隠して通知を止める<span class="sub-text">集中の間だけ働きます。休憩・一時停止・停止・リセット、ウィジェットの終了、ログオフで元に戻ります。</span></span><input type="checkbox" id="optPomoFocusMode"></label>
+                <label class="toggle"><span>隠し方<span class="sub-text">「隠す」はタスクバーにも出ません。「最小化」はタスクバーに残ります。</span></span><select class="num" id="optPomoHide"><option value="hide">隠す</option><option value="minimize">最小化</option></select></label>
+                <span class="label" style="margin-top:10px">対象のアプリ（プロセス名。1 行に 1 つ）</span>
+                <textarea class="targets" id="optPomoTargets" spellcheck="false" placeholder="ms-teams.exe"></textarea>
+                <p class="hint">既定は Teams（新: ms-teams.exe / 旧: Teams.exe）と Outlook（新: olk.exe / 旧: OUTLOOK.EXE）です。ほかのアプリ（例: Slack.exe）も足せます。管理者権限で動いているアプリは操作できません（無視します）。</p>
+                <p class="hint">通知は、Windows の「通知」の、アプリごとのスイッチ（HKCU の Notifications\Settings）を、集中の間だけ OFF にして、終わると元の値に戻します。<b>この方法が、お使いの Windows / Teams / Outlook で効くかは、実機での確認が必要です</b>（効かない場合は、ウィンドウを隠すだけになります）。着信の呼び出し音は止められません（Teams / Outlook 側の設定で調整してください）。</p>
+                <p class="hint">集中中に隠れたものが見つからないときは、ウィジェットのポモドーロの「一時的に表示」か、トレイのアイコンの右クリックの「Teams / Outlook の表示を戻す」を使います。</p>
+            </div>
+        </section>
+
+        <section class="panel" id="panel-ping">
+            <h2>Ping 監視</h2>
+            <div class="card">
+                <label class="toggle"><span>Ping 監視を表示する<span class="sub-text">「区画」の一覧のチェックと同じ設定です。OFF の間は、Ping の定期送信も完全に停止します。</span></span><input type="checkbox" id="optPingVisible"></label>
+            </div>
+            <div class="card" id="pingCard">
+                <span class="label">監視先ホスト（最大 5 件）</span>
+                <div id="pingTargetList" class="ping-target-list"></div>
+                <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                    <button class="opt" type="button" id="btnAddPingTarget">＋ 監視先を追加</button>
+                    <button class="opt" type="button" id="btnSavePingTargets" style="background: var(--accent); border-color: var(--accent); color: #fff;">保存</button>
+                    <span id="pingSaveMsg" style="font-size: 11.5px; color: var(--ok-fg); display: none;">✓ 保存しました</span>
+                </div>
+                <p class="hint">監視先には FQDN（例: google.com）または IP アドレス（例: 8.8.8.8、192.168.1.1）を指定します。パケロス閾値または RTT 閾値を超えた場合に、ウィジェット上で赤文字表示になり、ポップアップ通知が出ます。</p>
+            </div>
+            <div class="card">
+                <span class="label">通知と動作設定</span>
+                <label class="toggle"><span>閾値超過時にポップアップ通知を出す<span class="sub-text">同一ホストの連続通知は 5 分間抑止（クールダウン）します。</span></span><input type="checkbox" id="optPingNotify"></label>
+                <label class="toggle"><span>測定間隔<span class="sub-text">短くすると即時性が上がりますが、通信頻度が増えます。</span></span><span class="nowrap"><input class="num" type="number" min="1" max="60" step="1" id="optPingInterval"> 秒</span></label>
+            </div>
+        </section>
+
         <section class="panel" id="panel-system">
             <h2>起動とショートカット</h2>
             <div class="card">
@@ -333,10 +395,10 @@
         const $ = function(id){ return document.getElementById(id); };
 
         const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number', zoom: 100,
-            hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work'], workTimer: null };
+            hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro', 'ping'], workTimer: null, pomodoro: null, ping: null };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
-        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', disk: 'Disk', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量', work: '勤務時間' };
+        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', disk: 'Disk', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量', work: '勤務時間', pomodoro: 'ポモドーロ', ping: 'Ping 監視' };
 
         // こちらで設定を変える操作の最初に呼ぶ。読み込み中の古い結果を捨てるための版番号（reloadAll）。
         let rev = 0;
@@ -369,6 +431,8 @@
             $('optPowerMode').checked = !!settings.powerMode;
             renderOrderList();
             renderWork();
+            renderPomo();
+            renderPing();
             renderAI();
             renderShortcuts();
             renderSkinState();
@@ -582,6 +646,8 @@
             touch();
             settings.hidden[n] = !visible;
             if (n === 'work') $('optWorkVisible').checked = visible;   // 「勤務時間」タブのチェックと同じ設定
+            if (n === 'pomodoro') $('optPomoVisible').checked = visible;   // 「ポモドーロ」タブのチェックと同じ設定
+            if (n === 'ping') $('optPingVisible').checked = visible;   // 「Ping 監視」タブのチェックと同じ設定
             apiFetch('/api/setoption?key=hide.' + n + '&value=' + (settings.hidden[n] ? 'true' : 'false'))
                 .then(changed).catch(function(){});
         }
@@ -679,6 +745,186 @@
             return a && b ? a + '-' + b : '';
         }, function(v){ setWorkOption('workLunch', v); });
 
+        // ---------- ポモドーロ ----------
+        function renderPomo(force){
+            const p = settings.pomodoro;
+            if (!p) return;
+            $('optPomoVisible').checked = !settings.hidden.pomodoro;
+            setIfIdle('optPomoFocus', p.focusMinutes, force);
+            setIfIdle('optPomoShort', p.shortBreakMinutes, force);
+            setIfIdle('optPomoLong', p.longBreakMinutes, force);
+            setIfIdle('optPomoEvery', p.longEvery, force);
+            $('optPomoAuto').checked = !!p.autoNext;
+            $('optPomoFocusMode').checked = !!p.focusMode;
+            $('optPomoHide').value = p.hideMethod;
+            setIfIdle('optPomoTargets', (p.targets || []).join('\n'), force);
+        }
+        function showPomoErr(msg){ $('pomoErr').textContent = msg; $('pomoErr').hidden = !msg; }
+        // 保存に失敗したら、画面をサーバーの値に戻してエラーを見せる（範囲外など）
+        async function setPomoOption(key, val){
+            touch();
+            let ok = false;
+            try {
+                const r = await apiFetch('/api/setoption?key=' + key + '&value=' + encodeURIComponent(val), { method: 'POST' });
+                if (r.ok) { ok = true; showPomoErr(''); changed(); }
+                else showPomoErr('設定できません: ' + (await r.text()).trim());
+            } catch (e) { showPomoErr('通信に失敗しました'); }
+            await reloadAll();
+            if (!ok) renderPomo(true);
+        }
+        $('optPomoVisible').addEventListener('change', function(){ setSectionVisible('pomodoro', this.checked); renderOrderList(); });
+        $('optPomoAuto').addEventListener('change', function(){ setPomoOption('pomoAuto', this.checked ? 'true' : 'false'); });
+        $('optPomoFocusMode').addEventListener('change', function(){ setPomoOption('pomoFocusMode', this.checked ? 'true' : 'false'); });
+        $('optPomoHide').addEventListener('change', function(){ setPomoOption('pomoHide', this.value); });
+        [['optPomoFocus', 'pomoFocus'], ['optPomoShort', 'pomoShort'], ['optPomoLong', 'pomoLong'], ['optPomoEvery', 'pomoEvery']].forEach(function(m){
+            $(m[0]).addEventListener('change', function(){ setPomoOption(m[1], String(Math.round(Number(this.value) || 0))); });
+        });
+        // 対象の一覧は、1 行に 1 つ。入力の途中で保存しないよう、フォーカスが外れたとき（change）だけ保存する
+        $('optPomoTargets').addEventListener('change', function(){
+            setPomoOption('pomoTargets', this.value.split(/[\r\n,]+/).map(function(s){ return s.trim(); }).filter(Boolean).join(','));
+        });
+
+        // ---------- Ping 監視 ----------
+        function renderPing(){
+            if (!settings) return;
+            $('optPingVisible').checked = !settings.hidden.ping;
+            $('optPingNotify').checked = !!(settings.ping && settings.ping.notifyEnabled);
+            $('optPingInterval').value = (settings.ping && settings.ping.intervalSec) || 2;
+
+            const targets = (settings.ping && settings.ping.targets) || [];
+            const list = $('pingTargetList');
+            list.innerHTML = '';
+
+            targets.forEach(function(t){
+                const item = document.createElement('div');
+                item.className = 'ping-target-item';
+
+                const hostInput = document.createElement('input');
+                hostInput.className = 'host';
+                hostInput.type = 'text';
+                hostInput.placeholder = 'ホスト名またはIP (例: 8.8.8.8)';
+                hostInput.value = t.host || '';
+
+                const lossGroup = document.createElement('div');
+                lossGroup.className = 'thresh-group';
+                lossGroup.innerHTML = 'ロス: <input class="num" type="number" min="1" max="100" value="' + (t.lossThresholdPercent != null ? t.lossThresholdPercent : 10) + '"> %';
+                const lossInput = lossGroup.querySelector('input');
+
+                const rttGroup = document.createElement('div');
+                rttGroup.className = 'thresh-group';
+                rttGroup.innerHTML = 'RTT: <input class="num" type="number" min="1" max="10000" value="' + (t.rttThresholdMs != null ? t.rttThresholdMs : 100) + '"> ms';
+                const rttInput = rttGroup.querySelector('input');
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'del-btn';
+                delBtn.type = 'button';
+                delBtn.textContent = '削除';
+
+                function syncValues(){
+                    t.host = hostInput.value.trim();
+                    t.lossThresholdPercent = Math.max(1, Math.min(100, Math.round(Number(lossInput.value)) || 10));
+                    t.rttThresholdMs = Math.max(1, Math.min(10000, Math.round(Number(rttInput.value)) || 100));
+                }
+
+                hostInput.addEventListener('input', syncValues);
+                lossInput.addEventListener('input', syncValues);
+                rttInput.addEventListener('input', syncValues);
+
+                hostInput.addEventListener('change', function(){ syncValues(); savePingTargets(); });
+                lossInput.addEventListener('change', function(){ syncValues(); savePingTargets(); });
+                rttInput.addEventListener('change', function(){ syncValues(); savePingTargets(); });
+
+                hostInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); syncValues(); savePingTargets(); } });
+                lossInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); syncValues(); savePingTargets(); } });
+                rttInput.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); syncValues(); savePingTargets(); } });
+
+                delBtn.addEventListener('click', function(){
+                    const idx = targets.indexOf(t);
+                    if (idx >= 0) targets.splice(idx, 1);
+                    renderPing();
+                    savePingTargets();
+                });
+
+                item.appendChild(hostInput);
+                item.appendChild(lossGroup);
+                item.appendChild(rttGroup);
+                item.appendChild(delBtn);
+                list.appendChild(item);
+            });
+
+            $('btnAddPingTarget').disabled = targets.length >= 5;
+        }
+
+        let pingSaveTimer = 0;
+        function showPingMsg(text, isErr){
+            const msg = $('pingSaveMsg');
+            if (!msg) return;
+            msg.textContent = text;
+            msg.style.color = isErr ? 'var(--danger-fg)' : 'var(--ok-fg)';
+            msg.style.display = 'inline';
+            clearTimeout(pingSaveTimer);
+            pingSaveTimer = setTimeout(function(){ msg.style.display = 'none'; }, isErr ? 6000 : 2000);
+        }
+        // 保存しても、入力中の画面は作り直さない（フォーカスと、ホスト未入力の行を保つ）。
+        // サーバーが整えた結果（重複のまとめなど）が送ったものと違うときだけ、画面を差し替える。
+        async function savePingTargets(){
+            touch();
+            if (!settings.ping) settings.ping = { targets: [] };
+            if (!settings.ping.targets) settings.ping.targets = [];
+            // ホスト未入力の行は送らない（画面には残す。入力の途中のことがあるため）
+            const toSend = settings.ping.targets.filter(function(t){ return t && t.host && t.host.trim() !== ''; }).map(function(t){
+                return { host: t.host.trim(), lossThresholdPercent: t.lossThresholdPercent, rttThresholdMs: t.rttThresholdMs };
+            });
+            try {
+                const res = await apiFetch('/api/ping/targets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(toSend)
+                });
+                if (!res.ok) {
+                    showPingMsg(((await res.text()) || '').trim() || '保存できませんでした', true);
+                    return;
+                }
+                const saved = await res.json();
+                changed();
+                if (JSON.stringify(saved) !== JSON.stringify(toSend)) {
+                    settings.ping.targets = saved;
+                    renderPing();
+                    showPingMsg('✓ 保存しました（重複は 1 件にまとめました）', false);
+                } else {
+                    showPingMsg('✓ 保存しました', false);
+                }
+            } catch(e){
+                showPingMsg('保存できませんでした', true);
+            }
+        }
+
+        async function setPingOption(key, val){
+            touch();
+            try {
+                const r = await apiFetch('/api/setoption?key=' + encodeURIComponent(key) + '&value=' + encodeURIComponent(val), { method: 'POST' });
+                if (r.ok) {
+                    if (key === 'pingNotify' && settings.ping) settings.ping.notifyEnabled = (val === 'true');
+                    if (key === 'pingInterval' && settings.ping) settings.ping.intervalSec = Number(val);
+                    changed();
+                }
+            } catch(e){}
+        }
+
+        $('optPingVisible').addEventListener('change', function(){ setSectionVisible('ping', this.checked); renderOrderList(); });
+        $('optPingNotify').addEventListener('change', function(){ setPingOption('pingNotify', this.checked ? 'true' : 'false'); });
+        $('optPingInterval').addEventListener('change', function(){ setPingOption('pingInterval', String(Math.round(Number(this.value) || 2))); });
+        $('btnSavePingTargets').addEventListener('click', function(){ savePingTargets(); });
+        $('btnAddPingTarget').addEventListener('click', function(){
+            if (!settings.ping) settings.ping = { targets: [] };
+            if (!settings.ping.targets) settings.ping.targets = [];
+            if (settings.ping.targets.length >= 5) return;
+            settings.ping.targets.push({ host: '', lossThresholdPercent: 10, rttThresholdMs: 100 });
+            renderPing();
+            const inputs = $('pingTargetList').querySelectorAll('input.host');
+            if (inputs.length) inputs[inputs.length - 1].focus();
+        });
+
         // ---------- AI 使用量 ----------
         function aiPost(path, obj){
             return apiFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj || {}) });
@@ -716,6 +962,9 @@
             const setNum = function(id, v){ const el = $(id); if (document.activeElement !== el) el.value = v; };
             setNum('optAIUsagePoll', s.usagePollSeconds);
             setNum('optAIStatusPoll', s.statusPollSeconds);
+            // 反転の間隔は「自動で反転」のときだけ使う（選んでいない間も値は保たれる）
+            setNum('optAIRotate', s.compactRotateSeconds);
+            $('aiRotateRow').classList.toggle('disabled', s.compactDisplay !== 'rotate');
             $('optAINotifyUsage').checked = !!s.notifyUsage;
             $('optAINotifyOverage').checked = !!s.notifyOverage;
             $('optAINotifyStatus').checked = !!s.notifyStatus;
@@ -735,9 +984,10 @@
                 aiSetOption(o);
             });
         });
-        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds']].forEach(function(pair){
+        [['optAIUsagePoll', 'usagePollSeconds'], ['optAIStatusPoll', 'statusPollSeconds'], ['optAIRotate', 'compactRotateSeconds']].forEach(function(pair){
             $(pair[0]).addEventListener('change', function(){
-                const o = {}; o[pair[1]] = Number(this.value) || 0;
+                // 整数に丸める（小数のままだとサーバーが受け付けず、入力欄だけ保存値とずれる）
+                const o = {}; o[pair[1]] = Math.round(Number(this.value)) || 0;
                 aiSetOption(o);   // 範囲外はサーバー側で矯正され、応答で表示が戻る
             });
         });
@@ -853,6 +1103,8 @@
             if (s.hidden) Object.assign(settings.hidden, s.hidden);
             if (Array.isArray(s.order) && s.order.length) settings.order = s.order;
             if (s.workTimer) settings.workTimer = s.workTimer;
+            if (s.pomodoro) settings.pomodoro = s.pomodoro;
+            if (s.ping) settings.ping = s.ping;
         }
         async function fetchJSON(url){
             try { const r = await apiFetch(url); return r.ok ? await r.json() : null; } catch (e) { return null; }

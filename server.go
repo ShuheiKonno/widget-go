@@ -19,6 +19,7 @@ import (
 	"unsafe"
 
 	"widget-go/aiusage"
+	"widget-go/ping"
 	"widget-go/sysinfo"
 )
 
@@ -175,6 +176,38 @@ func newServerMux(token string) *http.ServeMux {
 	mux.HandleFunc("/api/shortcuts", shortcuts.handleStatus)
 	mux.HandleFunc("/api/shortcuts/set", shortcuts.handleSet)
 
+	// 監視先ホスト一覧の更新（最大5件、JSON ボディ）。
+	// 書式が正しくないホスト（IPv6 など）は 400 で断る。重複は 1 件にまとめて保存し、保存した一覧を返す。
+	mux.HandleFunc("/api/ping/targets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		var targets []ping.TargetConfig
+		if err := json.NewDecoder(r.Body).Decode(&targets); err != nil {
+			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if len(targets) > ping.MaxTargets {
+			http.Error(w, fmt.Sprintf("監視先は最大 %d 件までです", ping.MaxTargets), http.StatusBadRequest)
+			return
+		}
+		for _, t := range targets {
+			if err := ping.ValidateHost(t.Host); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		mutateConfig(func(c *Config) {
+			c.Ping.Targets = targets
+			c.Ping = ping.NormalizeConfig(c.Ping)
+		})
+		pingKick()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(snapshotConfig().Ping.Targets)
+	})
+
 	mux.HandleFunc("/api/system", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(getSystemData())
@@ -183,6 +216,7 @@ func newServerMux(token string) *http.ServeMux {
 	mux.HandleFunc("/api/close", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		go func() {
+			pomodoroShutdown() // 隠した Teams / Outlook と止めた通知を戻してから終わる（以後は隠さない）
 			cleanupTray()
 			os.Exit(0)
 		}()
@@ -426,6 +460,8 @@ func newServerMux(token string) *http.ServeMux {
 
 	// 勤務時間タイマーの操作（開始・終了・リセット・開始時刻の変更・1 分調整）。応答は操作後のスナップショット。
 	mux.HandleFunc("/api/worktimer", workTimerActionHandler)
+	// ポモドーロの操作（開始・一時停止・再開・スキップ・リセット・一時的に表示）。応答は操作後のスナップショット。
+	mux.HandleFunc("/api/pomodoro", pomodoroActionHandler)
 
 	// theme / coreBase / netUnit などフロント向け設定を保存する。
 	// hide.gpu / hide.npu は Go 側の GPU/NPU 収集の ON/OFF にも使う。
@@ -491,8 +527,27 @@ func newServerMux(token string) *http.ServeMux {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+		case "pomoFocus", "pomoShort", "pomoLong", "pomoEvery", "pomoAuto", "pomoFocusMode", "pomoHide", "pomoTargets":
+			// ポモドーロの設定（pomodoro.go の setPomodoroOption に検証がある）
+			restore, err := setPomodoroOption(key, val)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if restore {
+				// 隠す方法や対象が変わったときは、隠したものをいったん戻してから、あらためて適用する
+				go func() { pomodoroRestoreAll(); pomodoroKick() }()
+			} else {
+				pomodoroKick() // 集中モードの ON/OFF を、次の周期を待たずに反映する
+			}
+		case "pingNotify", "pingInterval":
+			// Ping 監視の設定（監視先の一覧だけは、JSON ボディの /api/ping/targets で更新する）
+			if err := setPingOption(key, val); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		case "order":
-			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai,work を並べ替えたもの
+			// 区画の表示順: value=cpu,memory,disk,gpu,npu,network,ai,work,pomodoro,ping を並べ替えたもの
 			if err := setOrder(val); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -504,6 +559,8 @@ func newServerMux(token string) *http.ServeMux {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
+				pomodoroKick() // ポモドーロを非表示にしたら、隠したものを戻す（表示に戻したら、集中中なら再び隠す）
+				pingKick()     // Ping を非表示にしたら監視を止め、表示に戻したら再開する
 				// GPU と NPU が両方非表示のときだけ収集を止める（Config.syncShowGPU）
 				enable := snapshotConfig().ShowGPU
 				showGPU.Store(enable)
@@ -528,6 +585,14 @@ func newServerMux(token string) *http.ServeMux {
 			// 区画の折りたたみ: key=collapse.<name>&value=true|false
 			if name, ok := strings.CutPrefix(key, "collapse."); ok {
 				if err := setCollapsed(name, val); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				break
+			}
+			// 区画が出している面（表 / 裏）: key=flip.<name>&value=true|false（true が裏面）
+			if name, ok := strings.CutPrefix(key, "flip."); ok {
+				if err := setFlipped(name, val); err != nil {
 					http.Error(w, err.Error(), http.StatusBadRequest)
 					return
 				}
@@ -560,9 +625,12 @@ func newServerMux(token string) *http.ServeMux {
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
 			"collapsed":   c.Collapsed,
+			"flipped":     c.Flipped,
 			"hidden":      c.Hidden,
 			"order":       c.Order,
 			"workTimer":   c.WorkTimer,
+			"pomodoro":    pomodoroSettingsView(c.Pomodoro),
+			"ping":        c.Ping,
 			"viewMode":    vm,
 			// CPU 名は起動後に変わらないので、2 秒周期の /api/system ではなく
 			// 起動時 1 回の設定取得に載せる。
@@ -665,4 +733,26 @@ var settingsHTML string
 // getSettingsHTML は設定ウィンドウの HTML（/settings）。トークンの差し替えは getHTML と同じ。
 func getSettingsHTML(token string) string {
 	return strings.ReplaceAll(settingsHTML, "__WIDGET_TOKEN__", token)
+}
+
+// setPingOption は Ping 監視の単一キー設定を検証・保存する。
+func setPingOption(key, val string) error {
+	switch key {
+	case "pingNotify":
+		if val != "true" && val != "false" {
+			return fmt.Errorf("invalid pingNotify value %q", val)
+		}
+		mutateConfig(func(c *Config) { c.Ping.NotifyEnabled = val == "true" })
+		pingKick()
+		return nil
+	case "pingInterval":
+		sec, err := strconv.Atoi(val)
+		if err != nil || sec < 1 || sec > 60 {
+			return fmt.Errorf("invalid pingInterval value %q", val)
+		}
+		mutateConfig(func(c *Config) { c.Ping.IntervalSec = sec })
+		pingKick()
+		return nil
+	}
+	return fmt.Errorf("unknown ping option %q", key)
 }
