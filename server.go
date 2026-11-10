@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"net/http"
@@ -29,14 +28,30 @@ func generateToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// 生成失敗はほぼ起こらないが、起きた場合は fail-closed（安全側）で停止する。
-		log.Fatalf("セキュリティトークンの生成に失敗: %v", err)
+		fatalf("セキュリティトークンの生成に失敗しました: %v", err)
 	}
 	return hex.EncodeToString(b)
 }
 
+// pageAccessKey は、UI のページ（"/"・"/settings"・"/worktimer"）を取得するための、起動毎の秘密のキー。
+// API トークンは HTML に埋め込まれるため、ページを誰でも取れると、同じ PC の別ユーザー（ループバックのポートは
+// 全ユーザーから見える）がトークンを読めてしまう。ページの URL（?k=）にキーを要求して、WebView2 以外が
+// HTML を取れないようにする。キーは URL に入るので、リロードでも壊れない。main が起動時に 1 回だけ設定する
+// （空のままではすべて拒否する）。
+var pageAccessKey string
+
+// pageURL は UI のページを開く URL（キーつき）。
+func pageURL(port int, path string) string {
+	return fmt.Sprintf("http://127.0.0.1:%d%s?k=%s", port, path, pageAccessKey)
+}
+
+func validPageKey(k string) bool {
+	return pageAccessKey != "" && subtle.ConstantTimeCompare([]byte(k), []byte(pageAccessKey)) == 1
+}
+
 // securityMiddleware はローカル HTTP API をブラウザ由来の攻撃から守る多層防御を適用する。
 //   - Host 検証: 127.0.0.1:<port> 以外を 403（DNS rebinding 対策）
-//   - "/"（UI）: トークン不要。CSP と nosniff を付与してここでトークンを配布する
+//   - "/"（UI）: ページ用のキー（?k=）が必要。CSP と nosniff を付与してここでトークンを配布する
 //   - "/api/*": X-Widget-Token カスタムヘッダを検証（クロスサイトの単純リクエストは
 //     カスタムヘッダを付けられず、付ければ preflight が発生して失敗するため CSRF を防ぐ）
 func securityMiddleware(next http.Handler, token string, port int) http.Handler {
@@ -52,6 +67,10 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/settings" || r.URL.Path == "/worktimer" {
+			if !validPageKey(r.URL.Query().Get("k")) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 			w.Header().Set("Content-Security-Policy", scriptCSP)
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			next.ServeHTTP(w, r)
@@ -664,7 +683,7 @@ func startServer(ln net.Listener, token string) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	if err := http.Serve(ln, securityMiddleware(mux, token, port)); err != nil {
 		// http.Serve は正常時は戻らない。戻った＝致命的（リスナー閉塞など）。
-		log.Fatalf("HTTP サーバーが停止しました: %v", err)
+		fatalf("内部の HTTP サーバーが停止しました: %v", err)
 	}
 }
 
@@ -674,7 +693,7 @@ func startServer(ln net.Listener, token string) {
 func listenLocal() (net.Listener, int) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		log.Fatalf("ローカルポートの確保に失敗: %v", err)
+		fatalf("ローカルポートを確保できませんでした: %v", err)
 	}
 	return ln, ln.Addr().(*net.TCPAddr).Port
 }

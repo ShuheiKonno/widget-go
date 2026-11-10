@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -1145,6 +1144,7 @@ func ensureSingleInstance(windowTitle string) bool {
 
 func main() {
 	runtime.LockOSThread()
+	defer reportPanic()
 
 	windowTitle := "システムモニター"
 	if !ensureSingleInstance(windowTitle) {
@@ -1162,6 +1162,9 @@ func main() {
 	// 設定ファイルを読み込み、永続化された設定を適用する。
 	// 以降の状態変更は即ファイルに書き込むので、os.Exit で強制終了されても記憶が残る。
 	configPath = filepath.Join(appRoot, "config.json")
+	initAppLog(appRoot)
+	redirectStdLog()
+	initCrashLog(appRoot)
 	loadConfig()
 	c := snapshotConfig()
 	transparentMu.Lock()
@@ -1191,6 +1194,7 @@ func main() {
 	showDisk.Store(!c.Hidden.Disk)
 
 	apiToken := generateToken()
+	pageAccessKey = generateToken() // ページ用のキー。API トークンとは別（HTML を取れる者にだけトークンを渡すため）
 	ln, port := listenLocal()
 	serverPort = port
 	webviewDataPath = dataPath
@@ -1243,7 +1247,7 @@ func main() {
 		},
 	})
 	if w == nil {
-		panic("Failed to create webview")
+		fatalf("画面を作成できませんでした。Microsoft Edge WebView2 Runtime がインストールされているか確認してください。")
 	}
 	defer w.Destroy()
 
@@ -1282,6 +1286,10 @@ func main() {
 	// windowHandle 確定後・w.Run() の前に呼ぶ必要がある。startTray は
 	// メッセージウィンドウ用の goroutine を起動して即座に戻るのでブロックしない。
 	startTray()
+	// 設定ファイルを読めなかったときは、トレイのアイコンが出たあとで 1 回だけ知らせる。
+	if notice := configLoadNotice; notice != "" {
+		time.AfterFunc(3*time.Second, func() { showBalloon("システムモニター", notice, aiusage.NIIF_WARNING) })
+	}
 	// Alt+F4 などで w.Run() を抜けた場合に通知領域へアイコンを残さない。
 	defer cleanupTray()
 	// 同じく、隠したままの Teams / Outlook や、止めたままの通知を残さない。
@@ -1297,7 +1305,7 @@ func main() {
 	time.AfterFunc(startupShowTimeout, func() { showMainWindowOnce("timeout") })
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
-	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
+	w.Navigate(pageURL(port, "/"))
 
 	w.Run()
 }

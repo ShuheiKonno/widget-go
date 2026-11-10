@@ -100,7 +100,8 @@ func TestWorkTimerPageServedLikeIndex(t *testing.T) {
 	mux.HandleFunc("/api/openworktimer", func(w http.ResponseWriter, r *http.Request) {})
 	srv := securityMiddleware(mux, token, 4321)
 
-	req := httptest.NewRequest(http.MethodGet, "/worktimer", nil)
+	withPageKey(t)
+	req := httptest.NewRequest(http.MethodGet, "/worktimer?k="+pageAccessKey, nil)
 	req.Host = "127.0.0.1:4321"
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)

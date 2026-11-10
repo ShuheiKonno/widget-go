@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -126,7 +125,7 @@ func (s *settingsWindow) open() {
 	applySettingsWindowTheme(hwnd)
 	procSetWindowPos.Call(hwnd, 0, uintptr(uint32(x)), uintptr(uint32(y)), uintptr(w), uintptr(h), SWP_NOZORDER)
 	showTransparent(hwnd)
-	inst.Navigate(fmt.Sprintf("http://127.0.0.1:%d%s", serverPort, s.path))
+	inst.Navigate(pageURL(serverPort, s.path))
 	// このウィンドウ（hwnd）にだけ効くタイマー。閉じてすぐ開き直したとき、前のタイマーが
 	// 読み込み前の新しいウィンドウを見せてしまわないようにする。
 	time.AfterFunc(settingsRevealMax, func() { s.revealWindow(hwnd) })

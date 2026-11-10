@@ -2,7 +2,7 @@
 
 Windows 向けのデスクトップ常駐型システムモニターウィジェットです。CPU 使用率・メモリ使用量・Wi-Fi / Ethernet 接続情報・ネットワークトラフィックをリアルタイムで表示します。
 
-![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)
 
 > **v2.0 で、Claude / Codex の使用量モニター（旧 [ClaudeMonitor](https://github.com/ShuheiKonno/ClaudeMonitor)）を取り込みました。** v2.0.0 はプレリリース、v2.0.1 から正式版です。従来どおりの動作だけでよい場合は v1.9.3 を使えます。AI 使用量は既定で OFF なので、ON にしない限り、認証用の WebView2 の起動も、取得も行いません (画面には、区画の折りたたみボタン ▼ が加わります)。
@@ -56,7 +56,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 - GPU の表示には WDDM 2.0 以上のドライバ、NPU の表示には MCDM 対応ドライバが必要 (NPU は DXCore の NPU 属性で判定)
 - [WebView2 Runtime](https://developer.microsoft.com/ja-jp/microsoft-edge/webview2/) (Windows 11 ではプリインストール済み)
 - AI 使用量を使う場合: claude.ai（Claude）と chatgpt.com（Codex）のアカウント。アプリ内でログインする (Claude Code / Codex の CLI は不要)
-- Go 1.25 以降 (ビルドする場合)
+- Go 1.26.10 以降 (ビルドする場合)
 
 ## ビルド
 

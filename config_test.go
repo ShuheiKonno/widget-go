@@ -15,6 +15,7 @@ func withConfigFile(t *testing.T, content string) string {
 	t.Cleanup(func() {
 		configMu.Lock()
 		configPath, config = oldPath, oldConfig
+		configLoadNotice, configWriteFailing = "", false
 		configMu.Unlock()
 	})
 	path := filepath.Join(t.TempDir(), "config.json")
