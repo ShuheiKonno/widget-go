@@ -2,12 +2,14 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"widget-go/aiusage"
 	"widget-go/ping"
@@ -354,21 +356,56 @@ func defaultConfig() Config {
 	return c
 }
 
+// configLoadNotice は、起動時に config.json を読めなかったとき、利用者に知らせる文面（空なら問題なし）。
+// 起動後にトレイのバルーンで 1 回だけ出す（main.go）。
+var configLoadNotice string
+
+// backupBrokenConfig は読めなかった config.json を、上書きされる前に退避する。退避先を返す（失敗時は空）。
+func backupBrokenConfig(path string) string {
+	dst := fmt.Sprintf("%s.broken-%s", path, time.Now().Format("20060102-150405"))
+	if err := os.Rename(path, dst); err != nil {
+		return ""
+	}
+	return dst
+}
+
 func loadConfig() {
 	configMu.Lock()
 	defer configMu.Unlock()
 	config = defaultConfig()
+	configLoadNotice = ""
 	if configPath == "" {
 		return
 	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			// 読めないだけ（ロック中など）のファイルは、中身が壊れているとは限らないので退避しない。
+			// ただし、このまま設定を変えると上書きされるので、知らせる。
+			appLogf("config.json を読めません（既定値で起動します）: %v", err)
+			configLoadNotice = "設定ファイルを読み込めなかったため、既定の設定で起動しました。"
+		}
 		return
 	}
 	// デフォルト値を上書きする形で JSON を読み込む
 	tmp := config
 	if err := json.Unmarshal(data, &tmp); err != nil {
-		return
+		// 構文エラーでは tmp は既定のまま。型の食い違い（手編集の間違いなど）では、残りの項目は読み込まれるので、
+		// それを使う。どちらも、次の保存で上書きされる前に元のファイルを退避する。
+		var typeErr *json.UnmarshalTypeError
+		partial := errors.As(err, &typeErr)
+		if !partial {
+			tmp = config
+		}
+		dst := backupBrokenConfig(configPath)
+		appLogf("config.json を解釈できません（%v）。退避先: %q。一部の項目だけ引き継ぎ: %v", err, dst, partial)
+		configLoadNotice = "設定ファイルが壊れていたため、元のファイルを退避しました。"
+		if dst != "" {
+			configLoadNotice += "（" + filepath.Base(dst) + "）"
+		}
+		if !partial {
+			return
+		}
 	}
 	// 手編集や旧バージョンで範囲外・欠損になった値を安全な値へ矯正する。
 	tmp.AI = aiusage.NormalizeSettings(tmp.AI)
@@ -391,16 +428,57 @@ func writeConfigLocked() {
 	if configPath == "" {
 		return
 	}
-	data, err := json.MarshalIndent(&config, "", "  ")
+	if err := writeConfigFile(configPath, &config); err != nil {
+		// 失敗が続く間は、同じ内容を書き続けない（保存は設定変更のたびに呼ばれる）
+		if !configWriteFailing {
+			appLogf("config.json を保存できません: %v", err)
+		}
+		configWriteFailing = true
+		return
+	}
+	if configWriteFailing {
+		appLogf("config.json の保存が回復しました")
+	}
+	configWriteFailing = false
+}
+
+// configWriteFailing は、直前の保存が失敗したか（ログを失敗のたびに出さないため。configMu で保護）。
+var configWriteFailing bool
+
+// writeConfigFile は v を JSON にして、一時ファイルへ書き、ディスクへ反映（Sync）してから置き換える。
+// 反映前に置き換えると、電源断で空や途中のファイルが残りうる。
+func writeConfigFile(path string, v *Config) error {
+	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return
+		return err
 	}
-	_ = os.MkdirAll(filepath.Dir(configPath), 0755)
-	tmp := configPath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
 	}
-	_ = os.Rename(tmp, configPath)
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // mutateConfigIf は mutateConfig と同じだが、f が false を返したとき（変更なし）はファイルへ書き込まない。
