@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"net"
 	"net/http"
@@ -29,7 +28,7 @@ func generateToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// 生成失敗はほぼ起こらないが、起きた場合は fail-closed（安全側）で停止する。
-		log.Fatalf("セキュリティトークンの生成に失敗: %v", err)
+		fatalf("セキュリティトークンの生成に失敗しました: %v", err)
 	}
 	return hex.EncodeToString(b)
 }
@@ -664,7 +663,7 @@ func startServer(ln net.Listener, token string) {
 	port := ln.Addr().(*net.TCPAddr).Port
 	if err := http.Serve(ln, securityMiddleware(mux, token, port)); err != nil {
 		// http.Serve は正常時は戻らない。戻った＝致命的（リスナー閉塞など）。
-		log.Fatalf("HTTP サーバーが停止しました: %v", err)
+		fatalf("内部の HTTP サーバーが停止しました: %v", err)
 	}
 }
 
@@ -674,7 +673,7 @@ func startServer(ln net.Listener, token string) {
 func listenLocal() (net.Listener, int) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		log.Fatalf("ローカルポートの確保に失敗: %v", err)
+		fatalf("ローカルポートを確保できませんでした: %v", err)
 	}
 	return ln, ln.Addr().(*net.TCPAddr).Port
 }

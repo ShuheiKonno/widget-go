@@ -1145,6 +1145,7 @@ func ensureSingleInstance(windowTitle string) bool {
 
 func main() {
 	runtime.LockOSThread()
+	defer reportPanic()
 
 	windowTitle := "システムモニター"
 	if !ensureSingleInstance(windowTitle) {
@@ -1163,6 +1164,8 @@ func main() {
 	// 以降の状態変更は即ファイルに書き込むので、os.Exit で強制終了されても記憶が残る。
 	configPath = filepath.Join(appRoot, "config.json")
 	initAppLog(appRoot)
+	redirectStdLog()
+	initCrashLog(appRoot)
 	loadConfig()
 	c := snapshotConfig()
 	transparentMu.Lock()
@@ -1244,7 +1247,7 @@ func main() {
 		},
 	})
 	if w == nil {
-		panic("Failed to create webview")
+		fatalf("画面を作成できませんでした。Microsoft Edge WebView2 Runtime がインストールされているか確認してください。")
 	}
 	defer w.Destroy()
 
