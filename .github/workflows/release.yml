@@ -6,15 +6,39 @@ on:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  # タグを付けただけで、テストを通っていないものが公開されないようにする。
+  # コードは //go:build windows 前提なので、windows ランナーで検査する。
+  verify:
+    runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -26,10 +50,16 @@ jobs:
           CGO_ENABLED: 0
         run: go build -ldflags "-H windowsgui -s -w" -o system-widget.exe .
 
+      # 配布物の改ざん・破損を利用者が確かめられるように、SHA-256 を添える。
+      - name: Create checksum
+        run: sha256sum system-widget.exe > system-widget.exe.sha256
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          files: system-widget.exe
+          files: |
+            system-widget.exe
+            system-widget.exe.sha256
           generate_release_notes: true
           draft: false
           prerelease: false
