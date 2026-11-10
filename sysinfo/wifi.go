@@ -19,7 +19,18 @@ type WiFiInfo struct {
 	Connected   bool
 }
 
+// GetWiFiInfo は接続中の Wi-Fi の状態を返す。未接続なら (nil, nil)。
+// まず Native Wifi API（wlanapi.go）で読み、使えなかったときだけ netsh に戻る。
 func GetWiFiInfo() (*WiFiInfo, error) {
+	info, err := getWiFiInfoWlanAPI()
+	if err == nil {
+		return info, nil
+	}
+	return getWiFiInfoNetsh()
+}
+
+// getWiFiInfoNetsh は `netsh wlan show interfaces` を起動して読む（wlanapi が使えないときの代わり）。
+func getWiFiInfoNetsh() (*WiFiInfo, error) {
 	cmd := exec.Command("netsh", "wlan", "show", "interfaces")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	output, err := cmd.Output()
@@ -149,17 +160,25 @@ func parseWiFiInfo(output []byte) *WiFiInfo {
 	//   ch 1-14 は 2.4GHz 扱いで割り切る (Wi-Fi 7 実機は通常バンド行を出す Win11 新ビルド)。
 	//   ch >= 178 は 6GHz 専用帯 (UNII-8 上位) なので 6GHz と確定できる。
 	if info.Band == "" {
-		switch {
-		case info.Channel >= 178:
-			info.Band = "6GHz"
-		case info.Channel >= 36 && info.Channel <= 177:
-			info.Band = "5GHz"
-		case info.Channel >= 1 && info.Channel <= 14:
-			info.Band = "2.4GHz"
-		}
+		info.Band = bandFromChannel(info.Channel)
 	}
 
 	return info
+}
+
+// bandFromChannel はチャネル番号から周波数帯を推定する（周波数が分からないときの代わり）。
+// 6GHz と 2.4GHz はチャネル番号が被る（どちらも 1〜）ので、ch 1-14 は 2.4GHz 扱いで割り切る。
+// ch >= 178 は 6GHz 専用帯なので 6GHz と確定できる。
+func bandFromChannel(ch int) string {
+	switch {
+	case ch >= 178:
+		return "6GHz"
+	case ch >= 36 && ch <= 177:
+		return "5GHz"
+	case ch >= 1 && ch <= 14:
+		return "2.4GHz"
+	}
+	return ""
 }
 
 // bandValueRe は netsh の "バンド"/"Band" 行の値から周波数帯を抽出する。
