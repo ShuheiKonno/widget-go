@@ -116,11 +116,15 @@ func sameFocusState(a, b focus.State) bool {
 	return true
 }
 
+// saveFocusState は集中モードの記録を保存する。記録が同じなら書き込まない
+// （集中中は pomodoroReconcile が毎秒呼ぶので、そのたびに config.json を書き直さないため）。
 func saveFocusState(s focus.State) {
-	mutateConfig(func(c *Config) {
-		if !sameFocusState(c.Pomodoro.Focus, s) {
-			c.Pomodoro.Focus = s
+	mutateConfigIf(func(c *Config) bool {
+		if sameFocusState(c.Pomodoro.Focus, s) {
+			return false
 		}
+		c.Pomodoro.Focus = s
+		return true
 	})
 }
 

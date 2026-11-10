@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"widget-go/focus"
@@ -375,5 +376,59 @@ func TestSameFocusState(t *testing.T) {
 	b.Notif[0].Value = 1
 	if sameFocusState(a, b) {
 		t.Error("違う内容は等しくない")
+	}
+}
+
+// 集中中は pomodoroReconcile が毎秒呼ばれる。記録が変わらない周期では config.json を書き直さない。
+func TestReconcileDoesNotRewriteConfigWhenUnchanged(t *testing.T) {
+	path := withConfigFile(t, "")
+	win := newPomoFakeWin(teamsWin(1))
+	reg := &pomoFakeReg{vals: map[string]*uint32{"MSTeams_x": u32p(1)}}
+	useFakeFocus(t, win, reg)
+	startFocus(t)
+
+	pomodoroReconcile() // 初回は隠して記録するので書く
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 書き込まれたかは、ファイルを消して再生成されるかで見る（更新時刻の精度に依らない）
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		pomodoroReconcile()
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("記録が変わらないのに config.json を書き直した")
+	}
+
+	// 記録が変わるとき（休憩で戻す）は、ちゃんと書く
+	if rc := postPomodoro("?action=skip"); rc.Code != 200 {
+		t.Fatal(rc.Code)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	pomodoroReconcile()
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal("記録が変わったのに保存されていない")
+	}
+	if string(after) == string(before) {
+		t.Error("戻したあとの記録が保存内容に反映されていない")
+	}
+}
+
+func TestMutateConfigIfSkipsWriteWhenNoChange(t *testing.T) {
+	path := withConfigFile(t, "")
+	mutateConfigIf(func(c *Config) bool { c.Zoom = 150; return true })
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("変更したのに保存されていない")
+	}
+	_ = os.Remove(path)
+	mutateConfigIf(func(c *Config) bool { return false })
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("変更なしなのに書き込んだ")
 	}
 }

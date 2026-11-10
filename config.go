@@ -403,6 +403,16 @@ func writeConfigLocked() {
 	_ = os.Rename(tmp, configPath)
 }
 
+// mutateConfigIf は mutateConfig と同じだが、f が false を返したとき（変更なし）はファイルへ書き込まない。
+// 毎秒のように呼ばれる処理で、同じ内容を書き直し続けないために使う。判定と書き込みは同じロックの中で行う。
+func mutateConfigIf(f func(c *Config) bool) {
+	configMu.Lock()
+	defer configMu.Unlock()
+	if f(&config) {
+		writeConfigLocked()
+	}
+}
+
 // mutateConfig は config をロックしたうえで変更関数を適用し、ロックを保持したまま保存する。
 func mutateConfig(f func(c *Config)) {
 	configMu.Lock()
