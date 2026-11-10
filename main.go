@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -1195,6 +1194,7 @@ func main() {
 	showDisk.Store(!c.Hidden.Disk)
 
 	apiToken := generateToken()
+	pageAccessKey = generateToken() // ページ用のキー。API トークンとは別（HTML を取れる者にだけトークンを渡すため）
 	ln, port := listenLocal()
 	serverPort = port
 	webviewDataPath = dataPath
@@ -1305,7 +1305,7 @@ func main() {
 	time.AfterFunc(startupShowTimeout, func() { showMainWindowOnce("timeout") })
 
 	w.SetSize(windowWidth, windowHeight, webview2.HintFixed)
-	w.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
+	w.Navigate(pageURL(port, "/"))
 
 	w.Run()
 }

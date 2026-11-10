@@ -50,7 +50,8 @@ func TestSettingsPageServedLikeIndex(t *testing.T) {
 	mux.HandleFunc("/api/settingschanged", func(w http.ResponseWriter, r *http.Request) {})
 	srv := securityMiddleware(mux, token, port)
 
-	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	withPageKey(t)
+	req := httptest.NewRequest(http.MethodGet, "/settings?k="+pageAccessKey, nil)
 	req.Host = "127.0.0.1:4321"
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, req)

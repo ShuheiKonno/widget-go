@@ -33,9 +33,25 @@ func generateToken() string {
 	return hex.EncodeToString(b)
 }
 
+// pageAccessKey は、UI のページ（"/"・"/settings"・"/worktimer"）を取得するための、起動毎の秘密のキー。
+// API トークンは HTML に埋め込まれるため、ページを誰でも取れると、同じ PC の別ユーザー（ループバックのポートは
+// 全ユーザーから見える）がトークンを読めてしまう。ページの URL（?k=）にキーを要求して、WebView2 以外が
+// HTML を取れないようにする。キーは URL に入るので、リロードでも壊れない。main が起動時に 1 回だけ設定する
+// （空のままではすべて拒否する）。
+var pageAccessKey string
+
+// pageURL は UI のページを開く URL（キーつき）。
+func pageURL(port int, path string) string {
+	return fmt.Sprintf("http://127.0.0.1:%d%s?k=%s", port, path, pageAccessKey)
+}
+
+func validPageKey(k string) bool {
+	return pageAccessKey != "" && subtle.ConstantTimeCompare([]byte(k), []byte(pageAccessKey)) == 1
+}
+
 // securityMiddleware はローカル HTTP API をブラウザ由来の攻撃から守る多層防御を適用する。
 //   - Host 検証: 127.0.0.1:<port> 以外を 403（DNS rebinding 対策）
-//   - "/"（UI）: トークン不要。CSP と nosniff を付与してここでトークンを配布する
+//   - "/"（UI）: ページ用のキー（?k=）が必要。CSP と nosniff を付与してここでトークンを配布する
 //   - "/api/*": X-Widget-Token カスタムヘッダを検証（クロスサイトの単純リクエストは
 //     カスタムヘッダを付けられず、付ければ preflight が発生して失敗するため CSRF を防ぐ）
 func securityMiddleware(next http.Handler, token string, port int) http.Handler {
@@ -51,6 +67,10 @@ func securityMiddleware(next http.Handler, token string, port int) http.Handler 
 			return
 		}
 		if r.URL.Path == "/" || r.URL.Path == "/settings" || r.URL.Path == "/worktimer" {
+			if !validPageKey(r.URL.Query().Get("k")) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
 			w.Header().Set("Content-Security-Policy", scriptCSP)
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			next.ServeHTTP(w, r)
