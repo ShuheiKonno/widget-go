@@ -1,13 +1,13 @@
 module widget-go
 
-go 1.25.0
+go 1.26.10
 
 require (
 	github.com/go-ole/go-ole v1.3.0
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
 	github.com/shirou/gopsutil/v4 v4.26.6
-	golang.org/x/image v0.39.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/image v0.48.0
+	golang.org/x/sys v0.50.0
 )
 
 require (

@@ -54,3 +54,18 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.12.2
+
+  # 標準ライブラリと依存モジュールの既知の脆弱性を検査する。
+  # go.mod の Go バージョンが古いままだと、修正済みの標準ライブラリの脆弱性が残るので、それも検知できる。
+  vuln:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
