@@ -24,11 +24,16 @@ var (
 	appLogPath string // 空の間は書かない（テストや、保存先が決まる前）
 )
 
-// initAppLog はログの出力先を決め、大きくなりすぎていたら app.log.1 へ退避する（既存の退避は上書き）。
+// initAppLog はログの出力先を決める。
 func initAppLog(dir string) {
 	appLogMu.Lock()
 	defer appLogMu.Unlock()
 	appLogPath = filepath.Join(dir, "app.log")
+	rotateAppLogLocked()
+}
+
+// rotateAppLogLocked は大きくなりすぎていたら app.log.1 へ退避する（既存の退避は上書き）。appLogMu を保持して呼ぶこと。
+func rotateAppLogLocked() {
 	if fi, err := os.Stat(appLogPath); err == nil && fi.Size() > appLogMaxBytes {
 		_ = os.Remove(appLogPath + ".1")
 		_ = os.Rename(appLogPath, appLogPath+".1")
@@ -42,6 +47,7 @@ func appLogf(format string, args ...any) {
 		return
 	}
 	_ = os.MkdirAll(filepath.Dir(appLogPath), 0755)
+	rotateAppLogLocked() // 常駐中も上限を保つ（ime などのログが書き込まれ続けるため）
 	f, err := os.OpenFile(appLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -69,7 +75,7 @@ const crashLogMaxBytes = 256 * 1024
 
 // initCrashLog は、回復できないクラッシュ（ほかの goroutine の panic など）のスタックを app.crash.log へ書くようにする。
 // 何もしないと、GUI アプリでは、標準エラー出力に出るスタックが捨てられて原因が分からない。
-// ファイルは終了まで開いたままにする（クラッシュの瞬間に書くため）。
+// SetCrashOutput は渡したファイルのハンドルを複製するので、こちらは閉じてよい。
 func initCrashLog(dir string) {
 	p := filepath.Join(dir, "app.crash.log")
 	if fi, err := os.Stat(p); err == nil && fi.Size() > crashLogMaxBytes {
@@ -80,9 +86,8 @@ func initCrashLog(dir string) {
 		return
 	}
 	fmt.Fprintf(f, "\n==== %s 起動 ====\n", time.Now().Format("2006-01-02 15:04:05"))
-	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
-		_ = f.Close()
-	}
+	_ = debug.SetCrashOutput(f, debug.CrashOptions{})
+	_ = f.Close()
 }
 
 var procMessageBoxW = user32.NewProc("MessageBoxW")
@@ -106,11 +111,20 @@ var showFatalDialog = func(title, message string) {
 // fatalExit は終了の実体。テストで差し替える。
 var fatalExit = os.Exit
 
+// fatalCleanup は、異常終了の前に、集中モードで隠したウィンドウと止めた通知を戻し、トレイのアイコンを消す。
+// os.Exit は defer を飛ばすので、ここで明示的に行う（でないと、次の起動まで Teams / Outlook が隠れたままになる）。
+// WebView2 が無い環境では起動のたびにここで終わるため、次の起動を待っても戻らない。テストで差し替える。
+var fatalCleanup = func() {
+	pomodoroShutdown()
+	cleanupTray()
+}
+
 // fatalf は回復できないエラーを app.log に記録し、ダイアログで知らせて終了する。
 // log.Fatalf / panic の代わり（GUI アプリでは、どちらも何も表示されないまま消える）。
 func fatalf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	appLogf("致命的なエラー: %s", msg)
+	fatalCleanup()
 	showFatalDialog("システムモニター", msg+"\n\n詳細: "+appLogPathForDisplay())
 	fatalExit(1)
 }
@@ -129,6 +143,7 @@ func reportPanic() {
 		return
 	}
 	appLogf("panic: %v\n%s", r, debug.Stack())
+	fatalCleanup()
 	showFatalDialog("システムモニター", fmt.Sprintf("予期しないエラーで終了します: %v\n\n詳細: %s", r, appLogPathForDisplay()))
 	fatalExit(2)
 }

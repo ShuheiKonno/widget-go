@@ -10,12 +10,25 @@ import (
 // useFakeFatal は、ダイアログと終了を偽物に差し替える（テストが実際に表示・終了しないように）。
 func useFakeFatal(t *testing.T) (dialogs *[]string, exitCode *int) {
 	t.Helper()
-	oldDialog, oldExit := showFatalDialog, fatalExit
+	oldDialog, oldExit, oldCleanup := showFatalDialog, fatalExit, fatalCleanup
 	d, code := []string{}, -1
 	showFatalDialog = func(title, message string) { d = append(d, title+"|"+message) }
 	fatalExit = func(c int) { code = c }
-	t.Cleanup(func() { showFatalDialog, fatalExit = oldDialog, oldExit })
+	fatalCleanup = func() { fatalCleanupCalls++ }
+	fatalCleanupCalls = 0
+	t.Cleanup(func() { showFatalDialog, fatalExit, fatalCleanup = oldDialog, oldExit, oldCleanup })
 	return &d, &code
+}
+
+// fatalCleanupCalls は、偽の fatalCleanup が呼ばれた回数。
+var fatalCleanupCalls int
+
+// このパッケージのテストは、既定で本物のダイアログも終了も後始末も使わない
+// （useFakeFatal なしで fatalf に届いても、MessageBox で CI が止まったり、プロセスが終わったりしないように）。
+func init() {
+	showFatalDialog = func(title, message string) {}
+	fatalExit = func(int) {}
+	fatalCleanup = func() {}
 }
 
 func TestFatalfLogsShowsDialogAndExits(t *testing.T) {
@@ -26,6 +39,9 @@ func TestFatalfLogsShowsDialogAndExits(t *testing.T) {
 
 	if *code != 1 {
 		t.Errorf("終了コードは 1 のはず: %d", *code)
+	}
+	if fatalCleanupCalls != 1 {
+		t.Errorf("終了の前に、隠したものを戻す後始末が必要: %d 回", fatalCleanupCalls)
 	}
 	if len(*dialogs) != 1 || !strings.Contains((*dialogs)[0], "boom") || !strings.Contains((*dialogs)[0], logPath) {
 		t.Errorf("ダイアログに原因とログの場所が必要: %v", *dialogs)
@@ -47,6 +63,9 @@ func TestReportPanicRecordsStackAndExits(t *testing.T) {
 	if *code != 2 {
 		t.Errorf("panic の終了コードは 2 のはず: %d", *code)
 	}
+	if fatalCleanupCalls != 1 {
+		t.Errorf("panic でも、隠したものを戻す後始末が必要: %d 回", fatalCleanupCalls)
+	}
 	if len(*dialogs) != 1 || !strings.Contains((*dialogs)[0], "kaboom") {
 		t.Errorf("ダイアログに panic の内容が必要: %v", *dialogs)
 	}
@@ -60,8 +79,8 @@ func TestReportPanicDoesNothingWithoutPanic(t *testing.T) {
 	useTempAppLog(t)
 	dialogs, code := useFakeFatal(t)
 	func() { defer reportPanic() }()
-	if len(*dialogs) != 0 || *code != -1 {
-		t.Error("panic が無いのに、ダイアログや終了が起きた")
+	if len(*dialogs) != 0 || *code != -1 || fatalCleanupCalls != 0 {
+		t.Error("panic が無いのに、ダイアログや終了や後始末が起きた")
 	}
 }
 

@@ -146,3 +146,80 @@ func TestAppLogRotatesWhenTooLarge(t *testing.T) {
 		t.Error("退避後は新しく始めるはず")
 	}
 }
+
+// 保存に失敗した後は、内容が変わらない呼び出しでも書き直す。
+// 集中モードの記録はメモリにしか無く、毎秒「同じ」と判定されて保存されないままだと、異常終了で隠したものを戻せなくなる。
+func TestMutateConfigIfRetriesAfterFailedWrite(t *testing.T) {
+	useTempAppLog(t)
+	path := withConfigFile(t, "")
+	if err := os.Mkdir(path, 0755); err != nil { // 置き換えに失敗させる
+		t.Fatal(err)
+	}
+	mutateConfigIf(func(c *Config) bool { c.Zoom = 125; return true })
+	configMu.Lock()
+	failing := configWriteFailing
+	configMu.Unlock()
+	if !failing {
+		t.Fatal("保存の失敗を覚えていない")
+	}
+
+	if err := os.Remove(path); err != nil { // 障害が解消した
+		t.Fatal(err)
+	}
+	mutateConfigIf(func(c *Config) bool { return false }) // 内容は変わらない
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal("障害が解消しても、メモリにある内容が保存されない")
+	}
+	if !strings.Contains(string(data), `"zoom": 125`) {
+		t.Errorf("失敗していた内容が保存されていない: %s", data)
+	}
+
+	// 保存できたので、以後は変更なしなら書かない
+	_ = os.Remove(path)
+	mutateConfigIf(func(c *Config) bool { return false })
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("回復後は、変更なしで書いてはいけない")
+	}
+}
+
+func TestBackupBrokenConfigFallsBackToCopyWhenRenameFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	const content = `{"broken"`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// 開いたままだと、Windows では（共有モードによって）rename が失敗する。失敗したときは内容を書き出して退避する。
+	// 共有モードで rename が通る環境でも、退避先に内容があることは変わらない。
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	dst := backupBrokenConfig(path, []byte(content))
+	if dst == "" {
+		t.Fatal("退避できていない")
+	}
+	if got, err := os.ReadFile(dst); err != nil || string(got) != content {
+		t.Errorf("退避先の内容が元と違う: %q %v", got, err)
+	}
+}
+
+func TestAppLogRotatesWhileRunning(t *testing.T) {
+	dir := t.TempDir()
+	old := appLogPath
+	t.Cleanup(func() { appLogMu.Lock(); appLogPath = old; appLogMu.Unlock() })
+	initAppLog(dir)
+	p := filepath.Join(dir, "app.log")
+	if err := os.WriteFile(p, make([]byte, appLogMaxBytes+1), 0644); err != nil {
+		t.Fatal(err)
+	}
+	appLogf("起動後に書く")
+	if _, err := os.Stat(p + ".1"); err != nil {
+		t.Error("常駐中でも、大きくなったログは退避されるはず")
+	}
+	if b, _ := os.ReadFile(p); !strings.Contains(string(b), "起動後に書く") || len(b) > 1024 {
+		t.Errorf("退避後は新しいファイルに書くはず: %d バイト", len(b))
+	}
+}

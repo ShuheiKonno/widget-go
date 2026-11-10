@@ -361,12 +361,16 @@ func defaultConfig() Config {
 var configLoadNotice string
 
 // backupBrokenConfig は読めなかった config.json を、上書きされる前に退避する。退避先を返す（失敗時は空）。
-func backupBrokenConfig(path string) string {
+// 他のプロセスが開いていて rename できないときは、読み込み済みの内容を退避先へ書き出す。
+func backupBrokenConfig(path string, data []byte) string {
 	dst := fmt.Sprintf("%s.broken-%s", path, time.Now().Format("20060102-150405"))
-	if err := os.Rename(path, dst); err != nil {
-		return ""
+	if err := os.Rename(path, dst); err == nil {
+		return dst
 	}
-	return dst
+	if err := os.WriteFile(dst, data, 0644); err == nil {
+		return dst
+	}
+	return ""
 }
 
 func loadConfig() {
@@ -397,11 +401,12 @@ func loadConfig() {
 		if !partial {
 			tmp = config
 		}
-		dst := backupBrokenConfig(configPath)
+		dst := backupBrokenConfig(configPath, data)
 		appLogf("config.json を解釈できません（%v）。退避先: %q。一部の項目だけ引き継ぎ: %v", err, dst, partial)
-		configLoadNotice = "設定ファイルが壊れていたため、元のファイルを退避しました。"
 		if dst != "" {
-			configLoadNotice += "（" + filepath.Base(dst) + "）"
+			configLoadNotice = "設定ファイルが壊れていたため、元のファイルを退避しました。（" + filepath.Base(dst) + "）"
+		} else {
+			configLoadNotice = "設定ファイルが壊れていましたが、退避できませんでした。設定を変えると上書きされます。"
 		}
 		if !partial {
 			return
@@ -483,10 +488,12 @@ func writeConfigFile(path string, v *Config) error {
 
 // mutateConfigIf は mutateConfig と同じだが、f が false を返したとき（変更なし）はファイルへ書き込まない。
 // 毎秒のように呼ばれる処理で、同じ内容を書き直し続けないために使う。判定と書き込みは同じロックの中で行う。
+// ただし、直前の保存が失敗しているときは、変更なしでも書き直す（メモリにだけある内容を、保存できるようになったらすぐ残すため。
+// 集中モードの記録が保存されないまま異常終了すると、隠したものを次の起動で戻せなくなる）。
 func mutateConfigIf(f func(c *Config) bool) {
 	configMu.Lock()
 	defer configMu.Unlock()
-	if f(&config) {
+	if f(&config) || configWriteFailing {
 		writeConfigLocked()
 	}
 }
