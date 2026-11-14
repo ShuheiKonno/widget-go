@@ -43,6 +43,16 @@ jobs:
       - name: go build
         run: go build -ldflags "-H windowsgui" -o system-widget.exe .
 
+      # Store 用は無署名 MSIX。秘密鍵・Store 認証情報・公開権限を使用しない。
+      - name: Build and validate Store MSIX
+        shell: powershell
+        run: |
+          .\packaging\msix\Build-StoreMsix.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $info = Get-ChildItem dist\msix-store -Filter package-info.json -Recurse | Select-Object -First 1
+          if (-not $info) { throw 'Store package metadata was not created.' }
+          python packaging/msix/verify_msix.py --info $info.FullName --store
+
   lint:
     runs-on: windows-latest
     steps:

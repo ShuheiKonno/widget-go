@@ -20,6 +20,8 @@ _wifitest*.go
 # (~ 付きは実行中プロセスがロック中に go build が生成する一時ファイル)
 /system-widget.exe
 /system-widget.exe~
+/dist/msix-test/
+/dist/msix-store/
 
 # Local credentials, signing keys and runtime data
 .env

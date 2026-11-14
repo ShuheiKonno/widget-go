@@ -360,17 +360,21 @@
 
         <section class="panel" id="panel-system">
             <h2>起動とショートカット</h2>
-            <div class="card">
+            <div class="card" id="scPackagedInfo" hidden>
+                <span class="label">起動設定</span>
+                <p class="hint">スタートメニューには自動で登録されます。Windows 起動時の自動起動は、Windows の「設定」→「アプリ」→「スタートアップ」で変更できます。</p>
+            </div>
+            <div class="card" id="scStartMenuCard">
                 <span class="label">スタートメニュー</span>
                 <label class="toggle"><span>スタートメニューにショートカットを登録する<span class="sub-text" id="scStartMenuState"></span></span><input type="checkbox" id="optScStartMenu"></label>
                 <div class="note warn" id="scStartMenuWarn" hidden><span class="warn-text"></span><button class="quiet" type="button" data-sc-update="startmenu">今のアプリに更新</button></div>
             </div>
-            <div class="card">
+            <div class="card" id="scStartupCard">
                 <span class="label">スタートアップ</span>
                 <label class="toggle"><span>Windows の起動時に自動で起動する<span class="sub-text" id="scStartupState"></span></span><input type="checkbox" id="optScStartup"></label>
                 <div class="note warn" id="scStartupWarn" hidden><span class="warn-text"></span><button class="quiet" type="button" data-sc-update="startup">今のアプリに更新</button></div>
             </div>
-            <div class="card">
+            <div class="card" id="scLinkCard">
                 <span class="label">登録されるリンク先（今動いているアプリ）</span>
                 <div class="path" id="scExe">---</div>
                 <p class="hint">チェックを入れるとショートカット（system-widget.lnk）を保存し、外すと削除します。リンク先が今動いているアプリと違うときは警告を出します（自動では書き換えません）。チェックを入れ直すと、リンク先が今のアプリに更新されます。</p>
@@ -1068,6 +1072,10 @@
         }
         function renderShortcuts(){
             if (!shortcuts) return;
+            const packaged = !!shortcuts.packaged;
+            $('scPackagedInfo').hidden = !packaged;
+            ['scStartMenuCard', 'scStartupCard', 'scLinkCard'].forEach(function(id){ $(id).hidden = packaged; });
+            if (packaged) return;
             $('scExe').textContent = shortcuts.exe || '---';
             scKinds.forEach(function(k){
                 const st = shortcuts[k.field] || {};

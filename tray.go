@@ -802,7 +802,7 @@ func hideWindowToTray() {
 	// ウィンドウハンドル未取得のまま隠すと、本体が隠れないまま viewMode だけ
 	// 2 になって ✕ に反応しなくなる。ここで一度リカバリを試みる。
 	if windowHandle.Load() == 0 {
-		setupMainWindow("システムモニター")
+		setupMainWindow(applicationWindowTitle)
 	}
 	if windowHandle.Load() == 0 {
 		return
@@ -855,7 +855,7 @@ func toggleWindowFromTray() {
 // showWindowFromTray は本体ウィンドウを表示して前面に出す。OS で最小化されている場合は復元する。
 func showWindowFromTray() {
 	if windowHandle.Load() == 0 {
-		setupMainWindow("システムモニター")
+		setupMainWindow(applicationWindowTitle)
 	}
 	hwnd := windowHandle.Load()
 	if hwnd == 0 {

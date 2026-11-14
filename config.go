@@ -359,7 +359,7 @@ func appConfigDirectory() string {
 	if localAppData == "" {
 		localAppData = os.Getenv("APPDATA")
 	}
-	return filepath.Join(localAppData, "widget-go")
+	return filepath.Join(localAppData, appDataDirectoryName)
 }
 
 func defaultConfig() Config {

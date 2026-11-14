@@ -1,0 +1,27 @@
+{
+  "title": "System Widget - システムモニター",
+  "language": "ja-jp",
+  "description": "PCの状態を、小さなデスクトップウィジェットで確認できます。\n\nSystem Widgetは、Windows用のシステムモニターです。CPU、メモリ、ディスク、GPU／NPU、ネットワークの使用状況をひとつのウィンドウにまとめます。コンパクト表示やトレイへの格納に対応し、テーマやスキン、表示する区画を好みに合わせて変更できます。\n\n主な機能\n・CPUとメモリ、ディスクI/O、GPU／NPU、ネットワークの状態を表示\n・コンパクト表示、拡大率の調整、最前面表示、透過表示\n・ライト／ダークテーマと組み込みスキン、利用者スキンの取り込み\n・勤務時間タイマー、ポモドーロタイマー、指定ホストのPing監視\n・任意で有効にできるClaude／Codexの使用量表示\n・MS-IMEの変換ウィンドウに関する自動復旧機能\n\n利用条件とご注意\n・Windows 10 バージョン2004以降のx64 PCとMicrosoft Edge WebView2 Runtimeが必要です。\n・取得できるGPU／NPUやネットワーク情報は、機器・ドライバー・Windowsの環境によって異なります。\n・AI使用量の表示は既定OFFです。有効にすると各サービスへの通信が発生し、ご本人のアカウントでのログインが必要になる場合があります。Claude／Codexのサービスや有料プランは本アプリに付属しません。各サービスの仕様変更により使用量の取得が動作しなくなる場合があります。\n・電源モードの切替とポモドーロの集中モードは、利用者が有効にした場合にWindowsや他アプリの状態を変更する機能です。詳細はプライバシー説明をご確認ください。\n\n本アプリはMITライセンスのオープンソースソフトウェアです。Anthropic、OpenAIの公式アプリではなく、両社との提携・推奨を示すものではありません。",
+  "shortDescription": "CPU・メモリ・GPUなどの状態を、コンパクトなWindowsデスクトップウィジェットに表示。",
+  "features": [
+    "CPU・メモリ・ディスク・GPU／NPU・ネットワークの状態表示",
+    "コンパクト表示、トレイ格納、テーマとスキンの切替",
+    "勤務時間・ポモドーロタイマーとPing監視",
+    "任意で有効にできるClaude／Codex使用量モニター"
+  ],
+  "keywords": ["システムモニター", "ウィジェット", "CPU", "メモリ", "デスクトップ", "タイマー", "system monitor"],
+  "releaseNotes": "Microsoft Store向けの初回リリース。Windowsによるインストール・更新と、スタートメニューへの自動登録に対応。",
+  "privacyPolicyUrl": "https://github.com/ShuheiKonno/widget-go/blob/main/PRIVACY.md",
+  "supportUrl": "https://github.com/ShuheiKonno/widget-go/issues",
+  "websiteUrl": "https://github.com/ShuheiKonno/widget-go",
+  "licenseUrl": "https://github.com/ShuheiKonno/widget-go/blob/main/LICENSE",
+  "category": "Utilities & tools",
+  "price": "Free",
+  "screenshots": [
+    {
+      "file": "../store-assets/screenshots/01-monitor.png",
+      "caption": "CPU・メモリ・ディスク・GPU／NPUの表示例。表示幅と拡大率を変更しています。"
+    }
+  ],
+  "certificationNotes": "This is a Go/Win32 desktop system monitor using Microsoft Edge WebView2. The base monitoring UI requires no account. An installed WebView2 Runtime is required. The runFullTrust capability is required for Win32 monitoring APIs, a loopback HTTP server used only by the local WebView2 UI, tray/windows management and an optional IME recovery hook. Optional power-mode and Pomodoro focus features can change Windows settings or other application windows; these are described in the privacy policy and controlled in settings. The AI usage feature is off by default; enabling it can connect to Claude/ChatGPT using the user's own service account. It is not an official Anthropic or OpenAI app. No developer analytics, ads, app purchases, or automatic log uploads are implemented. Store builds have an isolated data directory and do not create legacy startup shortcuts. The declared startup task is disabled by default and managed by Windows. Please test the basic monitoring UI without requiring third-party account credentials."
+}
