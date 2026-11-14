@@ -10,7 +10,7 @@
     "任意で有効にできるClaude／Codex使用量モニター"
   ],
   "keywords": ["システムモニター", "ウィジェット", "CPU", "メモリ", "デスクトップ", "タイマー", "system monitor"],
-  "releaseNotes": "Microsoft Store向けの初回リリース。Windowsによるインストール・更新と、スタートメニューへの自動登録に対応。",
+  "releaseNotes": "",
   "privacyPolicyUrl": "https://github.com/ShuheiKonno/widget-go/blob/main/PRIVACY.md",
   "supportUrl": "https://github.com/ShuheiKonno/widget-go/issues",
   "websiteUrl": "https://github.com/ShuheiKonno/widget-go",
