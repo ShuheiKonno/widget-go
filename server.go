@@ -766,7 +766,7 @@ func setPingOption(key, val string) error {
 		return nil
 	case "pingInterval":
 		sec, err := strconv.Atoi(val)
-		if err != nil || sec < 1 || sec > 60 {
+		if err != nil || sec < ping.MinIntervalSec || sec > ping.MaxIntervalSec {
 			return fmt.Errorf("invalid pingInterval value %q", val)
 		}
 		mutateConfig(func(c *Config) { c.Ping.IntervalSec = sec })

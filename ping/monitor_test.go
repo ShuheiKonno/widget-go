@@ -151,9 +151,12 @@ func TestTargetBuffer(t *testing.T) {
 	if stats.LossPercent != 40.0 {
 		t.Fatalf("expected loss 40.0%%, got %.1f%%", stats.LossPercent)
 	}
-	// 直近成功は 50ms
-	if stats.RTTMs != 50 {
-		t.Fatalf("expected latest RTT 50ms, got %d", stats.RTTMs)
+	// 直近の 1 回が失敗しているので、窓の中の古い成功（50ms）は出さない
+	if stats.RTTMs != -1 {
+		t.Fatalf("直近が失敗なら最新 RTT は -1 のはず: %d", stats.RTTMs)
+	}
+	if !stats.LossReady {
+		t.Fatalf("5 件あればロスを表示できるはず")
 	}
 	// avg: (30+40+50)/3 = 40ms
 	if stats.AvgRTTMs != 40 {
@@ -167,18 +170,23 @@ func TestTargetBuffer(t *testing.T) {
 	}
 }
 
-// 1 回のロスでは、率が閾値を超えていても警告しない（起動直後の 1/1 = 100% など）。
+// 立ち上がり（サンプルが MinLossSamples 未満）では、率が閾値を超えていても警告せず、ロスも表示しない（1/1 = 100% など）。
 func TestStats_SingleLossDoesNotWarn(t *testing.T) {
 	buf := newTargetBuffer(20)
 	buf.record("1.1.1.1", 0, false)
 	st := buf.stats("h", 10, 100)
-	if st.IsWarnLoss || st.Status == "error" {
+	if st.IsWarnLoss || st.Status != StatusIdle || st.LossReady {
 		t.Errorf("1 回のロスだけでは警告しないはず: %+v", st)
 	}
 	buf.record("1.1.1.1", 0, false)
 	st = buf.stats("h", 10, 100)
-	if !st.IsWarnLoss || st.Status != "error" {
-		t.Errorf("2 回続けて落ちたら警告するはず: %+v", st)
+	if st.IsWarnLoss || st.Status != StatusIdle || st.LossReady {
+		t.Errorf("サンプルが %d 件未満の間は警告しないはず: %+v", MinLossSamples, st)
+	}
+	buf.record("1.1.1.1", 0, false)
+	st = buf.stats("h", 10, 100)
+	if !st.IsWarnLoss || st.Status != StatusError || !st.LossReady || st.LossCount != 3 || st.SentCount != 3 {
+		t.Errorf("%d 回続けて落ちたら警告するはず: %+v", MinLossSamples, st)
 	}
 
 	// 成功が混じる 1/20 = 5% は、閾値未満で警告しない
@@ -236,22 +244,21 @@ func TestMonitor_PingOnce_AlertsAndCooldown(t *testing.T) {
 	now := time.Now()
 	mon := NewMonitorWithCooldown(pinger, cfg, 5*time.Minute)
 
-	// 1 回目: ロスは 1 回、RTT は 1 回だけ。まだ警告しない（起動直後の誤報を避ける）
-	if alerts := runCycles(mon, &now, 1, 2*time.Second); len(alerts) != 0 {
-		t.Fatalf("1 回目では警告しないはず: %+v", alerts)
+	// 1・2 回目: まだサンプルが少ない。警告しない（起動直後の誤報を避ける）
+	if alerts := runCycles(mon, &now, 2, 2*time.Second); len(alerts) != 0 {
+		t.Fatalf("2 回目までは警告しないはず: %+v", alerts)
 	}
-	// 2 回目: loss-host が 2 回続けて落ちる
+	// 3 回目: loss-host が 3 回続けて落ち、slow-host が 3 回連続で遅い
 	alerts := runCycles(mon, &now, 1, 2*time.Second)
-	if len(alerts) != 1 || alerts[0].Host != "loss-host" {
-		t.Fatalf("2 回目は loss-host だけ警告するはず: %+v", alerts)
+	if len(alerts) != 2 || alerts[0].Host != "loss-host" || alerts[1].Host != "slow-host" {
+		t.Fatalf("3 回目は loss-host と slow-host を警告するはず: %+v", alerts)
 	}
-	// 3 回目: slow-host が 3 回連続で遅い
-	alerts = runCycles(mon, &now, 1, 2*time.Second)
-	if len(alerts) != 1 || alerts[0].Host != "slow-host" {
-		t.Fatalf("3 回目は slow-host だけ警告するはず: %+v", alerts)
+	if alerts[0].Message != "パケットロス 3/3 (閾値超過)" || alerts[1].Message != "RTT 250ms (閾値超過)" {
+		t.Errorf("通知の本文: %q / %q", alerts[0].Message, alerts[1].Message)
 	}
-	if !mon.Snapshot().HasWarning {
-		t.Errorf("expected HasWarning true")
+	snap := mon.Snapshot()
+	if snap.Targets[0].Status != StatusOK || snap.Targets[1].Status != StatusError || snap.Targets[2].Status != StatusWarn {
+		t.Errorf("status: %+v", snap.Targets)
 	}
 
 	// クールダウン中（1 分後）はアラートなし
@@ -270,8 +277,8 @@ func TestMonitor_FlappingDoesNotResetCooldown(t *testing.T) {
 	now := time.Now()
 	mon := NewMonitorWithCooldown(pinger, oneTarget("h"), DefaultCooldown)
 
-	// 2 回落ちて警告 → 通知 1 件
-	if alerts := runCycles(mon, &now, 2, 2*time.Second); len(alerts) != 1 {
+	// 3 回落ちて警告 → 通知 1 件
+	if alerts := runCycles(mon, &now, 3, 2*time.Second); len(alerts) != 1 {
 		t.Fatalf("最初の警告で 1 件のはず: %+v", alerts)
 	}
 	// 窓が一巡するまで成功（約 40 秒）。窓が入れ替わって ok に戻る（RecoverHold 未満）
@@ -293,7 +300,7 @@ func TestMonitor_RecoveredHostNotifiesImmediately(t *testing.T) {
 	now := time.Now()
 	mon := NewMonitorWithCooldown(pinger, oneTarget("h"), DefaultCooldown)
 
-	if alerts := runCycles(mon, &now, 2, 2*time.Second); len(alerts) != 1 {
+	if alerts := runCycles(mon, &now, 3, 2*time.Second); len(alerts) != 1 {
 		t.Fatalf("最初の警告で 1 件のはず: %+v", alerts)
 	}
 	pinger.responses["h"] = respOK
@@ -321,7 +328,7 @@ func TestMonitor_Reset(t *testing.T) {
 		t.Errorf("履歴は空になるはず: %+v", st)
 	}
 	// 通知の状態も捨てるので、再開後の最初の警告は通知される（クールダウンに阻まれない）
-	if alerts := runCycles(mon, &now, 2, 2*time.Second); len(alerts) != 1 {
+	if alerts := runCycles(mon, &now, 3, 2*time.Second); len(alerts) != 1 {
 		t.Errorf("Reset 後の警告は通知されるはず: %+v", alerts)
 	}
 }
