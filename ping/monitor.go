@@ -17,6 +17,8 @@ type targetBuffer struct {
 	samples    []pingSample
 	targetIP   string
 	windowSize int
+	// resolveFails は、名前解決が続けて失敗している回数。名前解決の失敗はサンプルに積まない（ロスとして数えない）。
+	resolveFails int
 }
 
 func newTargetBuffer(windowSize int) *targetBuffer {
@@ -30,6 +32,7 @@ func newTargetBuffer(windowSize int) *targetBuffer {
 }
 
 func (b *targetBuffer) record(ip string, rtt time.Duration, success bool) {
+	b.resolveFails = 0
 	if ip != "" {
 		b.targetIP = ip
 	}
@@ -39,21 +42,30 @@ func (b *targetBuffer) record(ip string, rtt time.Duration, success bool) {
 	b.samples = append(b.samples, pingSample{success: success, rtt: rtt})
 }
 
+// recordResolveFail は名前解決の失敗を記録する。窓のサンプル（ロス率）には入れない。
+func (b *targetBuffer) recordResolveFail() {
+	b.resolveFails++
+}
+
 func (b *targetBuffer) stats(host string, lossThresh, rttThresh int) TargetInfo {
 	info := TargetInfo{
 		Host:        host,
 		TargetIP:    b.targetIP,
-		Status:      "idle",
+		Status:      StatusIdle,
 		History:     make([]int, len(b.samples)),
 		RTTMs:       -1,
 		AvgRTTMs:    -1,
 		MinRTTMs:    -1,
 		MaxRTTMs:    -1,
 		LossPercent: 0,
+		ResolveFail: b.resolveFails > 0,
 	}
 
 	total := len(b.samples)
 	if total == 0 {
+		if b.resolveFails >= ResolveFailConsecutive {
+			info.Status = StatusUnresolved
+		}
 		return info
 	}
 	info.SentCount = total
@@ -64,7 +76,6 @@ func (b *targetBuffer) stats(host string, lossThresh, rttThresh int) TargetInfo 
 		succCount = 0
 		minRTT    = time.Duration(math.MaxInt64)
 		maxRTT    = time.Duration(0)
-		latestRTT = time.Duration(-1)
 	)
 
 	for i, s := range b.samples {
@@ -79,7 +90,6 @@ func (b *targetBuffer) stats(host string, lossThresh, rttThresh int) TargetInfo 
 			info.History[i] = ms
 			succCount++
 			sumRTT += s.rtt
-			latestRTT = s.rtt
 			if s.rtt < minRTT {
 				minRTT = s.rtt
 			}
@@ -91,9 +101,13 @@ func (b *targetBuffer) stats(host string, lossThresh, rttThresh int) TargetInfo 
 
 	info.LossCount = lossCount
 	info.LossPercent = math.Round((float64(lossCount)/float64(total))*1000) / 10 // 小数点第1位まで
+	info.LossReady = total >= MinLossSamples
 
+	// 最新 RTT は、直近の 1 回が成功したときだけ出す。失敗（ロス・名前解決の失敗）したのに、窓の中の古い値を出さない
+	if last := b.samples[total-1]; last.success && b.resolveFails == 0 {
+		info.RTTMs = int(last.rtt.Milliseconds())
+	}
 	if succCount > 0 {
-		info.RTTMs = int(latestRTT.Milliseconds())
 		avg := sumRTT / time.Duration(succCount)
 		info.AvgRTTMs = int(avg.Milliseconds())
 		info.MinRTTMs = int(minRTT.Milliseconds())
@@ -101,8 +115,9 @@ func (b *targetBuffer) stats(host string, lossThresh, rttThresh int) TargetInfo 
 	}
 
 	// 閾値判定
-	// ロスは、窓の中で MinLossCount 回以上落ちていて、率が閾値以上のとき。1 回の取りこぼしでは警告しない。
-	if lossCount >= MinLossCount && info.LossPercent >= float64(lossThresh) {
+	// ロスは、窓に MinLossSamples 回以上のサンプルがあり、MinLossCount 回以上落ちていて、率が閾値以上のとき。
+	// 立ち上がり（1/1 = 100% など）や 1 回の取りこぼしでは警告しない。
+	if info.LossReady && lossCount >= MinLossCount && info.LossPercent >= float64(lossThresh) {
 		info.IsWarnLoss = true
 	}
 	// RTT は、直近 RTTConsecutive 回が連続して閾値以上のとき。一瞬のスパイクでは警告しない。
@@ -114,20 +129,24 @@ func (b *targetBuffer) stats(host string, lossThresh, rttThresh int) TargetInfo 
 		}
 		run++
 	}
-	if run >= RTTConsecutive {
+	// 直近の 1 回が名前解決の失敗なら、窓の末尾が遅くても RTT の警告にしない（RTT は -1 で、値が出せない）
+	if run >= RTTConsecutive && b.resolveFails == 0 {
 		info.IsWarnRTT = true
 	}
 
 	switch {
-	case lossCount == total && total >= MinLossCount:
-		info.Status = "error"
+	case b.resolveFails >= ResolveFailConsecutive:
+		// 名前解決が続けて失敗している。ロスとは別の状態にする（窓のロス率はそのまま残す）
+		info.Status = StatusUnresolved
+	case info.LossReady && lossCount == total:
+		info.Status = StatusError
 	case succCount == 0:
-		// まだ 1 回の失敗だけのとき。判断を保留する
-		info.Status = "idle"
+		// 立ち上がりで、まだ失敗だけのとき。判断を保留する
+		info.Status = StatusIdle
 	case info.IsWarnLoss || info.IsWarnRTT:
-		info.Status = "warn"
+		info.Status = StatusWarn
 	default:
-		info.Status = "ok"
+		info.Status = StatusOK
 	}
 
 	return info
@@ -165,12 +184,21 @@ func NewMonitorWithCooldown(pinger Pinger, cfg Config, cooldown time.Duration) *
 }
 
 // UpdateConfig は設定を更新する。不要になったバッファは掃除する。
+// 測定間隔が変わったときは、すべてのバッファを捨てる（違う間隔のサンプルが窓の中で混ざらないように）。
+// 閾値や監視先の変更は、次の測定を待たずにスナップショットへ反映する。
 func (m *Monitor) UpdateConfig(cfg Config) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	norm := NormalizeConfig(cfg)
+	intervalChanged := norm.IntervalSec != m.cfg.IntervalSec
 	m.cfg = norm
+
+	if intervalChanged {
+		// 通知のクールダウン（lastNotified）は残す。間隔を変えただけで、同じ警告を再び通知しないように
+		m.buffers = make(map[string]*targetBuffer)
+		m.okSince = make(map[string]time.Time)
+	}
 
 	activeHosts := make(map[string]bool)
 	for _, t := range norm.Targets {
@@ -199,26 +227,48 @@ func (m *Monitor) Reset() {
 }
 
 // PingOnce は登録された全ターゲットに対して並行に Ping を実行し、最新情報とアラートを返す。
+// 定期の測定（1 周期に 1 回）で呼ぶ。
 func (m *Monitor) PingOnce(ctx context.Context, now time.Time) (Info, []NotifyAlert) {
+	return m.ping(ctx, now, false)
+}
+
+// PingMissing は、まだ 1 度も測っていない監視先（追加・変更した直後）だけに Ping を送る。
+// 定期の周期の途中で設定が変わったときに呼び、測り済みのホストに余分なサンプルを足さずに、
+// 新しい監視先の値をすぐに出す。測っていない監視先がなければ何も送らない。
+func (m *Monitor) PingMissing(ctx context.Context, now time.Time) (Info, []NotifyAlert) {
+	return m.ping(ctx, now, true)
+}
+
+func (m *Monitor) ping(ctx context.Context, now time.Time, missingOnly bool) (Info, []NotifyAlert) {
 	m.mu.RLock()
-	targets := make([]TargetConfig, len(m.cfg.Targets))
-	copy(targets, m.cfg.Targets)
+	targets := make([]TargetConfig, 0, len(m.cfg.Targets))
+	for _, t := range m.cfg.Targets {
+		if missingOnly && m.buffers[t.Host] != nil {
+			continue
+		}
+		targets = append(targets, t)
+	}
 	notifyEnabled := m.cfg.NotifyEnabled
 	pinger := m.pinger
+	noTargets := len(m.cfg.Targets) == 0
 	m.mu.RUnlock()
 
-	if len(targets) == 0 || pinger == nil {
+	if noTargets || pinger == nil {
 		m.mu.Lock()
 		m.cachedInfo = Info{}
 		m.mu.Unlock()
 		return Info{}, nil
 	}
+	if len(targets) == 0 {
+		// 測っていない監視先がない（PingMissing）。今の状態をそのまま返す
+		return m.Snapshot(), nil
+	}
 
 	type pingResult struct {
-		host    string
-		ip      string
-		rtt     time.Duration
-		success bool
+		host string
+		ip   string
+		rtt  time.Duration
+		err  error
 	}
 
 	results := make([]pingResult, len(targets))
@@ -231,10 +281,10 @@ func (m *Monitor) PingOnce(ctx context.Context, now time.Time) (Info, []NotifyAl
 			timeout := 1000 * time.Millisecond
 			ip, rtt, err := pinger.Ping(ctx, target.Host, timeout)
 			results[idx] = pingResult{
-				host:    target.Host,
-				ip:      ip,
-				rtt:     rtt,
-				success: err == nil,
+				host: target.Host,
+				ip:   ip,
+				rtt:  rtt,
+				err:  err,
 			}
 		}(i, t)
 	}
@@ -243,13 +293,26 @@ func (m *Monitor) PingOnce(ctx context.Context, now time.Time) (Info, []NotifyAl
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// 測っている間に監視先から外れたホストは、記録しない（UpdateConfig で掃除したバッファを作り直さない）
+	active := make(map[string]bool, len(m.cfg.Targets))
+	for _, t := range m.cfg.Targets {
+		active[t.Host] = true
+	}
 	for _, res := range results {
+		if !active[res.host] {
+			continue
+		}
 		buf, ok := m.buffers[res.host]
 		if !ok {
 			buf = newTargetBuffer(DefaultWindowSize)
 			m.buffers[res.host] = buf
 		}
-		buf.record(res.ip, res.rtt, res.success)
+		if IsResolveError(res.err) {
+			// 名前解決の失敗は、パケットを送れていないのでロスに数えない
+			buf.recordResolveFail()
+			continue
+		}
+		buf.record(res.ip, res.rtt, res.err == nil)
 	}
 
 	info := m.buildSnapshotLocked()
@@ -258,25 +321,17 @@ func (m *Monitor) PingOnce(ctx context.Context, now time.Time) (Info, []NotifyAl
 	var alerts []NotifyAlert
 	if notifyEnabled {
 		for _, tInfo := range info.Targets {
-			if tInfo.IsWarnLoss || tInfo.IsWarnRTT {
+			if IsAlertStatus(tInfo.Status) {
 				delete(m.okSince, tInfo.Host)
 				last, hasNotified := m.lastNotified[tInfo.Host]
 				if !hasNotified || now.Sub(last) >= m.cooldown {
 					m.lastNotified[tInfo.Host] = now
-					var msg string
-					if tInfo.IsWarnLoss && tInfo.IsWarnRTT {
-						msg = fmt.Sprintf("パケットロス %.1f%% / RTT %dms (閾値超過)", tInfo.LossPercent, tInfo.RTTMs)
-					} else if tInfo.IsWarnLoss {
-						msg = fmt.Sprintf("パケットロス %.1f%% (閾値超過)", tInfo.LossPercent)
-					} else {
-						msg = fmt.Sprintf("RTT %dms (閾値超過)", tInfo.RTTMs)
-					}
 					alerts = append(alerts, NotifyAlert{
 						Host:    tInfo.Host,
-						Message: msg,
+						Message: alertMessage(tInfo),
 					})
 				}
-			} else if tInfo.Status == "ok" {
+			} else if tInfo.Status == StatusOK {
 				// 警告なしが RecoverHold 続いたら「復帰した」とみなし、クールダウンを解く（次の悪化を即時に通知できる）。
 				// すぐには解かない。閾値の前後を行き来するホストで、通知が連発するのを防ぐため。
 				since, ok := m.okSince[tInfo.Host]
@@ -294,6 +349,21 @@ func (m *Monitor) PingOnce(ctx context.Context, now time.Time) (Info, []NotifyAl
 	return info, alerts
 }
 
+// alertMessage は警告の通知本文を作る。ロスは画面と同じ「窓内の失敗回数/サンプル数」で書く。
+func alertMessage(t TargetInfo) string {
+	loss := fmt.Sprintf("パケットロス %d/%d", t.LossCount, t.SentCount)
+	switch {
+	case t.Status == StatusUnresolved:
+		return "名前解決に失敗しています"
+	case t.IsWarnLoss && t.IsWarnRTT:
+		return fmt.Sprintf("%s / RTT %dms (閾値超過)", loss, t.RTTMs)
+	case t.IsWarnLoss || t.Status == StatusError:
+		return loss + " (閾値超過)"
+	default:
+		return fmt.Sprintf("RTT %dms (閾値超過)", t.RTTMs)
+	}
+}
+
 func (m *Monitor) buildSnapshotLocked() Info {
 	if len(m.cfg.Targets) == 0 {
 		return Info{}
@@ -301,35 +371,30 @@ func (m *Monitor) buildSnapshotLocked() Info {
 
 	info := Info{
 		Targets:    make([]TargetInfo, 0, len(m.cfg.Targets)),
-		HasWarning: false,
 		SummaryRTT: -1,
 	}
-
-	var bestRTT = math.MaxInt32
 
 	for _, target := range m.cfg.Targets {
 		buf := m.buffers[target.Host]
 		if buf == nil {
 			info.Targets = append(info.Targets, TargetInfo{
 				Host:     target.Host,
-				Status:   "idle",
+				Status:   StatusIdle,
 				RTTMs:    -1,
 				AvgRTTMs: -1,
+				MinRTTMs: -1,
+				MaxRTTMs: -1,
+				History:  []int{},
 			})
 			continue
 		}
 		tInfo := buf.stats(target.Host, target.LossThresholdPercent, target.RTTThresholdMs)
-		if tInfo.IsWarnLoss || tInfo.IsWarnRTT || tInfo.Status == "error" {
-			info.HasWarning = true
-		}
-		if tInfo.RTTMs >= 0 && tInfo.RTTMs < bestRTT {
-			bestRTT = tInfo.RTTMs
+		// 代表 RTT は最悪値（最大）。良いホストの値で、遅いホストが隠れないようにする。
+		// 直近の 1 回が失敗したホストは RTTMs が -1 なので含まれない
+		if tInfo.RTTMs > info.SummaryRTT {
+			info.SummaryRTT = tInfo.RTTMs
 		}
 		info.Targets = append(info.Targets, tInfo)
-	}
-
-	if bestRTT != math.MaxInt32 {
-		info.SummaryRTT = bestRTT
 	}
 
 	return info
