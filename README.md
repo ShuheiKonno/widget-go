@@ -6,7 +6,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 
 脆弱性・秘密情報の露出は [SECURITY.md](SECURITY.md) の非公開報告手順を参照してください。
 
-コード署名はSignPath Foundationへの申請準備中です。採用・証明書提供・署名済み配布の開始を示すものではありません。
+コード署名はSignPath Foundationへ申請済みで、審査・案内待ちです。採用・証明書提供・署名済み配布の開始を示すものではありません。[申請状況](docs/signpath-application.md)を参照してください。
 
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)

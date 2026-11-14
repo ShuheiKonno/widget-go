@@ -60,6 +60,6 @@ Gitleaks v8.30.1の公式Windows/x64配布物を、GitHubの公式リリースAP
 - Gitleaks v8.30.1による公開前の最終履歴・作業ツリー検査も検出0件。
 - リリース元検証のローカルテスト6件が成功。actionlint v1.7.12によるワークフロー検査も成功。
 - ブートストラップコミット`257845334d1058fe22fc0bf1894ce47a3033ee5f`のGitHub CIでtest・lint・vuln・secretsがすべて成功してから公開した。testにはvet・通常テスト・raceテスト・ビルドが含まれる。
-- 非公開の署名サービス利用ではなく、publicなOSSとして申請できる準備文書を公開した。Foundationへの申請・採用、SignPathアカウント設定、署名・タイムスタンプ工程の実装、本番EXEの署名はまだ行っていない。
+- publicなOSSとして準備文書を公開後、Foundationへの申請を送信して完了表示を確認した。採用・証明書提供、SignPathアカウント設定、署名・タイムスタンプ工程の実装、本番EXEの署名はまだ行っていない。
 - release Environmentを使う新しい製品リリースはまだ実行していない。実際の公開承認と、LICENSE／第三者表示の添付は次回リリース時にも確認する。
-- GitHub・SignPathのMFA設定や個人の回復コードは本人による確認事項。APIがnullを返したため、MFAを確認済みとは扱わない。
+- GitHub所有者のMFAは、APIではnullだったが、その後ブラウザーの本人アカウント設定画面でEnabledを確認した。回復コードの表示・取得はしていない。SignPathのMFAと共同作業者のMFAは本番運用前の確認事項。[申請記録](signpath-application.md)を参照。
