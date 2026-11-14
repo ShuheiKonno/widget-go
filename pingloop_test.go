@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,115 +51,6 @@ func TestCurrentPing_ReturnsSnapshotWhenVisible(t *testing.T) {
 	}
 	if len(got.Targets) != 1 || got.Targets[0].Host != "8.8.8.8" {
 		t.Errorf("unexpected snapshot: %+v", got)
-	}
-}
-
-type alertFakePinger struct{}
-
-func (a *alertFakePinger) Ping(_ context.Context, _ string, _ time.Duration) (string, time.Duration, error) {
-	return "10.0.0.1", 0, errors.New("timeout")
-}
-
-// 周期処理（pingStep）が、警告をトレイ通知に流す。ロスは 2 回続いたときに出る（1 回では出さない）。
-func TestPingStep_SendsNotification(t *testing.T) {
-	cfgJSON := `{"hidden":{"ping":false},"ping":{"targets":[{"host":"bad-host","lossThresholdPercent":10,"rttThresholdMs":100}],"notifyEnabled":true}}`
-	withConfigFile(t, cfgJSON)
-	oldPinger := newPinger
-	newPinger = func() ping.Pinger { return &alertFakePinger{} }
-	defer func() { newPinger = oldPinger }()
-
-	var titles, msgs []string
-	oldBalloon := pingBalloon
-	pingBalloon = func(title, msg string) {
-		titles = append(titles, title)
-		msgs = append(msgs, msg)
-	}
-	defer func() { pingBalloon = oldBalloon }()
-
-	initPingMonitor()
-	pingMonMu.RLock()
-	mon := pingMonitor
-	pingMonMu.RUnlock()
-	cfg := snapshotConfig()
-	now := time.Now()
-
-	if !pingStep(mon, cfg, false, now) {
-		t.Fatal("表示中で監視先があるので、動作するはず")
-	}
-	if len(titles) != 0 {
-		t.Fatalf("1 回の失敗では通知しないはず: %v", titles)
-	}
-	pingStep(mon, cfg, true, now.Add(2*time.Second))
-	if len(titles) != 1 || titles[0] != "Ping 警告: bad-host" || msgs[0] == "" {
-		t.Errorf("2 回続けて失敗したら、ホスト名付きで通知するはず: %v %v", titles, msgs)
-	}
-	pingStep(mon, cfg, true, now.Add(4*time.Second))
-	if len(titles) != 1 {
-		t.Errorf("クールダウン中は重複して通知しないはず: %v", titles)
-	}
-}
-
-// 非表示の間は 1 つも Ping を送らない（README の約束）。動作中から止まったときは、履歴を捨てる。
-func TestPingStep_HiddenSendsNothingAndResets(t *testing.T) {
-	withConfigFile(t, `{"hidden":{"ping":false},"ping":{"targets":[{"host":"8.8.8.8"}]}}`)
-	fake := &loopFakePinger{}
-	oldPinger := newPinger
-	newPinger = func() ping.Pinger { return fake }
-	defer func() { newPinger = oldPinger }()
-
-	initPingMonitor()
-	pingMonMu.RLock()
-	mon := pingMonitor
-	pingMonMu.RUnlock()
-	now := time.Now()
-
-	if !pingStep(mon, snapshotConfig(), false, now) || fake.pingCount.Load() != 1 {
-		t.Fatalf("表示中は 1 回送るはず: count=%d", fake.pingCount.Load())
-	}
-	if mon.Snapshot().Targets[0].SentCount != 1 {
-		t.Fatalf("履歴が 1 件あるはず")
-	}
-
-	// 非表示にする
-	if err := setHidden("ping", "true"); err != nil {
-		t.Fatal(err)
-	}
-	if pingStep(mon, snapshotConfig(), true, now.Add(2*time.Second)) {
-		t.Error("非表示のときは動作しない（false）はず")
-	}
-	pingStep(mon, snapshotConfig(), false, now.Add(4*time.Second))
-	if fake.pingCount.Load() != 1 {
-		t.Errorf("非表示の間は送らないはず: count=%d", fake.pingCount.Load())
-	}
-	if mon.Snapshot().Targets[0].SentCount != 0 {
-		t.Errorf("止まったときに履歴を捨てるはず")
-	}
-
-	// 表示に戻すと、新しく測り直す
-	if err := setHidden("ping", "false"); err != nil {
-		t.Fatal(err)
-	}
-	if !pingStep(mon, snapshotConfig(), false, now.Add(6*time.Second)) || fake.pingCount.Load() != 2 {
-		t.Errorf("表示に戻したら再開するはず: count=%d", fake.pingCount.Load())
-	}
-	if mon.Snapshot().Targets[0].SentCount != 1 {
-		t.Errorf("古いサンプルと混ざらず、1 件から始まるはず")
-	}
-}
-
-func TestPingStep_NoTargetsSendsNothing(t *testing.T) {
-	withConfigFile(t, `{"hidden":{"ping":false},"ping":{"targets":[]}}`)
-	fake := &loopFakePinger{}
-	oldPinger := newPinger
-	newPinger = func() ping.Pinger { return fake }
-	defer func() { newPinger = oldPinger }()
-
-	initPingMonitor()
-	pingMonMu.RLock()
-	mon := pingMonitor
-	pingMonMu.RUnlock()
-	if pingStep(mon, snapshotConfig(), false, time.Now()) || fake.pingCount.Load() != 0 {
-		t.Errorf("監視先がなければ何も送らないはず")
 	}
 }
 

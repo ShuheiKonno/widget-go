@@ -572,7 +572,7 @@
             </div>
         </div>
         <div class="section ping-section is-hidden" id="pingSection" data-sec="ping">
-            <div class="section-header"><span class="section-icon">📡</span><span class="section-title">Ping</span><span class="section-value" id="ping-head">-- ms</span><button class="chev" data-sec="ping" title="折りたたむ">▼</button></div>
+            <div class="section-header"><span class="section-icon">📡</span><span class="section-title">疎通</span><span class="section-value" id="ping-head">-- ms</span><button class="chev" data-sec="ping" title="折りたたむ">▼</button></div>
             <div class="sec-body">
                 <div class="ping-list" id="ping-list"></div>
             </div>
@@ -1462,6 +1462,10 @@
             pingLayoutKey = key;
             scheduleHeightAdjust();
         }
+        // 警告として数える status（ping.IsAlertStatus と合わせる）
+        const PING_ALERT_STATUS = { warn: true, error: true, unresolved: true };
+        // RTT の表示。ICMP の応答は ms 単位の整数なので、0 は 1ms 未満
+        function pingRttText(ms){ return ms === 0 ? '<1 ms' : ms + ' ms'; }
         function applyPing(info){
             const sec = document.getElementById('pingSection');
             if (!sec) return;
@@ -1477,40 +1481,46 @@
                     list.innerHTML = '';
                     const empty = document.createElement('div');
                     empty.className = 'ping-empty';
-                    empty.textContent = '監視先が未登録です（⚙ の「Ping 監視」で追加）';
+                    empty.textContent = '監視先が未登録です（⚙ の「疎通」で追加）';
                     list.appendChild(empty);
                     pingRelayout('empty');
                 }
                 return;
             }
-            // 見出しは、警告があるときは件数、ないときは代表 RTT。警告のある値が、別のホストの良い値で隠れないようにする
-            const warnCount = targets.filter(function(t){ return t.isWarnLoss || t.isWarnRtt || t.status === 'error'; }).length;
+            // 見出しは、警告があるときは件数、ないときは代表 RTT（最悪値）。警告かどうかは Go 側の status だけで決める
+            const warnCount = targets.filter(function(t){ return PING_ALERT_STATUS[t.status] === true; }).length;
             if (warnCount > 0) {
                 head.classList.add('danger');
                 head.textContent = '⚠ ' + warnCount + ' 件';
             } else {
                 head.classList.remove('danger');
-                head.textContent = info.summaryRtt >= 0 ? info.summaryRtt + ' ms' : '-- ms';
+                head.textContent = info.summaryRtt >= 0 ? pingRttText(info.summaryRtt) : '-- ms';
             }
             list.innerHTML = '';
             targets.forEach(function(t){
                 const row = document.createElement('div');
                 row.className = 'ping-row';
                 row.title = t.targetIP ? (t.host + ' (' + t.targetIP + ')') : t.host;
+                if (t.resolveFail) row.title += ' — 名前解決に失敗';
 
                 const hostSpan = document.createElement('span');
                 hostSpan.className = 'ping-host';
                 hostSpan.textContent = t.host;
                 row.appendChild(hostSpan);
 
+                // RTT は直近の 1 回の値。失敗したとき（ロス・名前解決の失敗）は Go 側が -1 にする
                 const rttSpan = document.createElement('span');
-                rttSpan.className = t.isWarnRtt ? 'ping-rtt danger' : 'ping-rtt';
-                rttSpan.textContent = t.rttMs >= 0 ? t.rttMs + ' ms' : '--';
+                rttSpan.className = t.isWarnRTT ? 'ping-rtt danger' : 'ping-rtt';
+                rttSpan.textContent = t.rttMs >= 0 ? pingRttText(t.rttMs) : '--';
                 row.appendChild(rttSpan);
 
+                // ロスは「窓内の失敗回数/サンプル数」。立ち上がりでサンプルが少ない間は --。
+                // 名前解決が続けて失敗しているときは、ロスとは別に「解決失敗」と出す
                 const lossSpan = document.createElement('span');
-                lossSpan.className = (t.isWarnLoss || t.status === 'error') ? 'ping-loss danger' : 'ping-loss';
-                lossSpan.textContent = t.lossPercent.toFixed(1) + '%';
+                const unresolved = t.status === 'unresolved';
+                const lossDanger = unresolved || t.isWarnLoss || t.status === 'error';
+                lossSpan.className = lossDanger ? 'ping-loss danger' : 'ping-loss';
+                lossSpan.textContent = unresolved ? '解決失敗' : (t.lossReady ? t.lossCount + '/' + t.sentCount : '--');
                 row.appendChild(lossSpan);
 
                 list.appendChild(row);

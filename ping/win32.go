@@ -36,11 +36,19 @@ func NewSystemPinger() *SystemPinger {
 }
 
 // Ping は host に対して ICMP Echo Request を 1 回送信し、解決された IP と RTT を返す。
+// ctx の期限は、名前解決と Echo の待ち時間の両方にかかる（Echo は、期限までの残りと timeout の短いほうだけ待つ）。
+// 名前解決の失敗は *ResolveError で返す（ロスと区別するため）。
 func (s *SystemPinger) Ping(ctx context.Context, host string, timeout time.Duration) (string, time.Duration, error) {
 	// 名前解決 (IPv4 を優先取得)
 	ipStr, ip4, err := resolveIPv4(ctx, host)
 	if err != nil {
-		return "", 0, fmt.Errorf("resolve error: %w", err)
+		return "", 0, &ResolveError{Host: host, Err: err}
+	}
+
+	// 名前解決で使った残りの時間で、Echo の待ち時間を決める
+	timeoutMs, err := echoTimeout(ctx, timeout, time.Now())
+	if err != nil {
+		return ipStr, 0, err
 	}
 
 	// ICMP ハンドルのオープン
@@ -59,11 +67,6 @@ func (s *SystemPinger) Ping(ctx context.Context, host string, timeout time.Durat
 	sendData := []byte("widget-go-ping-request-data-32b")
 	replySize := uint32(256) // ICMP_ECHO_REPLY (約40バイト) + データ + パディング
 	replyBuffer := make([]byte, replySize)
-
-	timeoutMs := uint32(timeout.Milliseconds())
-	if timeoutMs == 0 {
-		timeoutMs = 1000
-	}
 
 	ret, _, callErr := procIcmpSendEcho.Call(
 		hIcmp,

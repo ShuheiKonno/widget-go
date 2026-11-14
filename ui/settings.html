@@ -144,7 +144,7 @@
         <button class="nav-item" data-panel="ai">AI 使用量</button>
         <button class="nav-item" data-panel="work">勤務時間</button>
         <button class="nav-item" data-panel="pomodoro">ポモドーロ</button>
-        <button class="nav-item" data-panel="ping">Ping 監視</button>
+        <button class="nav-item" data-panel="ping">疎通</button>
         <button class="nav-item" data-panel="system">起動とショートカット</button>
     </nav>
     <main>
@@ -335,9 +335,9 @@
         </section>
 
         <section class="panel" id="panel-ping">
-            <h2>Ping 監視</h2>
+            <h2>疎通</h2>
             <div class="card">
-                <label class="toggle"><span>Ping 監視を表示する<span class="sub-text">「区画」の一覧のチェックと同じ設定です。OFF の間は、Ping の定期送信も完全に停止します。</span></span><input type="checkbox" id="optPingVisible"></label>
+                <label class="toggle"><span>疎通の区画を表示する<span class="sub-text">Ping 監視の ON / OFF です。「区画」の一覧のチェックと同じ設定です。OFF の間は、Ping の定期送信も完全に停止します。</span></span><input type="checkbox" id="optPingVisible"></label>
             </div>
             <div class="card" id="pingCard">
                 <span class="label">監視先ホスト（最大 5 件）</span>
@@ -347,12 +347,12 @@
                     <button class="opt" type="button" id="btnSavePingTargets" style="background: var(--accent); border-color: var(--accent); color: #fff;">保存</button>
                     <span id="pingSaveMsg" style="font-size: 11.5px; color: var(--ok-fg); display: none;">✓ 保存しました</span>
                 </div>
-                <p class="hint">監視先には FQDN（例: google.com）または IP アドレス（例: 8.8.8.8、192.168.1.1）を指定します。パケロス閾値または RTT 閾値を超えた場合に、ウィジェット上で赤文字表示になり、ポップアップ通知が出ます。</p>
+                <p class="hint">監視先には FQDN（例: google.com）または IP アドレス（例: 8.8.8.8、192.168.1.1）を指定します。パケロス閾値または RTT 閾値を超えた場合に、ウィジェット上で赤文字表示になり、ポップアップ通知が出ます。ロスは直近 20 回のうちの失敗回数（例: 2/20）で表示し、2 回以上落ちていて率が閾値以上のときに警告します（20 回分そろっていれば 1 回 = 5%）。名前解決に失敗したホストはロスに数えず、「解決失敗」と表示します。</p>
             </div>
             <div class="card">
                 <span class="label">通知と動作設定</span>
                 <label class="toggle"><span>閾値超過時にポップアップ通知を出す<span class="sub-text">同一ホストの連続通知は 5 分間抑止（クールダウン）します。</span></span><input type="checkbox" id="optPingNotify"></label>
-                <label class="toggle"><span>測定間隔<span class="sub-text">短くすると即時性が上がりますが、通信頻度が増えます。</span></span><span class="nowrap"><input class="num" type="number" min="1" max="60" step="1" id="optPingInterval"> 秒</span></label>
+                <label class="toggle"><span>測定間隔<span class="sub-text">1〜10 秒。ロスは直近 20 回で見るので、2 秒なら約 40 秒、10 秒なら約 200 秒分です。短くすると即時性が上がりますが、通信頻度が増えます。変えると、それまでの測定結果は捨てて測り直します。</span></span><span class="nowrap"><input class="num" type="number" min="1" max="10" step="1" id="optPingInterval"> 秒</span></label>
             </div>
         </section>
 
@@ -390,7 +390,7 @@
             hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro', 'ping'], workTimer: null, pomodoro: null, ping: null };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
-        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', disk: 'Disk', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量', work: '勤務時間', pomodoro: 'ポモドーロ', ping: 'Ping 監視' };
+        const sectionLabels = { cpu: 'CPU', memory: 'メモリ', disk: 'Disk', gpu: 'GPU', npu: 'NPU', network: 'Wi-Fi / Ethernet', ai: 'AI 使用量', work: '勤務時間', pomodoro: 'ポモドーロ', ping: '疎通' };
 
         // こちらで設定を変える操作の最初に呼ぶ。読み込み中の古い結果を捨てるための版番号（reloadAll）。
         let rev = 0;
@@ -641,7 +641,7 @@
             settings.hidden[n] = !visible;
             if (n === 'work') $('optWorkVisible').checked = visible;   // 「勤務時間」タブのチェックと同じ設定
             if (n === 'pomodoro') $('optPomoVisible').checked = visible;   // 「ポモドーロ」タブのチェックと同じ設定
-            if (n === 'ping') $('optPingVisible').checked = visible;   // 「Ping 監視」タブのチェックと同じ設定
+            if (n === 'ping') $('optPingVisible').checked = visible;   // 「疎通」タブのチェックと同じ設定
             apiFetch('/api/setoption?key=hide.' + n + '&value=' + (settings.hidden[n] ? 'true' : 'false'))
                 .then(changed).catch(function(){});
         }
@@ -911,7 +911,12 @@
 
         $('optPingVisible').addEventListener('change', function(){ setSectionVisible('ping', this.checked); renderOrderList(); });
         $('optPingNotify').addEventListener('change', function(){ setPingOption('pingNotify', this.checked ? 'true' : 'false'); });
-        $('optPingInterval').addEventListener('change', function(){ setPingOption('pingInterval', String(Math.round(Number(this.value) || 2))); });
+        $('optPingInterval').addEventListener('change', function(){
+            // max を付けても手入力は通るので、1〜10 秒に丸めて入力欄にも書き戻す
+            const sec = Math.max(1, Math.min(10, Math.round(Number(this.value)) || 2));
+            this.value = sec;
+            setPingOption('pingInterval', String(sec));
+        });
         $('btnSavePingTargets').addEventListener('click', function(){ savePingTargets(); });
         $('btnAddPingTarget').addEventListener('click', function(){
             if (!settings.ping) settings.ping = { targets: [] };
