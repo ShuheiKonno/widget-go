@@ -4,9 +4,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -132,5 +136,32 @@ func TestSetOptionZoom(t *testing.T) {
 	}
 	if s.Zoom != 80 || len(s.ZoomSteps) != len(zoomSteps) {
 		t.Errorf("/api/settings: zoom=%d steps=%v", s.Zoom, s.ZoomSteps)
+	}
+}
+
+// 設定画面の「拡大率」のドロップダウンは、選択肢を HTML に直書きしている。zoomSteps と同じ並びで、
+// 表示が「N%」になっていることを確かめる（片方だけ直して食い違うのを防ぐ）。
+func TestSettingsZoomOptionsMatchZoomSteps(t *testing.T) {
+	if strings.Contains(settingsHTML, `data-group="zoom"`) {
+		t.Error(`settings.html に旧来のボタン群（data-group="zoom"）が残っている`)
+	}
+	block := regexp.MustCompile(`(?s)<select[^>]*id="optZoom"[^>]*>(.*?)</select>`).FindStringSubmatch(settingsHTML)
+	if block == nil {
+		t.Fatal(`settings.html に <select id="optZoom"> が無い`)
+	}
+	opts := regexp.MustCompile(`<option value="([^"]*)">([^<]*)</option>`).FindAllStringSubmatch(block[1], -1)
+	got := make([]int, 0, len(opts))
+	for _, o := range opts {
+		n, err := strconv.Atoi(o[1])
+		if err != nil {
+			t.Fatalf("option の value が数値でない: %q", o[1])
+		}
+		if want := fmt.Sprintf("%d%%", n); o[2] != want {
+			t.Errorf("option %d の表示 = %q, want %q", n, o[2], want)
+		}
+		got = append(got, n)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(zoomSteps) {
+		t.Errorf("optZoom の選択肢 = %v, want zoomSteps %v", got, zoomSteps)
 	}
 }
