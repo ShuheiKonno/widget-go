@@ -4,6 +4,7 @@ package ime
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"syscall"
@@ -13,26 +14,55 @@ import (
 
 // 復旧処理用の Win32 API 定義。
 var (
-	imm32        = syscall.NewLazyDLL("imm32.dll")
-	procImmGetCtx       = imm32.NewProc("ImmGetContext")
-	procImmAssocCtxEx   = imm32.NewProc("ImmAssociateContextEx")
-	procImmReleaseCtx   = imm32.NewProc("ImmReleaseContext")
+	imm32             = syscall.NewLazyDLL("imm32.dll")
+	procImmGetCtx     = imm32.NewProc("ImmGetContext")
+	procImmAssocCtxEx = imm32.NewProc("ImmAssociateContextEx")
+	procImmReleaseCtx = imm32.NewProc("ImmReleaseContext")
 
-	procGetForeground   = imeUser32.NewProc("GetForegroundWindow")
-	procSetForeground   = imeUser32.NewProc("SetForegroundWindow")
-	procSetFocus        = imeUser32.NewProc("SetFocus")
-	procPostMessageW    = imeUser32.NewProc("PostMessageW")
-	procGetLastInputInfo = imeUser32.NewProc("GetLastInputInfo")
+	procGetForeground       = imeUser32.NewProc("GetForegroundWindow")
+	procSetForeground       = imeUser32.NewProc("SetForegroundWindow")
+	procSetFocus            = imeUser32.NewProc("SetFocus")
+	procPostMessageW        = imeUser32.NewProc("PostMessageW")
+	procGetLastInputInfo    = imeUser32.NewProc("GetLastInputInfo")
+	procGetWindowThreadProc = imeUser32.NewProc("GetWindowThreadProcessId")
 
-	kernel32         = syscall.NewLazyDLL("kernel32.dll")
-	procGetTickCount = kernel32.NewProc("GetTickCount")
+	kernel32               = syscall.NewLazyDLL("kernel32.dll")
+	procGetTickCount       = kernel32.NewProc("GetTickCount")
+	procGetCurrentThreadID = kernel32.NewProc("GetCurrentThreadId")
+	procGetCurrentProcID   = kernel32.NewProc("GetCurrentProcessId")
 )
 
 const (
-	iaceDefault = 0x0003
+	// iaceDefault は ImmAssociateContextEx の IACE_DEFAULT（Windows SDK の imm.h で 0x0010）。
+	// 以前は 0x0003 を渡していた。これは IACE_DEFAULT ではなく、IACE_CHILDREN(0x0001) のビットに
+	// imm.h で定義のないビット(0x0002) が立った値。未定義のビットを含む値を API がどう扱うか
+	// （IACE_CHILDREN として子ウィンドウに hIMC=0 を関連付けるのか、FALSE で弾くのか）は未確認。
+	iaceDefault = 0x0010
 	wmActivate  = 0x0006
 	waActive    = 1
 )
+
+// getCurrentThreadID は呼び出し元の OS スレッドの ID を返す。
+func getCurrentThreadID() uint32 {
+	tid, _, _ := procGetCurrentThreadID.Call()
+	return uint32(tid)
+}
+
+// windowThreadProcess は hwnd を作ったスレッドとプロセスの ID を返す（診断ログ用）。
+func windowThreadProcess(hwnd uintptr) (tid, pid uint32) {
+	t, _, _ := procGetWindowThreadProc.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+	return uint32(t), pid
+}
+
+// foregroundLabel は復旧対象の前面ウィンドウを診断ログ用の文字列にする。
+// 自プロセスのウィンドウかどうかで、SetFocus や IMM の関数が効く前提が変わるため、
+// 前面ウィンドウの PID/TID と自プロセスの PID/TID を並べて出す。
+func foregroundLabel(hwnd uintptr) string {
+	tid, pid := windowThreadProcess(hwnd)
+	selfPID, _, _ := procGetCurrentProcID.Call()
+	return fmt.Sprintf("hwnd=0x%X class=%q pid=%d tid=%d (自プロセス pid=%d tid=%d)",
+		hwnd, getClassName(hwnd), pid, tid, uint32(selfPID), getCurrentThreadID())
+}
 
 // LastInputInfoProvider は GetLastInputInfo の薄いラッパーをモック化するための
 // インターフェース。仕様書 L248 の「interface で注入できる構造」要件を満たす。
@@ -165,16 +195,33 @@ func (r *Recoverer) handle(ev DetectEvent) {
 	r.mu.Unlock()
 }
 
-// step1ResetIMEContext は ImmAssociateContextEx で IME コンテキストを既定にリセットする。
+// step1ResetIMEContext は ImmAssociateContextEx(IACE_DEFAULT) で、前面ウィンドウの
+// IME コンテキストを既定に戻す。
+//
+// 前面ウィンドウは通常、別のプロセスのもの。IMM の関数が他のプロセスのウィンドウに効くかは
+// Microsoft のドキュメントに明記がなく（入力コンテキストはスレッドごとの資源とだけある）、
+// 実機で未検証。効いているかを確かめられるよう、各 API の戻り値をログに出す。
+//
+// ImmGetContext の戻り値（himc）は、IACE_DEFAULT では hIMC が無視されるため、リセット自体には
+// 使わない。他プロセスのウィンドウから入力コンテキストを取れるか（0 が返るか）の診断として残す。
+// 実機検証の結果、不要とわかれば ImmGetContext / ImmReleaseContext ごと削除してよい。
 func (r *Recoverer) step1ResetIMEContext() {
 	hwnd, _, _ := procGetForeground.Call()
 	if hwnd == 0 {
+		log.Printf("[%s]     GetForegroundWindow: 前面ウィンドウなし", time.Now().Format("15:04:05"))
 		return
 	}
+	log.Printf("[%s]     対象: %s", time.Now().Format("15:04:05"), foregroundLabel(hwnd))
+
 	himc, _, _ := procImmGetCtx.Call(hwnd)
-	procImmAssocCtxEx.Call(hwnd, 0, uintptr(iaceDefault))
+	log.Printf("[%s]     ImmGetContext → himc=0x%X", time.Now().Format("15:04:05"), himc)
+
+	ret, _, err := procImmAssocCtxEx.Call(hwnd, 0, uintptr(iaceDefault))
+	log.Printf("[%s]     ImmAssociateContextEx(IACE_DEFAULT) → %s", time.Now().Format("15:04:05"), boolResult(ret, err))
+
 	if himc != 0 {
-		procImmReleaseCtx.Call(hwnd, himc)
+		ret, _, err := procImmReleaseCtx.Call(hwnd, himc)
+		log.Printf("[%s]     ImmReleaseContext → %s", time.Now().Format("15:04:05"), boolResult(ret, err))
 	}
 }
 
@@ -182,15 +229,43 @@ func (r *Recoverer) step1ResetIMEContext() {
 // でフォーカスを再付与する。SetForegroundWindow の戻り値（BOOL）を返す。
 //
 // 仕様書 L162 のとおり keybd_event は使わない（ユーザーの画面操作を奪わないため）。
+//
+// 実機で効いているかは未検証。Microsoft のドキュメントでは、SetFocus は呼び出し元スレッドの
+// メッセージキューに属するウィンドウにしか効かない（他のスレッドのウィンドウには NULL を返す）。
+// また、対象はもともと前面にあるウィンドウなので、SetForegroundWindow で前面が変わることはない。
+// 効いているかを確かめられるよう、各 API の戻り値をログに出す。
 func (r *Recoverer) step2RefocusForeground() bool {
 	hwnd, _, _ := procGetForeground.Call()
 	if hwnd == 0 {
+		log.Printf("[%s]     GetForegroundWindow: 前面ウィンドウなし", time.Now().Format("15:04:05"))
 		return false
 	}
+	log.Printf("[%s]     対象: %s", time.Now().Format("15:04:05"), foregroundLabel(hwnd))
+
 	ret, _, _ := procSetForeground.Call(hwnd)
-	procSetFocus.Call(hwnd)
-	procPostMessageW.Call(hwnd, uintptr(wmActivate), uintptr(waActive), 0)
+	// SetForegroundWindow は失敗しても GetLastError を設定しないため、戻り値だけを出す。
+	log.Printf("[%s]     SetForegroundWindow → %d", time.Now().Format("15:04:05"), ret)
+
+	prev, _, err := procSetFocus.Call(hwnd)
+	if prev == 0 {
+		// 他のスレッドのウィンドウ（キューが別）を渡すと NULL が返る。
+		log.Printf("[%s]     SetFocus → NULL (%v)", time.Now().Format("15:04:05"), err)
+	} else {
+		log.Printf("[%s]     SetFocus → 直前のフォーカス=0x%X", time.Now().Format("15:04:05"), prev)
+	}
+
+	pm, _, err := procPostMessageW.Call(hwnd, uintptr(wmActivate), uintptr(waActive), 0)
+	log.Printf("[%s]     PostMessageW(WM_ACTIVATE) → %s", time.Now().Format("15:04:05"), boolResult(pm, err))
 	return ret != 0
+}
+
+// boolResult は BOOL を返す Win32 API の結果を診断ログ用の文字列にする。
+// GetLastError の値は、失敗したとき（0 のとき）だけ意味があるので、そのときだけ添える。
+func boolResult(ret uintptr, err error) string {
+	if ret != 0 {
+		return fmt.Sprintf("%d (成功)", ret)
+	}
+	return fmt.Sprintf("0 (失敗: %v)", err)
 }
 
 // shouldSkipByCooldown は前回復旧から cooldown 以内かを純粋関数として判定する（テスト用）。

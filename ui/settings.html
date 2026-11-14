@@ -79,6 +79,8 @@
         .skin-badge { display: inline-block; margin-left: 6px; padding: 1px 5px; border: 1px solid var(--input-border); border-radius: 4px; font-size: 10px; font-weight: normal; color: var(--muted-color); }
         .skin-action { margin-top: 5px; width: 100%; }
         .skin-tools { margin-top: 12px; }
+        .log-tools { margin-top: 10px; }
+        #imeLogStatus:empty { display: none; }
         #skinCard button:disabled { opacity: .5; cursor: wait; }
         #skinCard button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         #skinConfirm { flex-wrap: wrap; }
@@ -374,6 +376,15 @@
                 <p class="hint">チェックを入れるとショートカット（system-widget.lnk）を保存し、外すと削除します。リンク先が今動いているアプリと違うときは警告を出します（自動では書き換えません）。チェックを入れ直すと、リンク先が今のアプリに更新されます。</p>
                 <div class="note err" id="scError" hidden></div>
             </div>
+            <div class="card">
+                <span class="label">IME の自動復旧</span>
+                <label class="toggle"><span>IME の変換ウィンドウが画面左上に張り付いたら自動で直す</span><input type="checkbox" id="optImeWatch"></label>
+                <p class="hint">MS-IME の変換ウィンドウが画面の左上に張り付く不具合を見張り、見つけたら IME の状態を戻して直します（既定は ON）。切り替えるとすぐに監視を開始・停止します。復旧の記録は app.log に残ります。</p>
+                <div class="opts log-tools">
+                    <button class="opt" type="button" id="imeOpenLog">app.log を開く</button>
+                </div>
+                <p class="hint" id="imeLogStatus" role="status" aria-live="polite"></p>
+            </div>
         </section>
     </main>
 
@@ -386,7 +397,7 @@
         }
         const $ = function(id){ return document.getElementById(id); };
 
-        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number', zoom: 100,
+        const settings = { theme: 'system', skin: 'default', transparent: false, powerMode: false, imeWatch: true, coreBase: 0, trayDisplay: 'icon', diskIoView: 'number', zoom: 100,
             hidden: {}, order: ['cpu', 'memory', 'disk', 'gpu', 'npu', 'network', 'ai', 'work', 'pomodoro', 'ping'], workTimer: null, pomodoro: null, ping: null };
         const ai = { settings: null, usage: null };
         let shortcuts = null;
@@ -423,6 +434,7 @@
             $('optZoom').value = String(settings.zoom);
             $('optTransparent').checked = !!settings.transparent;
             $('optPowerMode').checked = !!settings.powerMode;
+            $('optImeWatch').checked = !!settings.imeWatch;
             renderOrderList();
             renderWork();
             renderPomo();
@@ -688,6 +700,27 @@
             touch();
             settings.powerMode = this.checked;
             apiFetch('/api/setoption?key=powerMode&value=' + (settings.powerMode ? 'true' : 'false')).then(changed).catch(function(){});
+        });
+        $('optImeWatch').addEventListener('change', function(){
+            touch();
+            settings.imeWatch = this.checked;
+            apiFetch('/api/setoption?key=imeWatch&value=' + (settings.imeWatch ? 'true' : 'false')).then(changed).catch(function(){});
+        });
+        // app.log を既定のアプリで開く（開くファイルはサーバー側で決まっている）
+        $('imeOpenLog').addEventListener('click', async function(){
+            const btn = this, status = $('imeLogStatus');
+            btn.disabled = true;
+            status.textContent = ''; status.style.color = '';
+            try {
+                const r = await apiFetch('/api/applog/open', { method: 'POST' });
+                if (!r.ok) throw new Error((await r.text()).trim() || 'app.log を開けません');
+                status.textContent = 'app.log を開きました';
+            } catch (e) {
+                status.textContent = e.message || 'app.log を開けません';
+                status.style.color = 'var(--danger-fg)';
+            } finally {
+                btn.disabled = false;
+            }
         });
 
         // ---------- 勤務時間タイマー ----------
@@ -1099,6 +1132,7 @@
             settings.skin = s.skin || 'default';
             if (typeof s.transparent === 'boolean') settings.transparent = s.transparent;
             if (typeof s.powerMode === 'boolean') settings.powerMode = s.powerMode;
+            if (typeof s.imeWatch === 'boolean') settings.imeWatch = s.imeWatch;
             if (typeof s.coreBase === 'number') settings.coreBase = s.coreBase;
             if (s.trayDisplay) settings.trayDisplay = s.trayDisplay;
             if (s.diskIoView) settings.diskIoView = s.diskIoView;
