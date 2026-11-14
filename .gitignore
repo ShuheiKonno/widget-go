@@ -20,3 +20,25 @@ _wifitest*.go
 # (~ 付きは実行中プロセスがロック中に go build が生成する一時ファイル)
 /system-widget.exe
 /system-widget.exe~
+
+# Local credentials, signing keys and runtime data
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pfx
+*.p12
+*.key
+id_rsa
+id_ed25519
+/config.json
+/config.json.broken-*
+/WebView2/
+/AuthWebView2/
+/CodexAuthWebView2/
+/*.migrated
+/app.log*
+/app.crash.log*
+/notify.log*
+*.dmp
+__pycache__/

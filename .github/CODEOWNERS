@@ -1,0 +1,14 @@
+# Existing maintainers. Required review is enforced by the repository rulesets.
+* @ShuheiKonno @nhonda
+
+# The owner reviews changes to publishing, dependency selection and signing policy.
+/.github/ @ShuheiKonno
+/go.mod @ShuheiKonno
+/go.sum @ShuheiKonno
+/winres/ @ShuheiKonno
+/third_party/ @ShuheiKonno
+/LICENSE @ShuheiKonno
+/THIRD_PARTY_NOTICES.md @ShuheiKonno
+/SECURITY.md @ShuheiKonno
+/PRIVACY.md @ShuheiKonno
+/docs/code-signing-policy.md @ShuheiKonno

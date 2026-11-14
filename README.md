@@ -2,6 +2,12 @@
 
 Windows 向けのデスクトップ常駐型システムモニターウィジェットです。CPU 使用率・メモリ使用量・Wi-Fi / Ethernet 接続情報・ネットワークトラフィックをリアルタイムで表示します。
 
+[プライバシーとシステムへの変更](PRIVACY.md) · [Code signing policy](docs/code-signing-policy.md) · [第三者ライセンス表示](THIRD_PARTY_NOTICES.md)
+
+脆弱性・秘密情報の露出は [SECURITY.md](SECURITY.md) の非公開報告手順を参照してください。
+
+コード署名はSignPath Foundationへの申請準備中です。採用・証明書提供・署名済み配布の開始を示すものではありません。
+
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)
 
@@ -245,12 +251,12 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s`、
 
 ## アンインストール
 
-1. **アプリを終了** — トレイアイコンを右クリック → 「終了」を選択 (トレイアイコンは起動中つねに表示されている)
+1. **変更した状態を戻してアプリを終了** — 集中モードを解除し、スタートメニュー / スタートアップ登録を行った場合は設定画面でチェックを外す。電源モードを変更した場合は必要に応じて Windows 設定で戻す。トレイアイコンを右クリック → 「終了」を選択 (トレイアイコンは起動中つねに表示されている)
 2. **実行ファイルを削除** — 任意の場所に置いた `system-widget.exe` を削除
 3. **設定・WebView2 データを削除** — エクスプローラのアドレスバーに `%LOCALAPPDATA%\widget-go` を入れて開き、フォルダごと削除 (AI 使用量を使っていた場合は、Claude / Codex のログイン情報 `AuthWebView2` と `CodexAuthWebView2` も一緒に消えます)
 4. **スタートメニュー / スタートアップへの登録を解除** — 設定ウィンドウの「起動とショートカット」でチェックを外す (`system-widget.lnk` が削除される)。アプリを削除した後は、`Win + R` → `shell:startup` と `shell:programs` で開くフォルダの `system-widget.lnk` (または、手で置いたショートカット) を削除
 
-> 多重起動防止に使用しているミューテックス (`Global\widget-go-single-instance-mutex`) はプロセス終了時に自動解放されます。レジストリは使用しません。
+> 多重起動防止に使用しているミューテックス (`Global\widget-go-single-instance-mutex`) はプロセス終了時に自動解放されます。集中モードはアプリ別通知のレジストリ設定を一時変更します。異常終了後は次回起動で復元を試みるため、復元前に設定ファイルを削除しないでください。通信・保存データ・削除方法の詳細は [PRIVACY.md](PRIVACY.md) を参照してください。
 
 ## 勤務時間タイマー
 
@@ -505,4 +511,4 @@ GPU/NPU の診断には `go run -buildvcs=false ./cmd/gpuprobe -duration 10s`、
 
 ## ライセンス
 
-MIT
+本プロジェクトのコードは [MIT License](LICENSE) です。第三者コード・同梱SDK等はそれぞれのライセンスに従います。[第三者ライセンス表示](THIRD_PARTY_NOTICES.md) と [依存物確認記録](docs/dependency-license-audit.md) を参照してください。

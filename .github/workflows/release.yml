@@ -15,6 +15,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify release source
+        run: python .github/scripts/verify_release_source.py --ref "$env:GITHUB_REF" --commit "$env:GITHUB_SHA"
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -28,15 +34,15 @@ jobs:
         run: go test ./...
 
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   build:
     needs: verify
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -54,12 +60,40 @@ jobs:
       - name: Create checksum
         run: sha256sum system-widget.exe > system-widget.exe.sha256
 
+      - name: Upload release files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-files
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            system-widget.exe
+            system-widget.exe.sha256
+            LICENSE
+            THIRD_PARTY_NOTICES.md
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-files
+          path: dist
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: |
-            system-widget.exe
-            system-widget.exe.sha256
+            dist/system-widget.exe
+            dist/system-widget.exe.sha256
+            dist/LICENSE
+            dist/THIRD_PARTY_NOTICES.md
           generate_release_notes: true
           draft: false
           prerelease: false
