@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"widget-go/aiusage"
+	"widget-go/ime"
 	"widget-go/ping"
 )
 
@@ -301,6 +302,49 @@ type IMEConfig struct {
 	CooldownSec int   `json:"cooldownSec"`
 	ThresholdPx int32 `json:"thresholdPx"`
 	DryRun      bool  `json:"dryRun"`
+}
+
+// watcherConfig は ime パッケージに渡す設定に変換する。
+func (c IMEConfig) watcherConfig() ime.Config {
+	return ime.Config{
+		Enabled:     c.Enabled,
+		CooldownSec: c.CooldownSec,
+		ThresholdPx: c.ThresholdPx,
+		DryRun:      c.DryRun,
+	}
+}
+
+// IME 自動復旧の監視の起動・停止。テストで本物の WinEvent Hook を張らないよう、差し替えられるようにしておく。
+// imeWatchMu は「設定の保存」と「起動・停止」をひとまとめにする（ON/OFF の要求が競合すると、
+// 保存した設定と実際の状態がずれるため）。
+var (
+	imeWatchMu      sync.Mutex
+	imeStartWatcher = func(c IMEConfig) error { return ime.StartWatcher(c.watcherConfig()) }
+	imeStopWatcher  = ime.StopWatcher
+)
+
+// applyIMEWatchLocked は設定に合わせて IME 監視を起動・停止する。imeWatchMu を持って呼ぶ。
+func applyIMEWatchLocked(c IMEConfig) error {
+	if c.Enabled {
+		return imeStartWatcher(c)
+	}
+	return imeStopWatcher()
+}
+
+// applyIMEWatch は設定に合わせて IME 監視を起動・停止する（起動時に main.go から呼ぶ）。
+func applyIMEWatch(c IMEConfig) error {
+	imeWatchMu.Lock()
+	defer imeWatchMu.Unlock()
+	return applyIMEWatchLocked(c)
+}
+
+// setIMEWatch は IME 自動復旧の ON/OFF を保存し、すぐに監視を起動・停止する（設定画面の切替）。
+// 起動・停止に失敗しても設定は保存したまま（次回の起動時に、保存した設定で起動を試みる）。
+func setIMEWatch(enable bool) error {
+	imeWatchMu.Lock()
+	defer imeWatchMu.Unlock()
+	mutateConfig(func(c *Config) { c.IME.Enabled = enable })
+	return applyIMEWatchLocked(snapshotConfig().IME)
 }
 
 var (

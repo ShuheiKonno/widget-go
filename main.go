@@ -13,7 +13,6 @@ import (
 	"unsafe"
 
 	"widget-go/aiusage"
-	"widget-go/ime"
 	"widget-go/ping"
 	"widget-go/sysinfo"
 
@@ -1209,14 +1208,11 @@ func main() {
 
 	// IME Composition Window の左上吸い込み現象を WinEvent Hook で監視・自動復旧する。
 	// 内部で goroutine + runtime.LockOSThread + GetMessageW ループを起動するので、
-	// ここではブロッキングしない。
+	// ここではブロッキングしない（フックの登録を待つだけ）。設定画面の切替と同じ関数を通す。
 	if c.IME.Enabled {
-		ime.StartWatcher(ime.Config{
-			Enabled:     c.IME.Enabled,
-			CooldownSec: c.IME.CooldownSec,
-			ThresholdPx: c.IME.ThresholdPx,
-			DryRun:      c.IME.DryRun,
-		})
+		if err := applyIMEWatch(c.IME); err != nil {
+			appLogf("IME 自動復旧の監視を開始できませんでした: %v", err)
+		}
 	}
 
 	// WebView2 は最初のページを描画するまで、既定の背景（白）を画面に出す。起動直後に白い四角が

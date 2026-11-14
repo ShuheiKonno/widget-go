@@ -133,6 +133,8 @@ func newServerMux(token string) *http.ServeMux {
 	// AI 使用量（Claude / Codex）。securityMiddleware の内側に置かれる。
 	aiusage.RegisterHandlers(mux)
 	skins.register(mux)
+	// app.log を既定のアプリで開く（設定画面の「IME の自動復旧」カード）。開く関数は呼ぶたびに読む（テストで差し替えるため）。
+	mux.HandleFunc("/api/applog/open", appLogOpenHandler(appLogPathForDisplay, func(p string) error { return openAppLogFile(p) }))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -540,6 +542,17 @@ func newServerMux(token string) *http.ServeMux {
 			}
 			refreshPowerMode()
 			kickTray()
+		case "imeWatch":
+			// IME 自動復旧の ON/OFF。保存して、すぐに監視を起動・停止する。
+			if val != "true" && val != "false" {
+				http.Error(w, "invalid imeWatch", http.StatusBadRequest)
+				return
+			}
+			if err := setIMEWatch(val == "true"); err != nil {
+				// 設定は保存済み。起動・停止だけ失敗した（次回の起動時に、保存した設定で起動を試みる）。
+				http.Error(w, "IME 自動復旧の監視の起動・停止に失敗しました: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
 		case "workTarget", "workLunch", "workRed", "workFloor", "workLag":
 			// 勤務時間タイマーの設定（worktimer.go の setWorkTimerOption に検証がある）
 			if err := setWorkTimerOption(key, val); err != nil {
@@ -643,6 +656,7 @@ func newServerMux(token string) *http.ServeMux {
 			"zoomSteps":   zoomSteps,
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
+			"imeWatch":    c.IME.Enabled,
 			"collapsed":   c.Collapsed,
 			"flipped":     c.Flipped,
 			"hidden":      c.Hidden,
