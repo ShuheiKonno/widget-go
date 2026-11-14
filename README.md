@@ -56,7 +56,7 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 - GPU の表示には WDDM 2.0 以上のドライバ、NPU の表示には MCDM 対応ドライバが必要 (NPU は DXCore の NPU 属性で判定)
 - [WebView2 Runtime](https://developer.microsoft.com/ja-jp/microsoft-edge/webview2/) (Windows 11 ではプリインストール済み)
 - AI 使用量を使う場合: claude.ai（Claude）と chatgpt.com（Codex）のアカウント。アプリ内でログインする (Claude Code / Codex の CLI は不要)
-- Go 1.26.10 以降 (ビルドする場合)
+- Go 1.26.11 以降 (ビルドする場合)
 
 ## ビルド
 
