@@ -26,9 +26,10 @@ const (
 	Startup   Kind = "startup"   // スタートアップ（ログイン時に自動起動）
 )
 
-// FileName はショートカットのファイル名（実行ファイル名 system-widget.exe に合わせた固定名）。
+// FileName はショートカットのファイル名（通常版は system-widget.exe に合わせた名前）。
 // スタートメニューとスタートアップのどちらも、同じ名前で 1 つだけ作る。
-const FileName = "system-widget.lnk"
+// MSIX 動作確認用ビルドでは -ldflags -X で名前を分け、通常版のリンクを操作しない。
+var FileName = "system-widget.lnk"
 
 // Description はショートカットの説明（スタートメニューのツールチップなど）。
 const Description = "システムモニター"

@@ -102,3 +102,24 @@ func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
 }
+
+func TestStoreShortcutsLeavePortableLinksUntouched(t *testing.T) {
+	s, _ := testShortcutService(t)
+	s.packaged = true
+	s.locations = func() (shortcut.Locations, error) {
+		t.Fatal("Store build must not read or mutate portable shortcut locations")
+		return shortcut.Locations{}, nil
+	}
+	rec, res := doReq(s.handleStatus, http.MethodGet, "/api/shortcuts")
+	if rec.Code != http.StatusOK || !res.Packaged || !res.StartMenu.Exists {
+		t.Fatalf("Store-managed registration was not reported: code=%d %+v", rec.Code, res)
+	}
+	for _, kind := range []string{"startup", "startmenu"} {
+		for _, enable := range []string{"true", "false"} {
+			rec, _ := doReq(s.handleSet, http.MethodPost, "/api/shortcuts/set?kind="+kind+"&enable="+enable)
+			if rec.Code != http.StatusConflict {
+				t.Errorf("Store shortcut mutation accepted: %s=%s code=%d", kind, enable, rec.Code)
+			}
+		}
+	}
+}

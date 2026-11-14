@@ -13,14 +13,16 @@ import (
 type shortcutService struct {
 	locations func() (shortcut.Locations, error)
 	exe       func() (string, error)
+	packaged  bool
 }
 
 func defaultShortcutService() *shortcutService {
-	return &shortcutService{locations: shortcut.DefaultLocations, exe: os.Executable}
+	return &shortcutService{locations: shortcut.DefaultLocations, exe: os.Executable, packaged: distributionChannel == "store"}
 }
 
 // shortcutsResponse は /api/shortcuts と /api/shortcuts/set の応答。
 type shortcutsResponse struct {
+	Packaged  bool           `json:"packaged,omitempty"`
 	Exe       string         `json:"exe"`
 	StartMenu shortcut.State `json:"startMenu"`
 	Startup   shortcut.State `json:"startup"`
@@ -29,6 +31,13 @@ type shortcutsResponse struct {
 
 func (s *shortcutService) status() (shortcutsResponse, error) {
 	var res shortcutsResponse
+	if s.packaged {
+		// MSIX のスタートメニューと StartupTask は Windows が管理する。
+		// バージョン付き WindowsApps パスへの .lnk は作らず、通常版の登録も読まない。
+		res.Packaged = true
+		res.StartMenu.Exists = true
+		return res, nil
+	}
 	l, err := s.locations()
 	if err != nil {
 		return res, err
@@ -82,6 +91,10 @@ func (s *shortcutService) handleSet(w http.ResponseWriter, r *http.Request) {
 		enable = false
 	default:
 		http.Error(w, "invalid enable", http.StatusBadRequest)
+		return
+	}
+	if s.packaged {
+		http.Error(w, "Store版の起動設定はWindowsの設定で変更してください", http.StatusConflict)
 		return
 	}
 	l, err := s.locations()

@@ -1128,7 +1128,7 @@ func setupMainWindow(title string) bool {
 // 多重起動を防ぐ。既に起動していれば既存ウィンドウを前面化して false を返す
 func ensureSingleInstance(windowTitle string) bool {
 	const errorAlreadyExists = 183
-	mutexName, _ := syscall.UTF16PtrFromString("Global\\widget-go-single-instance-mutex")
+	mutexName, _ := syscall.UTF16PtrFromString(singleInstanceMutexName)
 	_, _, err := procCreateMutexW.Call(0, 0, uintptr(unsafe.Pointer(mutexName)))
 	if errno, ok := err.(syscall.Errno); ok && errno == errorAlreadyExists {
 		titlePtr, _ := syscall.UTF16PtrFromString(windowTitle)
@@ -1145,7 +1145,7 @@ func main() {
 	runtime.LockOSThread()
 	defer reportPanic()
 
-	windowTitle := "システムモニター"
+	windowTitle := applicationWindowTitle
 	if !ensureSingleInstance(windowTitle) {
 		return
 	}

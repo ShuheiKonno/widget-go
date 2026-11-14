@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap10 desktop rescap">
+  <!-- Build-StoreMsix.ps1 sets these from the actual Partner Center identity. -->
+  <Identity Name="REPLACE.WITH.STORE.IDENTITY" Publisher="CN=REPLACE-WITH-STORE-PUBLISHER"
+    Version="2.10.0.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>REPLACE_WITH_RESERVED_NAME</DisplayName>
+    <PublisherDisplayName>REPLACE_WITH_PUBLISHER_DISPLAY_NAME</PublisherDisplayName>
+    <Description>Windows desktop system monitor and productivity widget.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="ja-jp" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Applications>
+    <Application Id="Widget" Executable="system-widget.exe"
+      uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="mediumIL">
+      <uap:VisualElements DisplayName="REPLACE_WITH_RESERVED_NAME"
+        Description="Windows desktop system monitor and productivity widget."
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="system-widget.exe"
+          EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="WidgetStartup" Enabled="false" DisplayName="REPLACE_WITH_RESERVED_NAME" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

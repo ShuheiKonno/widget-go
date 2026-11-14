@@ -42,6 +42,8 @@ SignPathは配布物に署名する開発・配布工程のために導入を準
 
 通常は`%LOCALAPPDATA%\widget-go`に保存します。`LOCALAPPDATA`を取得できない環境では`%APPDATA%\widget-go`を使います。
 
+Microsoft Store向けビルドは通常版と分けて`%LOCALAPPDATA%\widget-go-store`を使います。MSIXのファイル仮想化により、実際には`%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalCache\Local\widget-go-store`などのパッケージ専用の場所に保存される場合があります。動作確認専用ビルドは`widget-go-msix-test\data`を使い、通常版やStore版の設定を読み込みません。
+
 | ファイル・フォルダー | 内容 |
 | --- | --- |
 | `config.json` | 表示・通知・AI設定、勤務時間とポモドーロの状態、Ping対象ホスト、集中モードで変更したウィンドウ／通知設定の復元情報など |
@@ -55,6 +57,8 @@ SignPathは配布物に署名する開発・配布工程のために導入を準
 | `notify.log`、`notify.log.1` | AI取得・通知の診断情報。使用率、リセット日時、追加使用率・追加使用額、認証状態、エラー等を含む場合がある |
 
 利用者がスタートメニュー／スタートアップ登録を有効にした場合は、それぞれのWindowsフォルダーに`system-widget.lnk`も保存します。
+
+Store版のスタートメニュー登録はWindowsが行います。Store版は上記の`.lnk`を作成・削除せず、自動起動は既定OFFのパッケージStartupTaskとして宣言します。自動起動の有効化・無効化はWindowsのスタートアップ設定で行います。
 
 ログは自動送信しません。`app.log`は512KiB、`notify.log`は1MiBを超えた場合に各実装のタイミングで1世代退避し、`app.crash.log`は起動時に256KiBを超えていれば削除して作り直します。保存期間を日数で保証する仕組みはありません。ログを問い合わせに添付するときは、内容を確認し、アカウントやパス等の情報を必要に応じて取り除いてください。
 
