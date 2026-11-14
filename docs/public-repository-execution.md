@@ -1,6 +1,6 @@
 # 公開前監査・設定の実施記録
 
-日付: 2026-11-14。利用者の指示に基づき、公開化と改ざん・不正な署名・秘密情報流出への対策を実施する。
+日付: 2026-11-14。利用者の指示に基づき、[ShuheiKonno/widget-go](https://github.com/ShuheiKonno/widget-go)をpublicへ変更し、改ざん・不正な署名・秘密情報流出への対策を適用した。
 
 ## 公開前監査
 
@@ -33,18 +33,33 @@ Gitleaks v8.30.1の公式Windows/x64配布物を、GitHubの公式リリースAP
 
 これはSignPath署名の実装ではない。Foundationの採用・設定・証明書提供後、署名・タイムスタンプ・署名検証の工程を追加する。
 
-## GitHub側の設定
+## GitHub側の設定結果
 
-この節は適用・再取得の完了後に結果を追記する。現段階では設定準備中。
+公開切替中はActionsを一時停止し、設定後に再開した。切替直後の一時的なリポジトリロック解除を待って適用し、APIで読み直して確認した。
 
-予定する設定:
+| 対象 | 適用・確認結果 |
+| --- | --- |
+| 公開範囲 | `visibility: public`、`private: false`。未認証HTTPでもリポジトリ情報・LICENSE・SECURITY.mdを取得できることを確認 |
+| mainのCI・履歴保護 | `main-integrity`（Ruleset 27250607）。test・lint・vuln・secretsをGitHub Actions発行元（15368）に限定して必須化。最新mainとの整合を要求し、force push・削除禁止。bypassは空 |
+| mainのレビュー | `main-reviewed-changes`（27250608）。PR・承認1件・Code Owner承認・最新pushの別担当承認・会話解決を要求。所有者ShuheiKonnoだけがPR経由でレビューを省略できる。CIは別ルールなので省略できない |
+| リリースタグ | `release-tag-ownership`（27250609）。v*タグの作成・更新・削除をShuheiKonnoだけに限定 |
+| Actions | 再開済み。`allowed_actions: selected`、SHA固定必須。許可した7種類のActionパターンに限定。GitHub所有Action全体・verified Action全体の一括許可はいずれもfalse |
+| 外部PR | `all_external_contributors`。外部貢献者のfork PRワークフローは実行承認必須 |
+| トークン権限 | 既定read、ActionsによるPRレビュー承認はfalse |
+| 公開Environment | releaseはShuheiKonnoの手動承認を要求し、対象をv*タグに限定。本人が自分の公開を承認できる設定。これは独立した二人による承認ではない |
+| 秘密情報検知 | secret scanningとpush protectionがenabled。設定後のopen alert取得時は0件 |
+| 脆弱性報告 | private vulnerability reportingがenabled |
+| CODEOWNERS | GitHubのCODEOWNERS検証APIのerrorsは空 |
 
-- mainの必須CI、force push・削除禁止は例外なし。
-- PRレビューを必須とし、管理者の例外はPR経由のレビュー省略に限定。上記CIを省略する例外は付けない。
-- v*タグの作成・更新・削除は管理者に限定。
-- Actionsは許可Action限定・コミットSHA固定必須。外部貢献者のfork PRは実行承認必須。
-- GITHUB_TOKENの既定readと、ActionsによるPRレビュー承認の無効を維持。
-- release Environmentは管理者の手動承認を要求し、v*タグに限定。単独管理者が自分の公開を承認できる設定とする。
-- secret scanning・push protection・非公開脆弱性報告を有効化して再確認。
+許可Actionはactions/checkout、actions/setup-go、actions/upload-artifact、actions/download-artifact、golangci/golangci-lint-action、softprops/action-gh-release、将来のSignPath連携用signpath/github-action-submit-signing-request。利用時にはすべてコミットSHA固定が必要。
 
-GitHubのMFA設定や個人の回復コードはこの作業で変更・確認できるとは限らず、アカウント本人による確認事項として残す。既存共同作業者の権限は無断で削除しない。
+既存共同作業者の権限、Git履歴、タグ、過去Release、過去ログは維持した。GitHub側で変更前のワークフロー実行まで新しいYAMLへ書き換わるわけではない。将来のSignPathトークンは保護したEnvironment内で管理し、旧ワークフローやPRテストへ渡さない。
+
+## 検証と残る事項
+
+- Gitleaks v8.30.1による公開前の最終履歴・作業ツリー検査も検出0件。
+- リリース元検証のローカルテスト6件が成功。actionlint v1.7.12によるワークフロー検査も成功。
+- ブートストラップコミット`257845334d1058fe22fc0bf1894ce47a3033ee5f`のGitHub CIでtest・lint・vuln・secretsがすべて成功してから公開した。testにはvet・通常テスト・raceテスト・ビルドが含まれる。
+- 非公開の署名サービス利用ではなく、publicなOSSとして申請できる準備文書を公開した。Foundationへの申請・採用、SignPathアカウント設定、署名・タイムスタンプ工程の実装、本番EXEの署名はまだ行っていない。
+- release Environmentを使う新しい製品リリースはまだ実行していない。実際の公開承認と、LICENSE／第三者表示の添付は次回リリース時にも確認する。
+- GitHub・SignPathのMFA設定や個人の回復コードは本人による確認事項。APIがnullを返したため、MFAを確認済みとは扱わない。
