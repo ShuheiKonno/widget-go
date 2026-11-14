@@ -14,7 +14,7 @@
 
 正規配布先は[GitHub Releases](https://github.com/ShuheiKonno/widget-go/releases)です。[Code signing policy](docs/code-signing-policy.md)で署名の導入状況を確認してください。SHA-256ファイルだけでは発行元の保証にはなりません。
 
-現時点ではSignPath Foundationの申請準備中であり、コード署名の提供開始を示すものではありません。GitHub Environmentの公開承認と、将来のSignPath署名承認は別の手順です。
+現時点ではSignPath Foundationへ申請済みで審査・案内待ちです。コード署名の提供開始を示すものではありません。GitHub Environmentの公開承認と、将来のSignPath署名承認は別の手順です。
 
 ## 開発・リリースでの取扱い
 
