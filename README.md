@@ -6,7 +6,9 @@ Windows 向けのデスクトップ常駐型システムモニターウィジェ
 
 脆弱性・秘密情報の露出は [SECURITY.md](SECURITY.md) の非公開報告手順を参照してください。
 
-コード署名はSignPath Foundationへ申請済みで、審査・案内待ちです。採用・証明書提供・署名済み配布の開始を示すものではありません。[申請状況](docs/signpath-application.md)を参照してください。
+Windows x64向けの **System Widget - システムモニター**をMicrosoft Storeで無料公開しています。Storeからインストールしたアプリは、Microsoft Storeで更新できます。[Microsoft Storeで入手](https://apps.microsoft.com/detail/9PH5180TT115)
+
+GitHub ReleasesでもEXEを配布しています。Store版のMSIXは、認定後にMicrosoftが署名します。開発者向けの手順は[Microsoft Store公開・更新手順](docs/store-publishing.md)を参照してください。
 
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-only-0078D6?logo=windows&logoColor=white)
