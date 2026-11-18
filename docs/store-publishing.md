@@ -1,8 +1,33 @@
-# Microsoft Store 公開・申請記録
+# Microsoft Store 公開・更新手順
 
-2026-11-14、利用者の指示でStore公開を開始。公開名は **System Widget - システムモニター**、価格は無料、日本語掲載。開発者登録・Partner Centerへのログインは本人が完了。
+**System Widget - システムモニター**は、Microsoft Storeで無料公開中のWindows向けMSIXアプリです。初回公開パッケージは`2.10.0.0`（x64）、製品IDは`9PH5180TT115`です。2026-11-18にPartner CenterのAPIで公開済みの申請を確認しました。[Microsoft Store製品ページ](https://apps.microsoft.com/detail/9PH5180TT115)
 
-## 製品登録
+## 更新申請
+
+1. [Partner Centerの製品ページ](https://partner.microsoft.com/dashboard/products/9PH5180TT115/overview)で、現在公開中のパッケージのバージョンと申請状況を確認する。既存の下書きや審査中の申請がある場合は、その状態を確認してから次の更新を進める。
+2. `winres/winres.json`の5か所のバージョンを公開版より上げ、リポジトリ直下で`go-winres make`を実行する。再生成した`rsrc_windows_386.syso`と`rsrc_windows_amd64.syso`をコミットに含め、`README.md`の変更履歴も更新する。例えばGitタグ`v2.10.1`に対応するMSIXバージョンは`2.10.1.0`で、Store版の4桁目は`0`にする。
+3. PRレビューとCIを通して`main`へマージする。Windows上のクリーンなチェックアウトを、確定したリリースコミットに合わせる。GitHub Releaseも作る場合は、同じコミットにバージョンと一致するタグを付ける。
+4. Windows上で以下のコマンドを実行し、`dist/msix-store/`に作られた今回の出力先の`package-info.json`を指定して検証する。`sourceCommit`、`version`、`storeId`とMSIXのSHA-256を確認する。提出には無署名MSIXを使い、`-AllowDirty`やテスト版の証明書を使わない。
+
+   ```powershell
+   .\packaging\msix\Build-StoreMsix.ps1
+   python .\packaging\msix\verify_msix.py --info '.\dist\msix-store\<今回の出力フォルダー>\package-info.json' --store
+   ```
+
+5. Partner Centerで既存製品の更新申請を開き、検証済みのMSIXをアップロードする。パッケージの検証結果、価格・提供範囲、日本語の「このバージョンの最新情報」、申請メモ、公開オプションを確認して認定へ提出する。[MicrosoftのMSIX申請手順](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/create-app-submission)
+6. 今回の申請IDと対象バージョンが公開済みになったことを確認し、Store経由で更新・起動を確認する。認証済みのPCでは`msstore submission status 9PH5180TT115`でも進捗を参照できる。保留中の申請がないときは前回の公開済み申請が返ることがあるため、`Published`表示だけで今回の公開完了を判断しない。
+
+### GitHub Releaseとの連携
+
+現在の`release.yml`は`v*`タグを起点にGitHub Release用のEXEとSHA-256を公開し、`test.yml`はStore用MSIXをビルド・検証します。Storeの提出ジョブを導入するまでは、上記のPartner Center手順で提出します。Store提出用の無署名MSIXはGitHub Releaseに添付せず、Store配信時の署名は認定後にMicrosoftが行います。
+
+連携を導入するときは、同じタグのコミットからStore用MSIXを生成・検証し、承認が必要なGitHub Environment内の提出ジョブで、CI専用のMicrosoft Entraアプリを使います。最初は読み取りで認証を確認し、提出は下書きで止めてPartner Centerで確認します。CLIは既存の下書きを置き換えることがあるため、保留申請がある場合は提出ジョブを止めます。ローカルPCのCLI認証用秘密鍵やCIのシークレットはリポジトリに保存しません。
+
+## 初回公開の記録
+
+2026-11-14に無料・日本語掲載でStore公開の手続きを開始。開発者登録・Partner Centerへのログインは本人が完了しました。
+
+### 製品登録
 
 Partner Centerで新規MSIXアプリの名前を予約し、製品Identityを実画面から確認した。
 
@@ -13,9 +38,9 @@ Partner Centerで新規MSIXアプリの名前を予約し、製品Identityを実
 - Package Family Name: `ShuheiKonno.SystemWidget-_e5w12gdjjk7rj`
 - 製品情報は[store-identity.json](../packaging/msix/store-identity.json)へ記録。これらはパッケージに含まれる公開識別子であり、認証情報ではない。
 
-2026-11-14 19:50 JST時点で、Submission 1を認定へ送信済み。Partner Centerの製品状態は「認定中」、進行状況は「申請: 完了」「前処理中: 処理中」「認定・公開処理中: 開始されていません」。認定合格後、すぐに公開する設定。**一般公開・認定合格はまだ確認していない。**
+2026-11-14 19:50 JSTにSubmission 1の認定への送信を確認。送信直後は前処理中で、認定合格後すぐに公開する設定でした。2026-11-18に公開済み申請を確認しました。
 
-## Submission 1 の送信内容
+### Submission 1 の送信内容
 
 - 公開名: **System Widget - システムモニター**
 - 価格: **無料**（JPY基準価格0、将来の価格変更なし）
@@ -26,7 +51,7 @@ Partner Centerで新規MSIXアプリの名前を予約し、製品Identityを実
 - 年齢区分: 回答を保存済み。IARC利用規約と成人年齢の確認は本人が操作した。
 - 掲載画像: 実アプリのスクリーンショット1枚（1450×1080）、アイコン300×300
 - 提出前に、価格・提供、プロパティ、年齢区分、パッケージ、Store登録情報、申請オプションの6項目すべてで「完了」を確認
-- 公開後に利用する製品リンク: <https://apps.microsoft.com/detail/9PH5180TT115>（一般公開は未確認）
+- [Microsoft Store製品ページ](https://apps.microsoft.com/detail/9PH5180TT115)
 
 提出パッケージのSHA-256:
 
@@ -37,8 +62,6 @@ Partner Centerで新規MSIXアプリの名前を予約し、製品Identityを実
 梱包元は未コミット変更のない`0eab0fe36aa19bd7033580402f1c369f776e366b`。[PR #65](https://github.com/ShuheiKonno/widget-go/pull/65)のCI（test・lint・vuln・secrets、Windows上のStore MSIX生成・検証を含む）成功後にmainへ統合した。mainのマージコミット`8e9ed6e74a5bbdfd349b88767258f94ecf8ac294`とのソース差分がないことを確認して提出した。
 
 制限付き機能`runFullTrust`の必須説明は、500文字制限内の461文字で登録済み。任意の「追加のテスト情報」は空欄。基本機能の審査に第三者サービスの個人アカウント認証情報を提供していない。初回申請のため、掲載情報のリリースノートも空欄とした。
-
-今後はPartner Centerの認定結果と追加質問を確認し、認定合格・公開完了をそれぞれ確認する。画面の所要時間案内は通常数時間、場合によって最大3営業日であり、公開日の確約ではない。
 
 Partner CenterにSubmission 1を作成済み。プロパティはユーティリティ＆ツール、個人情報を使用する（任意のAI機能・Cookie・アカウント情報等）、プライバシーURLとGitHubのサポートURLを設定して保存した。認証用プロファイルがあるため、Storeのデータ自動バックアップ許可はOFFにした。生成AIによるコンテンツ生成機能やアプリ内課金があるとは申告していない。
 
