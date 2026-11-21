@@ -542,6 +542,13 @@ func newServerMux(token string) *http.ServeMux {
 			}
 			refreshPowerMode()
 			kickTray()
+		case "allDesktops":
+			// 全仮想デスクトップに表示する ON/OFF。保存して、すぐにウィンドウへ反映する。
+			if val != "true" && val != "false" {
+				http.Error(w, "invalid allDesktops", http.StatusBadRequest)
+				return
+			}
+			setAllDesktops(val == "true")
 		case "imeWatch":
 			// IME 自動復旧の ON/OFF。保存して、すぐに監視を起動・停止する。
 			if val != "true" && val != "false" {
@@ -656,6 +663,7 @@ func newServerMux(token string) *http.ServeMux {
 			"zoomSteps":   zoomSteps,
 			"showGPU":     showGPU.Load(),
 			"powerMode":   c.PowerModeEnabled,
+			"allDesktops": c.AllDesktops,
 			"imeWatch":    c.IME.Enabled,
 			"collapsed":   c.Collapsed,
 			"flipped":     c.Flipped,

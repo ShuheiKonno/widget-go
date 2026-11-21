@@ -1253,6 +1253,8 @@ func main() {
 	// フレーム除去・位置復元・前面表示を適用する。
 	windowHandle.Store(uintptr(w.Window()))
 	removeWindowFrame(windowHandle.Load())
+	// 全仮想デスクトップに表示する設定は、ウィンドウを見せる前（まだ非表示）に反映する。
+	applyAllDesktops(windowHandle.Load(), c.AllDesktops)
 	// 保存された拡大率を、最初のサイズ決めと表示より前に適用する（100% の画面が一瞬見えないように）。
 	// ここは UI スレッド（Run の前）なので、ZoomFactor をそのまま設定できる。
 	widgetZoom.Store(int32(normalizeZoom(c.Zoom)))

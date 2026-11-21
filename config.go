@@ -63,6 +63,9 @@ type Config struct {
 	// OS の電源状態を書き換える機能なので、利用者が設定で ON にしたときだけ働かせる。
 	// OS の状態そのものは保存しない（起動時に再適用して設定アプリでの変更を戻さないため）。
 	PowerModeEnabled bool `json:"powerModeEnabled"`
+	// AllDesktops は、仮想デスクトップを切り替えてもウィジェットを表示し続ける設定。既定は OFF。
+	// ON の間はタスクバーと Alt+Tab に出ない（alldesktops.go）。
+	AllDesktops bool `json:"allDesktops"`
 	// AI は Claude / Codex の使用量モニター（旧 ClaudeMonitor）の設定。既定は OFF。
 	AI aiusage.Settings `json:"ai"`
 	// WorkTimer は勤務時間タイマー（区画 work）の設定と、計測中の状態。区画の表示は Hidden.Work。
@@ -376,6 +379,8 @@ func defaultConfig() Config {
 	// 電源モードの切替機能は既定 OFF（OS の電源状態を書き換える機能なので、利用者が ON にするまで
 	// 何もしない）。キーが無い旧バージョンの config.json でも OFF のまま残る（false はゼロ値）。
 	c.PowerModeEnabled = false
+	// 全仮想デスクトップへの表示も既定 OFF（ON にするとタスクバーのボタンが消えるので、利用者が選んだときだけ）。
+	c.AllDesktops = false
 	// v1.9.3 以前の config.json には "ai" が無い。既定値を先に入れておくと、
 	// loadConfig の Unmarshal で欠けたキーが上書きされず既定のまま残る。
 	c.AI = aiusage.DefaultSettings()
